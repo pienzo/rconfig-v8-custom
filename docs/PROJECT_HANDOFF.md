@@ -1,8 +1,14 @@
 # rConfig V8 Custom — Cross-chat handoff and roadmap
 
-**Verified checkpoint:** 2026-11-22 (GitHub connector, read-only verification before this document).
+**Verified checkpoint:** 2026-11-23 (GitHub connector, read-only verification before this document).
 **Purpose:** durable handoff between ChatGPT conversations. **Operational checkpoint:** [PROGRESS.md](PROGRESS.md). **Source audit:** [UPSTREAM_AUDIT.md](UPSTREAM_AUDIT.md). **Original requirements:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 in the ChatGPT project (not committed).
 **Evidence rule:** GitHub commits, PRs, issue records, and CI are authoritative for repository changes; only approved staging results can establish deployment or end-to-end behavior. Never infer completed work merely from a plan.
+
+## 2026-11-23 update — first local Docker build and PR #30 merge
+
+See [PROGRESS.md](PROGRESS.md) and [issue #28](https://github.com/pienzo/rconfig-v8-custom/issues/28) for detailed evidence. Fork `custom` was verified at merge SHA `e6b68a92b648830ef24093b55bda17634f1ef4c7` following [PR #30](https://github.com/pienzo/rconfig-v8-custom/pull/30) (6/6 required checks green, including the Docker storage seeding workflow). `main` stayed at `121cff1b243794af260f6c5850553b5f1b0af881`. A build image was successfully generated on a separate personal Debian 13 test VM **before committing the patch**, with an explicit `-dirty` source label. The repository uses a Node 22 + PHP 8.4 Docker multi-stage build and tighter build-context exclusions; no Compose deployment or runtime installation has yet occurred. Upstream-integrated entrypoint and Supervisor are unchanged.
+
+**Unfinished next gate:** issue #28 isolated Compose/runtime design; do not start services until role separation/entrypoint behavior and secrets/volumes are reviewed. F02 queue opt-in remains off; no production deploy. [Issue #29](https://github.com/pienzo/rconfig-v8-custom/issues/29) tracks the 23 `npm ci` dependency advisories separately. The GPT chat has GitHub access only; authenticated Codex on the personal VM is a separate agent and does not give this chat shell access.
 
 ## 1. Identity, baseline and governance
 
