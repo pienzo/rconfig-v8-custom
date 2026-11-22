@@ -33,11 +33,14 @@ services:
     profiles: [infra]
     image: redis:7-alpine
     restart: "no"
-    command: ["redis-server", "/run/secrets/redis.conf"]
+    entrypoint: ["/bin/sh", "/usr/local/bin/staging-redis-init.sh"]
     secrets:
       - redis_config
     volumes:
       - staging_redis_data:/data
+      - ./docker/staging/redis-init.sh:/usr/local/bin/staging-redis-init.sh:ro
+    tmpfs:
+      - /run/rconfig-redis:size=1m,mode=0700
     networks:
       - staging_internal
     security_opt:
