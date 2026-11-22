@@ -53,6 +53,16 @@ A filesystem with different semantics (e.g., network mount, FUSE or non-POSIX st
 
 The included synthetic unit tests confirm ordinary reads, hashing, changing metadata, path replacement (when a replacement descriptor is passed), zero size, hardlinks, invalid handles and unsafe stream modes. **None of those tests substitutes for adversarial staging validation of the opener.** Before deriving a persistent verified-file receipt token or marking a backup successful, implement the audited Linux secure-opening boundary and review ingestion provenance, race resistance and concurrent receipt claims.
 
+## Linux kernel proof of concept (issue #5; NOT selected for deployment)
+
+A small, entirely unused [`openat2()` proof of concept](../../tools/f02/linux/README.md) plus synthetic adversarial tests now explore the preferred kernel confinement flags. The source is [`f02_openat2_probe.c`](../../tools/f02/linux/f02_openat2_probe.c); a Python test suite compiles it with strict GCC warnings and exercises it in a disposable directory. The required GitHub `Tests (Unit + Fasttests)` job includes the prototype tests.
+
+This probe uses `RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV` for **device subdirectory and candidate basename resolution**, anchored at a root descriptor. Its root directory is opened with `O_PATH | O_DIRECTORY | O_NOFOLLOW`; only the **final component** of that root argument is protected against symlinks. Trust, permission and mount controls for *all ancestor directories* must be designed and verified in the eventual staging environment. It opens read-only with `O_NONBLOCK`, rejects non-regular/hard-linked/empty/oversized files, and never returns file data or verified backup acceptance.
+
+**Key distinction:** the prototype proves a subset of secure pathname resolution, not file immutability, transfer completeness, safe descriptor passing to PHP, or a completed F02 pipeline. There is no Laravel integration or production binary. A successful test prints `PROBE_OPENED_ONLY_NOT_BACKUP_SUCCESS` and cannot count as a backup receipt. The tested hosted Linux environment is not the future staging host.
+
+**Outstanding work before selection:** trusted root-ancestor chain and mount boundary; OS/kernel/permissions verification; descriptor-based hashing with stable snapshot against active writers; hard timeouts; protection against namespace/inode replacement and cross-worker races; secure IPC or safer alternative that integrates `ExternalBackupOpenedHandleInspector` without exposing shell injection, secrets or a privileged ambient capability. The language/packaging and actual installer remain **undecided**.
+
 ## Test and approval gates
 
 - Synthetic adversarial uploads: files swapped between metadata check and opening, between opening and reading, and during hashing; symlinks (including races), special files, hard links, nested dirs and mount boundaries.
