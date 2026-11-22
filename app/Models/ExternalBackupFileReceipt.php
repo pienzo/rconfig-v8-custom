@@ -18,7 +18,6 @@ class ExternalBackupFileReceipt extends BaseModel
         'verified_file_token',
         'accepted_at_utc',
     ];
-
     protected $hidden = [
         'verified_file_token',
     ];
