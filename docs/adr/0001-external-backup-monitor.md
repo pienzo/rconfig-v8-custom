@@ -41,6 +41,19 @@ A proposed external command identifier such as `rconfig:check-external-backup` i
 
 Reject path separators/control characters, empty names, invalid UTF-8 and filenames/patterns over 255 **bytes**. Reject malformed patterns or unknown modes as configuration errors; bound PCRE match work/depth and do not interpret a regex engine failure as “file missing.” An incomplete upload with a matching filename will *not* be accepted until the later file-inspection stage implements size/freshness/stability rules. **The matcher itself does not inspect files or determine backup success.**
 
+### UTC freshness and two-observation policy (issue #7)
+
+[`ExternalBackupObservationPolicy`](../../app/Services/ExternalBackups/ExternalBackupObservationPolicy.php) evaluates **two metadata snapshots from the same scheduled run**, with explicitly passed integer UTC timestamps. It neither scans/open files nor queries a clock/database. The run window is `[scheduled_at_utc, deadline_utc)`, with at most 300 seconds of explicitly configured clock-skew tolerance at its lower boundary; timestamps after the deadline never qualify.
+
+Rules for a *candidate*:
+- The latest candidate in the second scan is selected by descending mtime (then ascending basename), without falling back to an older stable file if the latest upload is still changing.
+- It must be at least the configured byte threshold (minimum 1), and mtime must not precede the scheduled run beyond allowed skew or lie in the future beyond allowed skew.
+- The **same filename, filesystem device, inode, size, mtime and ctime** must appear in both observations, separated by the configured quiet interval; the second observation must also be at least that interval after its latest mtime/ctime.
+- Before the deadline, unmet conditions return `pending` with a reason (`missing`, `stale`, `undersized`, `unstable`, `invalid_timestamp`). At or beyond the deadline they become `failed`; even otherwise valid candidates become `failed/deadline_elapsed`.
+- The only ready state is `candidate_requires_safe_open`. **It is not SUCCESS.** A later component must validate an opened file handle safely and consult persistent file-use/run records before making any successful backup claim.
+
+**Limits:** Filesystem mtimes may be copied/spoofed, directory metadata is non-atomic, short in-place writes might evade second-resolution timestamp comparisons, and file identities can be reused. Therefore *two matching snapshots are merely evidence of quietness*, not sufficient proof of transfer completion or file origin. Test DST and elapsed windows at the scheduler/persistence layer with UTC instants. API calls must never use this policy output alone to mark a completed backup.
+
 ### State machine and persistence (later slices)
 **Proposed**, not present in Core: `external_backup_rules` and `external_backup_check_runs` linked to `tasks` and `devices`, with unique idempotency on `(rule_id, scheduled_for_utc)` and recorded matched-file identity/fingerprint. Decide exact DB schema only after an implementation-specific review.
 
