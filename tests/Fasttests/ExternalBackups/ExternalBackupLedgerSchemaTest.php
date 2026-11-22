@@ -45,7 +45,7 @@ test('additive F02 tables exist without altering native Core task tables', funct
 });
 
 test('a new rule is disabled by default and links to an existing task and device', function () {
-    expect($this->rule->enabled)->toBeFalse();
+    expect($this->rule->fresh()->enabled)->toBeFalse();
     expect($this->rule->task->id)->toBe($this->task->id);
     expect($this->rule->device->id)->toBe($this->device->id);
     expect($this->rule->fresh()->quiet_seconds)->toBe(30);
