@@ -63,6 +63,24 @@ Use bounded polling by the existing Laravel scheduler/queue (not a second unmana
 
 The read-only checker must never delete/rename/import uploads. A later independently reviewed enhancement may optionally store external uploads in rConfig configuration history for diff/versioning.
 
+### Additive database contract — first schema slice (issue #9)
+
+The initial (inactive) tables are defined in [`2026_11_22_160000_create_external_backup_check_schema.php`](../../database/migrations/2026_11_22_160000_create_external_backup_check_schema.php):
+
+| Table | Purpose | Database guarantees |
+| --- | --- | --- |
+| `external_backup_rules` | Rule scoped to an existing `tasks.id` and `devices.id`, glob/regex pattern, minimum size, quiet/deadline/skew and scan limits | Rule disabled by default, FKs prevent orphaned device/task references |
+| `external_backup_check_runs` | One UTC scheduled occurrence and candidate metadata per rule | `UNIQUE(rule_id, scheduled_at_utc)`, composite FK ensures device matches rule |
+| `external_backup_file_receipts` | Future ledger of verified, uniquely claimed file identities | `UNIQUE(check_run_id)`, `UNIQUE(device_id, verified_file_token)`, composite FK ensures receipt device matches run |
+
+**Type compatibility:** upstream `tasks.id` and `devices.id` are **signed INTEGER** primary keys in their original 2019 migrations. Their new foreign columns deliberately use signed integer, whereas the custom tables' auto-increment IDs and their dependent foreign columns use BIGINT UNSIGNED. The extra `(id, device_id)` keys enable referential integrity across rule, run and receipt, even if a future job passes an inconsistent device ID.
+
+**Boundary:** no public API, no queue/scheduler, no acceptance logic, no inbound upload service, no new `SUCCESS` outcome. The receipt token is an **opaque, lowercase 64-character identifier** whose construction still requires a security review of handle-validated file identity and replay protection. It is *not* the content SHA-256 alone: identical configuration contents may legitimately arrive in separate backups. A unique DB constraint makes identical tokens non-reusable but cannot guarantee the token correctly identifies an upload. Until that adapter is implemented, **the application must never insert receipts**.
+
+**Concurrency:** unique indexes form the final arbiter for duplicate occurrences/receipts, but an atomic claim service that handles MySQL duplicate-key races, state transitions, crash retries and consistency has **not** been built. Implement and test it separately. All date/time columns named `_utc` store naive SQL DATETIME values representing UTC; call sites must normalize timezone and daylight-saving transitions correctly. Raw system paths and backup contents are never stored.
+
+**Lifecycle and rollback:** foreign keys deliberately restrict deletion of a Task, Device, Rule or Run if dependent F02 records remain; future CRUD must explicitly define archival/retention before enabling rules. The migration `down()` drops receipts, then runs, then rules. This is a **destructive schema rollback** once records exist; prior DB backup/restore and authorized change planning are required for deployment. No upgrade or production deployment is part of this PR.
+
 ### Security and correctness gates
 1. Confirm appropriate rConfig Core API permissions/RBAC for creating and running file-check rules; avoid exposing backup data through broad endpoints.
 2. Scanner with symlink/TOCTOU tests; fail-closed access and directory errors; bounded memory/CPU.
