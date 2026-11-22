@@ -31,7 +31,7 @@ function externalBackupLedgerRun(ExternalBackupRule $rule, string $scheduled = '
         'rule_id' => $rule->id,
         'device_id' => $rule->device_id,
         'scheduled_at_utc' => $scheduled,
-        'deadline_at_utc' => '2026-11-22 16:00:00',
+        'deadline_at_utc' => \Illuminate\Support\Carbon::parse($scheduled, 'UTC')->addHour()->format('Y-m-d H:i:s'),
     ]);
 }
 
@@ -48,7 +48,7 @@ test('a new rule is disabled by default and links to an existing task and device
     expect($this->rule->enabled)->toBeFalse();
     expect($this->rule->task->id)->toBe($this->task->id);
     expect($this->rule->device->id)->toBe($this->device->id);
-    expect($this->rule->quiet_seconds)->toBe(30);
+    expect($this->rule->fresh()->quiet_seconds)->toBe(30);
 });
 
 test('a run defaults to pending and has stable date casts', function () {
