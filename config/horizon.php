@@ -4,6 +4,23 @@ use Illuminate\Support\Str;
 use Laravel\Scout\Jobs\MakeSearchable;
 use Laravel\Scout\Jobs\RemoveFromSearch;
 
+// F02 has no operational job or dispatch path yet. Explicitly opt in only
+// during authorized staging. These limits are candidates, not approved values.
+$f02Supervisors = env('RCONFIG_F02_QUEUE_ENABLED', false) === true
+    ? [
+        'HorizonExternalBackups' => [
+            'connection' => 'redis_external_backups',
+            'queue' => ['ExternalBackupChecks'],
+            'balance' => 'simple',
+            'minProcesses' => 1,
+            'maxProcesses' => 1,
+            'tries' => 3,
+            'backoff' => [10, 30, 60],
+            'timeout' => 90,
+        ],
+    ]
+    : [];
+
 return [
 
     /*
@@ -209,6 +226,7 @@ return [
                 'tries' => 1,
                 'timeout' => 86400, // 1 day
             ],
+            ...$f02Supervisors,
         ],
 
         'local' => [
@@ -237,6 +255,7 @@ return [
                 'tries' => 1,
                 'timeout' => 86400, // 1 day
             ],
+            ...$f02Supervisors,
         ],
     ],
 ];
