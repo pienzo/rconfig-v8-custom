@@ -1,5 +1,7 @@
 # rConfig V8 Custom — Progress
 
+**Cross-chat handoff and full roadmap:** [PROJECT_HANDOFF.md](PROJECT_HANDOFF.md) (verified history, all phases, blockers, next steps). See [issue #23](https://github.com/pienzo/rconfig-v8-custom/issues/23) for documentation tracking.
+
 **Checkpoint:** 2026-11-22  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
