@@ -1,0 +1,73 @@
+# Synthetic-only staging infrastructure candidate for issue #32.
+# Intentionally NO app/worker/scheduler bootstrap in this increment.
+# Nothing starts without --profile infra (or explicitly named services).
+name: rconfig-v8-custom-staging
+
+services:
+  db:
+    profiles: [infra]
+    image: mariadb:10.11
+    restart: "no"
+    environment:
+      MARIADB_DATABASE: rconfig_staging
+      MARIADB_USER: rconfig_staging
+      MARIADB_PASSWORD_FILE: /run/secrets/mariadb_app_password
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/mariadb_root_password
+    secrets:
+      - mariadb_app_password
+      - mariadb_root_password
+    volumes:
+      - staging_db_data:/var/lib/mysql
+    networks:
+      - staging_internal
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 90s
+
+  redis:
+    profiles: [infra]
+    image: redis:7-alpine
+    restart: "no"
+    entrypoint: ["/bin/sh", "/usr/local/bin/staging-redis-init.sh"]
+    secrets:
+      - source: redis_config
+        target: redis.conf
+    volumes:
+      - staging_redis_data:/data
+      - ./docker/staging/redis-init.sh:/usr/local/bin/staging-redis-init.sh:ro
+    tmpfs:
+      - /run/rconfig-redis:size=1m,mode=0700
+    networks:
+      - staging_internal
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # Read the synthetic password from the operator-supplied config, not
+      # from a command-line argument or a committed environment variable.
+      test: ["CMD-SHELL", "pass=$$(awk '$$1 == \"requirepass\" { print $$2; exit }' /run/secrets/redis.conf); test -n \"$$pass\" && REDISCLI_AUTH=\"$$pass\" redis-cli -h 127.0.0.1 ping | grep -qx PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+secrets:
+  mariadb_root_password:
+    file: ${STAGING_SECRETS_DIR:?Set STAGING_SECRETS_DIR outside repository}/mariadb_root_password
+  mariadb_app_password:
+    file: ${STAGING_SECRETS_DIR:?Set STAGING_SECRETS_DIR outside repository}/mariadb_app_password
+  redis_config:
+    file: ${STAGING_SECRETS_DIR:?Set STAGING_SECRETS_DIR outside repository}/redis.conf
+
+volumes:
+  staging_db_data:
+  staging_redis_data:
+
+networks:
+  staging_internal:
+    driver: bridge
+    internal: true
