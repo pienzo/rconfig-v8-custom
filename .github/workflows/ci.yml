@@ -247,3 +247,9 @@ jobs:
         # Requires APP_ENV=testing, v8core_test, and F02_SYNTHETIC_CONCURRENCY.
         # No real scheduler, backup contents or production connections.
         run: F02_SYNTHETIC_CONCURRENCY=1 php tools/f02/concurrency/crash_recovery.php
+
+      - name: Test F02 real Redis worker crash and redelivery (synthetic only)
+        # Uses the existing hosted Redis/MySQL services and a random test-only queue.
+        # A short reservation is configured IN MEMORY only for an isolated worker.
+        # SIGKILL targets only its own PHP queue:work subprocess, never Horizon.
+        run: F02_SYNTHETIC_REDIS_QUEUE=1 php tools/f02/queue/redelivery.php
