@@ -11,6 +11,18 @@ Files: `run.php` creates disposable Laravel model fixtures in the **CI test data
 
 The test checks `first_observed_at_utc`, `last_observed_at_utc` and the absence of file receipts. It cleans up its synthetic task/device/rule/run rows and temporary barriers.
 
+### Process-death and commit/rollback evidence (second test slice)
+
+[`crash_recovery.php`](crash_recovery.php) uses its own synthetic device/rule/occurrence, and starts a dedicated [`crash_worker.php`](crash_worker.php) through Symfony Process with a 25-second upper limit. **Only this disposable child process receives Linux SIGKILL** from the parent. Two phases validate a genuine connection loss, not an exception caught inside PHP:
+
+1. **Before COMMIT:** child obtains `SELECT ... FOR UPDATE` on one occurrence, saves synthetic pending metadata within an open transaction and signals the parent. The parent kills it; MySQL must roll back uncommitted changes and release the row lock. The parent then uses the real `ExternalBackupRunStateService::recordPending()` to retry successfully.
+2. **After COMMIT, before task acknowledgment:** child calls the real `ExternalBackupRunStateService::expire()` (which commits a terminal failure), signals the parent, then is killed. The parent verifies the committed `failed` result survives, and calls both `expire()` and `ExternalBackupOccurrenceClaimService::claim()` again. Neither may create a second occurrence, change the failure reason/timestamps or insert a receipt.
+
+The required CI job runs this *after* ordinary PHP, Linux `openat2()` and two-worker contention checks. Success marker:
+`F02 SIGKILL_ROLLBACK_COMMIT_RETRY_OK (NO_BACKUP_SUCCESS)`.
+
+**Precise scope:** the pre-COMMIT change is an intentionally instrumented **test-only SQL transaction**, not a hook injected into the production service. This proves MySQL transaction rollback/lock release on process death; it does **not** prove all service internals handle arbitrary crash points. The post-COMMIT phase invokes the real state service. Neither phase uses an actual Redis/Horizon queue worker, job acknowledgment protocol, file receipt, safe file opener or transport. Those still require staging and further implementation.
+
 ### Safety boundaries
 
 - The harness **refuses to execute** unless `APP_ENV=testing`, `F02_SYNTHETIC_CONCURRENCY=1`, and the Laravel DB connection is **MySQL `v8core_test`**.
