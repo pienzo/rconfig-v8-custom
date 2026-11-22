@@ -35,7 +35,8 @@ services:
     restart: "no"
     entrypoint: ["/bin/sh", "/usr/local/bin/staging-redis-init.sh"]
     secrets:
-      - redis_config
+      - source: redis_config
+        target: redis.conf
     volumes:
       - staging_redis_data:/data
       - ./docker/staging/redis-init.sh:/usr/local/bin/staging-redis-init.sh:ro
