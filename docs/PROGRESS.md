@@ -2,10 +2,19 @@
 
 **Cross-chat handoff and full roadmap:** [PROJECT_HANDOFF.md](PROJECT_HANDOFF.md) (verified history, all phases, blockers, next steps). See [issue #23](https://github.com/pienzo/rconfig-v8-custom/issues/23) for documentation tracking.
 
-**Checkpoint:** 2026-11-22  
+**Checkpoint:** 2026-11-23  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
 **Current gate:** F02 isolated Redis queue connection and optional Horizon supervisor configuration are now **merged but disabled by default** in [PR #26](https://github.com/pienzo/rconfig-v8-custom/pull/26). Its five required CI checks passed. **Operational F02 jobs, Horizon crash/staging proof, secure file admission/receipts, scheduler/API/UI and release remain blocked.** See the continuation below.
+
+## 2026-11-23 — Docker source-build staging checkpoint (issue #28)
+
+- [PR #30](https://github.com/pienzo/rconfig-v8-custom/pull/30) **merged into `custom`** via explicit operator approval; merge SHA `e6b68a92b648830ef24093b55bda17634f1ef4c7`. Feature commit `ff9facc0dfff71e2d37ec7f5392ed0356cd23b54` changes only `Dockerfile` and `.dockerignore`. `main` remained at upstream `121cff1b243794af260f6c5850553b5f1b0af881`.
+- A Debian 13 personal test VM (not enterprise staging) built an image successfully **from the feature working tree before the commit**: `rconfig-v8-custom:staging-source`, image ID `sha256:eccd815654483525ba65420366209d5c122cfa2c65955b1aaf698f1076738b8b`, OCI source revision `fee9744246d007b224b063aeb0f36533ca33c619-dirty` (uncommitted patch). Frontend Vite, locked Composer production dependencies, platform requirements, all five bundled Core templates and image export passed. This does **not** establish a clean-SHA rebuild or runtime installation.
+- GitHub PR checks: **6/6 success**, including Pint, PHPStan, ESLint, Vitest, PHP Unit/Fasttests and the **Docker bind-mounted storage-seeding** regression. [CI run 45081741962](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45081741962), [storage seeding run 45081741947](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45081741947).
+- The Dockerfile retains the original integrated Core entrypoint and Supervisor. No application services started in the personal VM, no migrations applied, and no production/corporate deployment performed. `RCONFIG_F02_QUEUE_ENABLED` remains disabled by default. The source-build image is not fully deterministic: base tags, APT repositories and runtime package sources can change. Operator did not grant this chat direct OS/SSH access; Codex CLI is an independent local agent.
+- The frontend `npm ci` step reported **23 dependency advisories** (2 low, 12 moderate, 9 high); triage is tracked in [issue #29](https://github.com/pienzo/rconfig-v8-custom/issues/29). Do not auto-upgrade the lockfiles as part of issue #28.
+- **Next unfinished gate — issue #28:** design/review a narrowly scoped Compose staging profile with separate app, database, Redis, Horizon and scheduler and a safe one-time bootstrap, without modifying the integrated Core profile or silently running migrations on restart. Use synthetic fixtures and isolated networks. After an approved runtime proof, resume F02 safe-file-open and Horizon crash/redelivery gates (#5, #9, #21). No production release.
 
 ## 2026-11-22 continuation — verified after the cross-chat handoff
 
