@@ -16,12 +16,13 @@ jobs:
     name: Isolated MariaDB and Redis
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      STAGING_SECRETS_DIR: ${{ runner.temp }}/rconfig-staging-secrets
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Set ephemeral secret directory
+        shell: bash
+        run: echo "STAGING_SECRETS_DIR=${RUNNER_TEMP}/rconfig-staging-secrets" >> "$GITHUB_ENV"
 
       - name: Create disposable, synthetic-only secrets
         shell: bash
