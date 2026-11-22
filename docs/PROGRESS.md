@@ -3,7 +3,7 @@
 **Checkpoint:** 2026-11-22  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** Phase 0 and preliminary code audit complete; F02 matcher, metadata scanner and UTC observation policy merged into `custom`. Issue #9 schema/model/testing slice is in development. Staging and security acceptance still pending.
+**Current gate:** F02 matcher, metadata scanner, UTC observation policy and database ledger schema are merged into `custom`. Issue #9 narrow occurrence-claim service is under test in `feature/f02-atomic-run-claims`; backup acceptance, staging and security gates remain pending.
 
 ## Verified GitHub bootstrap
 - Source repository: [rconfig/rconfig](https://github.com/rconfig/rconfig); fork: [pienzo/rconfig-v8-custom](https://github.com/pienzo/rconfig-v8-custom), **public, true GitHub fork**.
@@ -15,7 +15,8 @@
 - F02 matcher: [issue #3](https://github.com/pienzo/rconfig-v8-custom/issues/3) closed, [PR #4](https://github.com/pienzo/rconfig-v8-custom/pull/4) merged to `custom` after **5/5 GitHub CI checks passed**; merge SHA `ac825ea7b65619d90c29318f33db01b6f8d9b917`.
 - F02 scanner: [PR #6](https://github.com/pienzo/rconfig-v8-custom/pull/6) merged on 2026-11-22 after [CI #45034475773](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45034475773) passed 5/5 checks. Merge SHA: `2e1bbc4e51ff6d239bc3e6ba0209bf0dcc332b90`. [Issue #5](https://github.com/pienzo/rconfig-v8-custom/issues/5) remains open for safe-open/operational validation.
 - F02 observation policy: [PR #8](https://github.com/pienzo/rconfig-v8-custom/pull/8) merged after all [CI #45036302484](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45036302484) checks passed; merge SHA `8c08c3dc4bb0abbfe1843a6f33501aeb662e7487`. Issue #7 closed.
-- Current work: [issue #9](https://github.com/pienzo/rconfig-v8-custom/issues/9), branch `feature/f02-receipt-ledger-schema` from `custom`. Issue #5 remains open for secure filesystem acceptance.
+- F02 schema: [PR #10](https://github.com/pienzo/rconfig-v8-custom/pull/10) merged to `custom` after five passing checks in [CI #45039698296](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45039698296), merge SHA `eed6509ae553e52036abfd4d9575a6f0c9122e61`.
+- Current work: [issue #9](https://github.com/pienzo/rconfig-v8-custom/issues/9), branch `feature/f02-atomic-run-claims`; issue #5 remains open for secure filesystem acceptance.
 - GitHub Actions was enabled on 2026-11-22. [CI run #45016582452](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45016582452) completed successfully: Pint, PHPStan, ESLint, Vitest and Unit + Fasttests (5/5 passing).
 - Active branch ruleset [`custom-pr-ci`](https://github.com/pienzo/rconfig-v8-custom/settings/rules/27838809) targets **only `refs/heads/custom`**. Pull requests are mandatory (0 approvals currently), branch deletion and non-fast-forward pushes are blocked; the five named GitHub Actions checks are required. Required status checks do not currently require the branch to be up to date (`strict_required_status_checks_policy=false`). `main` remains outside this ruleset.
 - No staging VM, OS connector, cloud resources, enterprise infrastructure, or production deployment has been configured.
@@ -35,14 +36,15 @@ See [UPSTREAM_AUDIT.md](UPSTREAM_AUDIT.md), pinned to the selected upstream comm
 - F02 matcher completed in `custom`: `ExternalBackupFilenameMatcher` plus synthetic Pest tests and [ADR-0001](adr/0001-external-backup-monitor.md). [CI run #45033406255](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45033406255) passed all five required checks for PR #4.
 - F02 scanner merged: `ExternalBackupDirectoryScanner` returns bounded direct-child file **metadata**, never backup success. [CI #45034475773](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45034475773) passed all five required checks.
 - F02 observation policy merged: `ExternalBackupObservationPolicy` returns `pending`, `failed`, or `candidate_requires_safe_open`, **not backup success**. [CI #45036302484](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45036302484) passed all five checks.
-- Issue #9 schema/model slice (not merged): three additive tables for rules, UTC scheduled occurrences, and opaque receipt tokens; matching Eloquent models and synthetic MySQL/Pest schema tests. Cross-device foreign keys, per-rule occurrence uniqueness and per-device file-token uniqueness are enforced in the proposed migration. New rules default to disabled. CI status for this branch **pending**.
-- Not implemented: atomic claim services, trustworthy receipt-token generation via secure file handle, filesystem TOCTOU hardening, scheduled jobs, API/GUI, notifications or release. No real backups or environments have been modified. License discrepancy and isolated E2E staging remain blockers.
+- F02 schema/models from PR #10 now merged: three additive tables for disabled-by-default rules, unique UTC occurrence rows and per-device verified-file receipt tokens. MySQL-based test suite passed, but the migration has **not** been executed outside GitHub-hosted CI; rollback is destructive if future rows exist.
+- Issue #9 new isolated service (not merged yet): `ExternalBackupOccurrenceClaimService` uses transaction + locked rule row to claim one UTC scheduled occurrence without changing a previous result; tests for disabled rule, duplicate retry, timezone normalization, rule/device binding, and stale/terminal-run preservation are added. **CI for this slice pending.** True two-worker concurrent process tests remain for staging.
+- Not implemented: verified-file receipt claim, trustworthy receipt-token generation from safe file handles, filesystem TOCTOU hardening, scheduled jobs, API/GUI, notifications or release. No real backups or environments modified; GPL/MIT clarification and isolated E2E staging remain blockers.
 
 ## Next gates
-1. Review a draft PR from `feature/f02-receipt-ledger-schema` into `custom`; verify all five GitHub Actions checks, particularly MySQL migration/index/foreign key tests.
-2. Keep issue #9 **open** for the future atomic occurrence and file claim service. No receipt insertion or success state until the safe-open identity token and retry semantics are verified.
-3. Keep issue #5 open: hardened filesystem handle validation and confidence in transfer completeness are still missing. Neither a quiet file nor a unique DB token proves a valid backup.
-4. Only after secure backend tests: connect explicit F02 task dispatch, scheduler, manual triggers, UI/API RBAC and reporting without loosening Core download command whitelist.
-5. Authorize isolated staging before testing real SFTP/FTPS, workers, rollback or production release. Keep `main` tracking clean upstream.
+1. Open draft PR from `feature/f02-atomic-run-claims` into `custom` under issue #9; require all five CI checks and review of locking, timezone and idempotency behavior.
+2. Keep issue #9 open: verified-file receipt tokens, atomic receipt claims, crash recovery, true two-worker concurrency and lifecycle state transitions need separate reviews/tests.
+3. Keep issue #5 open: safe-open file handles, read-only containment, freshness and complete file receipt remain unverified on an isolated Linux staging OS. **Do not treat a candidate as backup SUCCESS.**
+4. Only after these backend gates: integrate native Task scheduler/queue/manual run and UI/API RBAC without loosening upstream download-command whitelist.
+5. Obtain authorization before staging/FTP/FTPS/SFTP provisioning and never deploy automatically. Keep upstream `main` unchanged.
 
-**Rollback:** PRs #2, #4, #6 and #8 are merged to `custom` and have no enabled F02 operator workflow. This first issue #9 migration is **not deployed**, and its `down()` drops its three tables (data-destructive once populated); require tested DB backup/restore and formal authorization before staging/production changes. `main` unchanged.
+**Rollback:** PRs #2, #4, #6, #8 and #10 are merged to `custom`; none activates F02 for operators. This claim-service slice is unused unless called later. The new migration is **not deployed**; `down()` deletes the three tables (destructive once populated). Review rollback and obtain authorization before any staging/prod DB operation. `main` remains unchanged.
