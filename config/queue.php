@@ -70,6 +70,16 @@ return [
             'block_for' => null,
             'after_commit' => false,
         ],
+        // F02 is not dispatched or supervised until an explicitly reviewed
+        // integration enables it. Do not alter Core's native redis retry_after.
+        'redis_external_backups' => [
+            'driver' => 'redis',
+            'connection' => 'default',
+            'queue' => 'ExternalBackupChecks',
+            'retry_after' => 180, // Candidate only: validate with OS-bounded jobs in staging.
+            'block_for' => null,
+            'after_commit' => true,
+        ],
 
     ],
 
