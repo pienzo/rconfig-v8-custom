@@ -34,3 +34,42 @@ The short **four-second** `retry_after` override exists **only in the test worke
 - Declaring exactly-once delivery from Redis: **rejected**; persist and validate idempotent business state instead.
 
 **Current result:** *No F02 queue connection, Horizon supervisor, job dispatch, notification, receipt insertion or production configuration is enabled by this ADR.* The authorized Linux staging/security review remains required to accept F02 as usable.
+
+## Proposed isolated F02 configuration contract (review-only; not active)
+
+This proposal provides a **review target**, not accepted production values. It changes no application configuration, scheduler, worker, or Docker Compose file. Values must be revised against actual bounded scan/read workloads and an approved staging OS.
+
+| Concern | Proposed isolated F02 behavior | Why/acceptance |
+| --- | --- | --- |
+| Connection | Add a named Redis queue connection such as `redis_external_backups`, separate from Core's existing `redis` queue connection | A dedicated `retry_after` can be tuned without changing download, notification or `rConfigDefault` reservation behavior. Distinguish a Laravel **queue connection** from a Redis database/namespace; the latter is not automatically isolated. |
+| Queue name | `ExternalBackupChecks` on the named connection, dispatched only by a typed F02 job | Do not accept free-form Artisan commands or expose queue names in operator requests. |
+| Reservation | **Illustrative** F02 `retry_after=180s` | Must exceed actual worker timeout including margin. Native Core `redis.retry_after=65` remains untouched. |
+| Worker timeout | **Illustrative** F02 Horizon supervisor `timeout=90s` | Only valid after each F02 job is demonstrably bounded to less than 90s even under slow filesystem I/O; no PHP-only elapsed-time approximation qualifies. |
+| Execution ceiling | **Illustrative** hard per-job limit `<=60s` | Requires OS/process-level bound, finite file count/size, and measured worst-case performance in staging. On unsupported/blocking storage fail closed or split the work. |
+| Attempts | Candidate F02 supervisor `tries=3` plus explicit bounded backoff policy | A crash/redelivery must be idempotent; distinguish transport/worker failures from terminal `FAILED_MISSING` after the backup window deadline. Exact retry policy is subject to staging tests. |
+| Dispatch | Persist occurrence under MySQL transaction; enqueue **after commit** and reconcile stranded pending work | Lost acknowledgements and DB/Redis outages require repeatable recovery. An occurrence is never a verified file receipt. |
+| Observability | Isolated queue latency, retry count, fatal timeout, `failed_jobs` record and occurrence correlation ID | Never log backup contents, filenames containing secrets, tokens or full hashes. |
+| Environment | Explicit mapping for both actual `production` and `local` Horizon environment names; no implicit fallback to a Core supervisor | Confirm `APP_ENV` in staging; avoid a queue that is dispatched but never consumed. |
+| Activation | Off by default, with no operational F02 job dispatch until ADR-0002 security gate, migrations and staging acceptance | CI-only simulated Redis delivery in PR #20 is not a live backup-validation test. |
+
+**Invariant:** `0 < hard_job_limit < worker_timeout < retry_after` with a measured reservation safety margin, and any configured backoff/attempt limit aligned to occurrence deadlines. The numeric candidates above are **not** approved defaults. Never set Core's existing `HorizonTwo` worker timeout to 90 seconds, nor globally increase its Redis connection reservation: Core downloads may run much longer.
+
+### Implementation sequencing (future issues/PRs)
+
+1. Confirm Horizon behavior for **named Redis queue connections** and effective config loading with Laravel config caching, worker startup, and both environment mappings. Test that Horizon's metadata connection (`horizon.use`) remains separate from the F02 job connection; do not repoint it blindly.
+2. In a **separate code PR**, add the disabled F02 connection and isolated supervisor mapping with explicit opt-in. Add config-level tests proving native `redis` remains at 65 seconds, native supervisor queue lists/timeouts unchanged, and unenabled F02 cannot dispatch. Review handling of `after_commit` and any outbox/reconciler needed for lost enqueue.
+3. Prove on disposable hosted CI: two consumers, duplicate redelivery, worker SIGKILL before/after DB commit, expired reservation, failed-job recording, Redis network outage, retry exhaustion, and no duplicate notifications. No `SUCCESS`/receipt is permitted yet.
+4. On **authorized staging only**, validate OS-level job limits, one- and multiple-worker Horizon supervision, `horizon:terminate`/restart behavior, config-cache deployment, monitoring, degraded Redis recovery, shutdown upgrade sequence and rollback. Measure actual scan duration, then set real job/timeout/retry/backoff values and document results.
+5. Review ADR-0002's secure opener/descriptor origin and atomic receipt gate before enabling final success semantics; keep scanner metadata and `pending` separate from accepted receipt state.
+
+### Tests that would falsify this proposal
+
+- A worker runs beyond its reservation before timing out, causing two consumers to work concurrently.
+- The F02 queue silently shares the Core 65-second retry window or gets processed by a `tries=1` native supervisor.
+- `APP_ENV` lacks the configured F02 supervisor, jobs accumulate without a consumer.
+- A crash after DB commit and before queue acknowledgment creates a duplicate receipt/notification.
+- Inaccessible, slow or adversarial filesystem IO defeats the claimed hard job bound.
+- Restart/upgrade loses queued jobs, incorrectly marks backup success, or violates occurrence deadline semantics.
+- Tests only pass by exposing a privileged filesystem opener, editing Core's TaskDownloadRun whitelist, or weakening the safe-open and per-device authorization boundary.
+
+**Decision status remains `Proposed`.** Approval requires an independent queue/operations review and authorized staging validation; no production or test infrastructure has been configured by this document.
