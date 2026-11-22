@@ -75,7 +75,12 @@ jobs:
         if: failure()
         shell: bash
         run: |
+          # Never echo a Redis configuration line containing requirepass.
           docker compose -f compose.staging.yaml --profile infra ps || true
+          docker compose -f compose.staging.yaml --profile infra logs --no-color redis 2>&1 |
+            grep -Ei 'error|failed|denied|permission|fatal|cannot|unable|unknown|No such' |
+            grep -vi 'requirepass' |
+            tail -n 20 || true
 
       - name: Tear down CI-only disposable volumes
         if: always()
