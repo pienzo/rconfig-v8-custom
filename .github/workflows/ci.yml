@@ -235,3 +235,9 @@ jobs:
         # Untrusted PRs get no secrets or elevated privileges; run only on throwaway runner directories.
         # This is NOT evidence of F02 production admission or an OS-integrated opener.
         run: python3 -m unittest discover -s tools/f02/linux/tests -p 'test_*.py' -v
+
+      - name: Test F02 true two-worker MySQL idempotency (synthetic only)
+        # Runs after Core tests so migrated MySQL schema is available. Hard-gated
+        # to APP_ENV=testing and an ephemeral database named v8core_test.
+        # Both subprocesses use distinct DB connections; no file receipts or backup success.
+        run: F02_SYNTHETIC_CONCURRENCY=1 php tools/f02/concurrency/run.php
