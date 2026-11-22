@@ -22,7 +22,6 @@ final class F02RedisCrashProbeJob implements ShouldQueue
     use InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 2;
-
     public int $timeout = 20;
 
     public function __construct(
