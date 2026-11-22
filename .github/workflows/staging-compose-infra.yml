@@ -1,0 +1,82 @@
+name: Staging Compose infrastructure (synthetic)
+
+on:
+  pull_request:
+    paths:
+      - 'compose.staging.yaml'
+      - 'docker/staging/**'
+      - '.github/workflows/staging-compose-infra.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  disposable-infra:
+    name: Isolated MariaDB and Redis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      STAGING_SECRETS_DIR: ${{ runner.temp }}/rconfig-staging-secrets
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Create disposable, synthetic-only secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$STAGING_SECRETS_DIR"
+          umask 077
+          openssl rand -hex 32 > "$STAGING_SECRETS_DIR/mariadb_root_password"
+          openssl rand -hex 32 > "$STAGING_SECRETS_DIR/mariadb_app_password"
+          redis_password="$(openssl rand -hex 32)"
+          {
+            printf 'bind 0.0.0.0\n'
+            printf 'protected-mode yes\n'
+            printf 'port 6379\n'
+            printf 'dir /data\n'
+            printf 'appendonly yes\n'
+            printf 'maxmemory-policy noeviction\n'
+            printf 'requirepass %s\n' "$redis_password"
+          } > "$STAGING_SECRETS_DIR/redis.conf"
+          chmod 600 "$STAGING_SECRETS_DIR/"*
+
+      - name: Validate Compose and isolation contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f compose.staging.yaml --profile infra config --quiet
+          docker compose -f compose.staging.yaml --profile infra config --format json |
+            python3 -c '
+          import json,sys
+          cfg=json.load(sys.stdin)
+          assert cfg["networks"]["staging_internal"]["internal"] is True
+          assert set(cfg["services"]) == {"db","redis"}
+          for service in cfg["services"].values():
+              assert not service.get("ports"), "Published host port in staging infra"
+              assert service.get("profiles") == ["infra"]
+              assert set(service["networks"]) == {"staging_internal"}
+          print("Staging infra isolation manifest: OK")
+          '
+
+      - name: Start disposable isolated infrastructure and verify health
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f compose.staging.yaml --profile infra up -d --wait --wait-timeout 180
+          docker compose -f compose.staging.yaml --profile infra ps
+          test "$(docker compose -f compose.staging.yaml --profile infra ps --status running --services | wc -l)" -eq 2
+
+      - name: Report redacted status on failure
+        if: failure()
+        shell: bash
+        run: |
+          docker compose -f compose.staging.yaml --profile infra ps || true
+
+      - name: Tear down CI-only disposable volumes
+        if: always()
+        shell: bash
+        run: |
+          docker compose -f compose.staging.yaml --profile infra down --volumes --remove-orphans || true
