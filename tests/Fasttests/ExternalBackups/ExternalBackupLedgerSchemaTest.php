@@ -6,6 +6,7 @@ use App\Models\ExternalBackupFileReceipt;
 use App\Models\ExternalBackupRule;
 use App\Models\Task;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
 
 beforeEach(function () {
@@ -31,7 +32,7 @@ function externalBackupLedgerRun(ExternalBackupRule $rule, string $scheduled = '
         'rule_id' => $rule->id,
         'device_id' => $rule->device_id,
         'scheduled_at_utc' => $scheduled,
-        'deadline_at_utc' => \Illuminate\Support\Carbon::parse($scheduled, 'UTC')->addHour()->format('Y-m-d H:i:s'),
+        'deadline_at_utc' => Carbon::parse($scheduled, 'UTC')->addHour()->format('Y-m-d H:i:s'),
     ]);
 }
 
@@ -54,7 +55,7 @@ test('a new rule is disabled by default and links to an existing task and device
 test('a run defaults to pending and has stable date casts', function () {
     $run = externalBackupLedgerRun($this->rule);
 
-    expect($run->status)->toBe('pending');
+    expect($run->fresh()->status)->toBe('pending');
     expect($run->rule->id)->toBe($this->rule->id);
     expect($run->device->id)->toBe($this->device->id);
     expect($run->scheduled_at_utc)->not->toBeNull();
