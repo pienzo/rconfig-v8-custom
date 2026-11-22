@@ -48,6 +48,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          sh -n docker/staging/redis-init.sh
           docker compose -f compose.staging.yaml --profile infra config --quiet
           docker compose -f compose.staging.yaml --profile infra config --format json |
             python3 -c '
