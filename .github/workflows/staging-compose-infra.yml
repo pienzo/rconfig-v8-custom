@@ -56,6 +56,8 @@ jobs:
           cfg=json.load(sys.stdin)
           assert cfg["networks"]["staging_internal"]["internal"] is True
           assert set(cfg["services"]) == {"db","redis"}
+          redis_secret_targets = {x.get("target") for x in cfg["services"]["redis"]["secrets"]}
+          assert "redis.conf" in redis_secret_targets or "/run/secrets/redis.conf" in redis_secret_targets, "Redis secret mount does not match runtime path"
           for service in cfg["services"].values():
               assert not service.get("ports"), "Published host port in staging infra"
               assert service.get("profiles") == ["infra"]
