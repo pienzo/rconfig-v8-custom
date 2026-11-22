@@ -12,7 +12,7 @@ Before using the profile, an authorized operator creates an **external** directo
 - `mariadb_app_password`: independent strong, random single-line MariaDB application password.
 - `redis.conf`: Redis configuration with `bind 0.0.0.0`, `protected-mode yes`, `port 6379`, `dir /data`, `appendonly yes`, `maxmemory-policy noeviction`, and `requirepass <synthetic random hexadecimal password>`. Do not use whitespace in the password for this first probe. All these values are **configuration instructions**, not actual secrets.
 
-Keep external files owner-accessible and appropriately restricted. MariaDB and Redis use Docker Compose's mounted file-backed secrets. This standalone configuration must be considered **synthetic only**; later Laravel roles need separately provisioned, matching application credentials and a stable `APP_KEY`.
+Keep external files owner-accessible and appropriately restricted. MariaDB uses Docker Compose's mounted file-backed secrets. Redis reads its secret file at startup, copies it into an isolated 0700 tmpfs directory with a 0400 redis-owned config file, then invokes the official image entrypoint to drop to the unprivileged Redis user. The original secret file remains outside Git. This avoids requiring the operator to make a Redis config file world-readable to accommodate Docker Compose's bind-mount secret mode. This standalone configuration must be considered **synthetic only**; later Laravel roles need separately provisioned, matching application credentials and a stable `APP_KEY`.
 
 ### Verification sequence
 
