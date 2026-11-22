@@ -13,7 +13,8 @@
 - GitHub connection: authenticated as `pienzo`, read/write repository capabilities verified. The connector supports branches, files, issues, and PRs; no native fork/repository-creation or repository-settings mutation tool was found.
 - GitHub Issues enabled. [Issue #1](https://github.com/pienzo/rconfig-v8-custom/issues/1) tracks bootstrap documentation and initial audit.
 - Working branch: `docs/bootstrap-upstream-audit`, branched from `custom`.
-- Branch rules / required checks: **not configured**; the official CI workflow exists at `.github/workflows/ci.yml`. The user enabled fork Actions on 2026-11-22. Immediately afterward GitHub returned **0 workflow runs and 0 PR check runs**. This documentation commit is intended to trigger a new `pull_request` CI run; its success/failure must be checked separately.
+- GitHub Actions was enabled on 2026-11-22. [CI run #45016582452](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45016582452) completed successfully: Pint, PHPStan, ESLint, Vitest and Unit + Fasttests (5/5 passing).
+- Active branch ruleset [`custom-pr-ci`](https://github.com/pienzo/rconfig-v8-custom/settings/rules/27838809) targets **only `refs/heads/custom`**. Pull requests are mandatory (0 approvals currently), branch deletion and non-fast-forward pushes are blocked; the five named GitHub Actions checks are required. Required status checks do not currently require the branch to be up to date (`strict_required_status_checks_policy=false`). `main` remains outside this ruleset.
 - No staging VM, OS connector, cloud resources, enterprise infrastructure, or production deployment has been configured.
 
 ## Phase 1 — preliminary source audit
@@ -26,13 +27,14 @@ See [UPSTREAM_AUDIT.md](UPSTREAM_AUDIT.md), pinned to the selected upstream comm
 
 ## Tests and changes
 - Completed: GitHub read-only checks for repository, release, tag, file paths and source; issue #1, feature branch and draft PR #2; two documentation files committed. GitHub Actions activation acknowledged by the user.
-- Pending: merge PR, fork CI results, test suite, lint, frontend build, runtime tests, staging/E2E, branch protections, license review.
+- Passed: fork CI workflow with five checks on PR #2 at commit `82dcbaea78110dc2e79bfa2f367e1b7353d2b69a` (documentation-only; checks will rerun on subsequent commits).
+- Pending: CI for the final documentation revision, PR #2 approval/merge, frontend production build verification, runtime tests, staging/E2E, license review. GitHub CI success is **not** equivalent to a staging test or release authorization.
 - No application source code has been changed. No integration with real devices or customer data.
 
 ## Next gates
-1. Review [draft PR #2](https://github.com/pienzo/rconfig-v8-custom/pull/2) and confirm workflow check runs are emitted after the documentation update.
-2. Review diff, CI checks and licensing uncertainty; merge only with explicit approval.
-3. Configure appropriate branch protection/rulesets with repository owner, after identifying the actual CI check names. Keep `main` tracking upstream only.
+1. Review [draft PR #2](https://github.com/pienzo/rconfig-v8-custom/pull/2), await the **new** CI checks after this document update, and mark ready for review when appropriate.
+2. Merge into `custom` **only after review and explicit approval**; close issue #1 and verify that `main` stays unchanged.
+3. Branch ruleset `custom-pr-ci` is active. Review whether the repository owner should add additional reviewers, CODEOWNERS, or tighter sync policies as contributors join; keep `main` tracking upstream only.
 4. Complete remaining Phase 1 source review, including permission checks and functional test plan; open a separate design issue for F02.
 5. Discuss staging platform and authorization **only before provisioning**. Never assume enterprise network details or deploy automatically.
 
