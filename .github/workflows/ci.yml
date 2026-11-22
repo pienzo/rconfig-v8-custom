@@ -241,3 +241,9 @@ jobs:
         # to APP_ENV=testing and an ephemeral database named v8core_test.
         # Both subprocesses use distinct DB connections; no file receipts or backup success.
         run: F02_SYNTHETIC_CONCURRENCY=1 php tools/f02/concurrency/run.php
+
+      - name: Test F02 worker crash rollback and postcommit retry (synthetic only)
+        # Only isolated PHP subprocesses on hosted Linux are SIGKILLed.
+        # Requires APP_ENV=testing, v8core_test, and F02_SYNTHETIC_CONCURRENCY.
+        # No real scheduler, backup contents or production connections.
+        run: F02_SYNTHETIC_CONCURRENCY=1 php tools/f02/concurrency/crash_recovery.php
