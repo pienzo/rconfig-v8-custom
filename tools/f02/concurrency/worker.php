@@ -67,7 +67,8 @@ try {
         'expire' => (new ExternalBackupRunStateService)->expire($id, $instant, 'missing'),
     };
 
-    echo json_encode(['id' => $run->id, 'status' => $run->status, 'rule_id' => $run->rule_id], JSON_THROW_ON_ERROR) . "\n";
+    $saved = $run->fresh(); // Include SQL defaults even on the first INSERT.
+    echo json_encode(['id' => $saved->id, 'status' => $saved->status, 'rule_id' => $saved->rule_id], JSON_THROW_ON_ERROR) . "\n";
 } catch (Throwable $exception) {
     // Do not echo credentials, paths or exception trace into CI.
     fwrite(STDERR, 'F02 worker failed: ' . get_class($exception) . "\n");
