@@ -1,0 +1,55 @@
+# ADR-0002 — Safe opening of externally uploaded backup files
+
+**Status:** Proposed, security review required.  
+**Work item:** [F02 issue #5](https://github.com/pienzo/rconfig-v8-custom/issues/5).  
+**Source baseline:** rConfig V8 Core `core-8.3.0`, custom branch after [PR #11](https://github.com/pienzo/rconfig-v8-custom/pull/11).  
+**Implementation:** Not started. **This ADR must not be interpreted as approval to accept uploaded files.**
+
+## Context
+
+The merged [`ExternalBackupDirectoryScanner`](../../app/Services/ExternalBackups/ExternalBackupDirectoryScanner.php) enumerates direct-child filenames under an administrator-provided intake root and returns `lstat()` metadata. The merged [`ExternalBackupObservationPolicy`](../../app/Services/ExternalBackups/ExternalBackupObservationPolicy.php) compares two observations and returns `candidate_requires_safe_open`, never backup SUCCESS.
+
+This does **not** bind those observations to a securely opened file descriptor. Between `lstat()`, `realpath()` and a later `fopen()`, a writer with sufficient directory privileges could replace an entry. Checking a name before opening it is a classic time-of-check/time-of-use (TOCTOU) problem. A quiet timestamp is not proof of a completed upload or of the device that produced it.
+
+The built-in [PHP `fopen()` API](https://www.php.net/manual/en/function.fopen.php) exposes stream opening modes but does not document a parameter equivalent to Linux pathname-resolution restrictions. Do not assume that `fopen()` plus an earlier `lstat()` guarantees race-free no-follow access.
+
+## Nonnegotiable requirements
+
+1. The inbox root is configured by the server operator, never supplied as an arbitrary UI/API path. A device subdirectory is derived only from its stable numeric database ID, never from a hostname, URL or backup-supplied name.
+2. The scanner and file opener are **read-only**, have no general write/delete/rename privileges, and do not recursively follow directory trees. The transport daemon/sidecar is isolated from the Laravel worker identity and receives only minimum rights needed for the intended upload flow.
+3. The **opened descriptor**, rather than a name observed earlier, is the authority for checking regular-file type, device/inode, size, timestamps and content. Re-stat the descriptor after bounded reading; reject changes, mismatches, links and other uncertainties. Reading the entire file does not prove the vendor payload is restorable.
+4. Paths may contain no traversal, special-file, symlink or mount escape. Fail closed if secure kernel-level resolution is not available or cannot be verified in the deployed OS. No fallback to unguarded `fopen()` for hostile-writable directories.
+5. Bound filename, file size, file count, descriptor lifetime, read duration and hashing work; refuse FIFO/socket/device files. Ensure the writer cannot trick the reader into opening a blocking special file.
+6. A transfer must be stable across a quiet interval and **again** at the open/descriptor boundary. Coordinate with the uploader where possible using a temporary filename and an atomic final rename, but never treat that convention alone as sufficient for security.
+7. A final receipt must be claimed with a transactionally unique token derived from a reviewed secure-file identity contract. Reuse, hard-link aliasing and inode recycling need explicit safeguards; inode/mtime/ctime alone do not prove unique arrival.
+8. Error results are distinguishable: missing, stale, in-progress, unreadable, malicious/unsafe, duplicate and infrastructure failure. None may be silently converted to `SUCCESS`.
+
+## Preferred Linux adapter — design candidate only
+
+Investigate a **small, least-privilege file-opening boundary** based on Linux `openat2(2)` (or an equivalent OS-specific secure descriptor-based API). The official [Linux manual](https://linuxman7.org/linux/man-pages/man2/openat2.2.html) documents `RESOLVE_BENEATH`, `RESOLVE_NO_SYMLINKS` and `RESOLVE_NO_MAGICLINKS`; `O_NOFOLLOW` alone only controls the final path component. The implementation should anchor resolution to an already securely opened inbox directory descriptor, reject unsafe traversal, and pass only a **bounded, read-only verified descriptor or digest** to the application.
+
+**Not decided:** implementation language, packaging, whether a native PHP extension, a restricted helper or a different fully auditable mechanism best fits the production OS. Avoid enabling PHP FFI or spawning shell scripts purely to bypass this review. A helper would require versioned source, tests, a documented minimal privilege boundary, resource limits and a reproducible installation method; do not introduce a separate privileged always-on service as a default.
+
+A filesystem with different semantics (e.g., network mount, FUSE or non-POSIX storage) may require a different strategy and **must not silently inherit Linux assumptions**. Limit the first supported staging profile to a documented, supported local Linux filesystem unless validation proves more.
+
+## Alternatives
+
+**A. Descriptor-based secure opener (preferred for trusted Linux staging):** verify kernel/API compatibility, open under constrained dirfd, then validate descriptor identity and bounded read/hash. Stronger protection against pathname substitution, but requires an audited adapter and platform gate.
+
+**B. Pure PHP `lstat()` / `realpath()` / `fopen()` / `fstat()` with transport-permission hardening:** may detect common races but is **insufficient by itself** where an untrusted uploader controls directory entries. Do not approve for the initial security boundary without a demonstrated threat-model exception and formal review.
+
+**C. Trusted uploader ingests to an isolated private quarantine and hands rConfig immutable receipts:** potentially appropriate when operational infrastructure already provides a verifiable trust boundary; must be explicitly documented and tested. No such service is assumed to exist.
+
+## Test and approval gates
+
+- Synthetic adversarial uploads: files swapped between metadata check and opening, between opening and reading, and during hashing; symlinks (including races), special files, hard links, nested dirs and mount boundaries.
+- Ordinary uploads: empty, oversized, stale, wrong name, partial/slow SFTP/FTPS transfers, atomic rename flow, same payload delivered twice at separate instants, file reused under another name and two different devices.
+- True two-worker concurrency with database rule/occurrence locks and verified-receipt uniqueness. Simulate crash/retry between secure open, checksum, DB claim and notification scheduling.
+- Verify permission matrix for uploader, Laravel worker and optional adapter. Never expose worker privileges to uploaders or CI jobs from untrusted forks.
+- Record exact OS/kernel/PHP/filesystem, adapter SHA, run results and rollback in staging. A GitHub-hosted CI run alone is **not** F02 end-to-end acceptance.
+
+**Current decision:** keep F02 operationally disabled. Continue independent GitHub-based development, but **do not implement or merge a backup-success path** until this ADR is reviewed against the authorized staging OS and an audited opener design has passed tests.
+
+## Rollback and confidentiality
+
+This ADR changes documentation only; reverting it is a normal reviewed Git PR. No VM, server, credentials, real backups or filesystem mounts are created or modified here. All fixtures must be anonymous, synthetic and safe to publish.
