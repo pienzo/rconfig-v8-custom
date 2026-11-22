@@ -3,7 +3,7 @@
 **Status:** Proposed, security review required.  
 **Work item:** [F02 issue #5](https://github.com/pienzo/rconfig-v8-custom/issues/5).  
 **Source baseline:** rConfig V8 Core `core-8.3.0`, custom branch after [PR #11](https://github.com/pienzo/rconfig-v8-custom/pull/11).  
-**Implementation:** Not started. **This ADR must not be interpreted as approval to accept uploaded files.**
+**Implementation:** Partial descriptor-inspection library only; secure pathname opener is **not implemented**. **This ADR must not be interpreted as approval to accept uploaded files.**
 
 ## Context
 
@@ -39,6 +39,19 @@ A filesystem with different semantics (e.g., network mount, FUSE or non-POSIX st
 **B. Pure PHP `lstat()` / `realpath()` / `fopen()` / `fstat()` with transport-permission hardening:** may detect common races but is **insufficient by itself** where an untrusted uploader controls directory entries. Do not approve for the initial security boundary without a demonstrated threat-model exception and formal review.
 
 **C. Trusted uploader ingests to an isolated private quarantine and hands rConfig immutable receipts:** potentially appropriate when operational infrastructure already provides a verifiable trust boundary; must be explicitly documented and tested. No such service is assumed to exist.
+
+## First isolated implementation slice — already-opened descriptor inspection
+
+[`ExternalBackupOpenedHandleInspector`](../../app/Services/ExternalBackups/ExternalBackupOpenedHandleInspector.php) accepts a **preopened read-only, seekable regular-file stream** and a metadata observation obtained from the scanner. It deliberately **does not receive or open a pathname**. The code:
+
+- Requires an STDIO stream in read-only mode; validates basename and numeric expected metadata from the prior scanner step.
+- Uses `fstat()` to check regular-file type, single hardlink, file size bounds and device/inode/size/mtime/ctime identity against the expected observation **before and after** a bounded read.
+- Reads in 64 KiB chunks, calculates SHA-256 without retaining contents, checks expected end-of-file and applies a best-effort elapsed-time limit. A blocking filesystem read cannot be interrupted reliably by this PHP time check.
+- Returns only `descriptor_observed_only` evidence, **not** a verified receipt token, a `SUCCESS` flag, or a trustworthy proof of origin. The hash is sensitive-derived metadata and must not be exposed in API or logs.
+
+**Non-goals and unresolved risks:** A PHP stream's `mode`, `stream_type`, and `fstat()` fields **do not certify the secure origin of the descriptor**. A descriptor opened by ordinary `fopen()` on an attacker-controlled path can already have followed a symlink; only the not-yet-implemented trusted opener/OS boundary can prevent that. A file can also be overwritten between observations or during reading while restoring size and coarse-grained timestamps, so this inspection cannot prove an immutable snapshot or a completed transfer. Timing is best effort, not a hard I/O deadline. The service is currently unused by Tasks, jobs and HTTP endpoints.
+
+The included synthetic unit tests confirm ordinary reads, hashing, changing metadata, path replacement (when a replacement descriptor is passed), zero size, hardlinks, invalid handles and unsafe stream modes. **None of those tests substitutes for adversarial staging validation of the opener.** Before deriving a persistent verified-file receipt token or marking a backup successful, implement the audited Linux secure-opening boundary and review ingestion provenance, race resistance and concurrent receipt claims.
 
 ## Test and approval gates
 
