@@ -230,3 +230,8 @@ jobs:
 
       - name: Run Unit + Fasttests
         run: php artisan test --compact tests/Unit tests/Fasttests --exclude-group=device-hardware --exclude-group=external-network --exclude-group=local-daemon
+
+      - name: Test F02 Linux openat2 prototype (synthetic only)
+        # Untrusted PRs get no secrets or elevated privileges; run only on throwaway runner directories.
+        # This is NOT evidence of F02 production admission or an OS-integrated opener.
+        run: python3 -m unittest discover -s tools/f02/linux/tests -p 'test_*.py' -v
