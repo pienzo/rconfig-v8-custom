@@ -3,6 +3,7 @@
 use App\Services\Staging\SealDefaultAdminService;
 use App\Services\Staging\StagingBootstrapStateService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 
 beforeEach(function () {
     // Fasttests are isolated in transactions; never alter the VM schema.
@@ -53,7 +54,7 @@ test('sealed state requires new admin hash and completely neutralized SMTP', fun
         'admin name' => $admin !== null && $admin->name === 'Staging administrator',
         'admin email' => $admin !== null && $admin->email === 'staging-admin@example.invalid',
         'admin role' => $admin !== null && strcasecmp((string) $admin->role, 'Admin') === 0,
-        'admin credential' => $admin !== null && \Illuminate\Support\Facades\Hash::check($password, (string) $admin->password),
+        'admin credential' => $admin !== null && Hash::check($password, (string) $admin->password),
         'mail host' => $settings !== null && $settings->mail_host === '127.0.0.1',
         'mail port' => $settings !== null && (int) $settings->mail_port === 1025,
         'mail driver' => $settings !== null && $settings->mail_driver === 'log',
