@@ -53,7 +53,7 @@ final class ExternalBackupDirectoryScanner
         $directory = $root . DIRECTORY_SEPARATOR . $deviceId;
         $directoryBefore = $this->snapshot($directory);
         if ($directoryBefore === null) {
-            if ($this->snapshot($root) !== $rootBefore) {
+            if (! ExternalBackupDirectoryIdentity::same($rootBefore, $this->snapshot($root) ?? [])) {
                 throw new RuntimeException('External backup intake root changed during validation.');
             }
 
@@ -117,7 +117,7 @@ final class ExternalBackupDirectoryScanner
 
         // Detect in-scan replacement of either directory. Not an atomic openat()
         // guarantee: a later safe-open adapter must still validate file handles.
-        if ($this->snapshot($root) !== $rootBefore || $this->snapshot($directory) !== $directoryBefore) {
+        if (! ExternalBackupDirectoryIdentity::same($rootBefore, $this->snapshot($root) ?? []) || ! ExternalBackupDirectoryIdentity::same($directoryBefore, $this->snapshot($directory) ?? [])) {
             throw new RuntimeException('External backup directory changed during enumeration.');
         }
 

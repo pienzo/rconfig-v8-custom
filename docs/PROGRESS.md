@@ -14,6 +14,11 @@
 - Synthetic integration tests exercise stable file SUCCESS with one receipt, idempotent retry, gate-disabled candidate-only behavior, and rejected native evidence. No API enables rules, no worker or scheduler runtime flag changed, and no file-upload trust/provenance is claimed. Requires CI, staging finalization contract and explicit acceptance before enabling.
 - F02 scanner directory atime regression fix is tracked separately in PR #109; F01 Core diff bugfix in PR #98.
 
+## 2026-11-23 — F02 atime regression fix candidate (issue #108 / PR #109)
+
+- During F01 PR #98 CI, F02 queued runner expected an `unstable` observation but recorded `access`, consistent with the directory scanner refusing an incidental directory `atime` update during enumeration. Added identity comparison based on stable `dev/ino/mode/nlink/uid/gid/size/mtime/ctime`, ignoring atime and duplicate numeric lstat fields. Unit tests verify atime-only updates are allowed while identity/owner/ctime changes still fail.
+- No change to symlink, file descriptor or receipt acceptance; F02 runtime still OFF by default. Pending full CI and review; no VM operations.
+
 
 ## 2026-11-23 — F02 guarded receipt and SUCCESS transaction candidate (#105)
 
