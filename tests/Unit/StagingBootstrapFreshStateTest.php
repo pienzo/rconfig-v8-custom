@@ -26,7 +26,7 @@ test('a nonempty synthetic schema is refused before Redis is inspected', functio
         ->once()
         ->andReturn((object) ['table_count' => 1]);
 
-    Redis::shouldNotReceive('connection');
+    Redis::shouldReceive('connection')->never();
 
     expect((new StagingBootstrapStateService)->isFresh())->toBeFalse();
 });
@@ -40,7 +40,7 @@ test('a nonempty Redis database is refused even when the SQL schema is empty', f
     $default->shouldReceive('dbsize')->once()->andReturn(1);
 
     Redis::shouldReceive('connection')->once()->with('default')->andReturn($default);
-    Redis::shouldNotReceive('connection')->with('cache');
+    Redis::shouldReceive('connection')->with('cache')->never();
 
     expect((new StagingBootstrapStateService)->isFresh())->toBeFalse();
 });
