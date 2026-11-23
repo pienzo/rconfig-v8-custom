@@ -8,6 +8,12 @@
 **Current gate:** F02 native verifier #88, F02 history #86, Telegram transport #92, F04 editor #90 merged to `custom`. F02 queued runner PR #94 remains unmerged and OFF by default; no verified receipt or SUCCESS, no completed release image or VM deployment. `main` kept upstream-clean.
 
 
+## 2026-11-23 — F01 existing Core diff bugfix candidate (#97 / PR #98)
+
+- Verified Core already has a Monaco side-by-side compare between any two stored config versions; no diff duplication required.
+- This PR removes a randomized loader timer, waits for both selected configurations and their file contents to finish loading, reports errors for missing input and fixes exporting compared source texts (was invoking undefined `model.fileName` on a diff editor). Models and editor are disposed at unmount.
+- Vitest covers delayed right file, fetch failure and invalid config IDs. PR and CI ongoing, no production/VM changes.
+
 ## 2026-11-23 — F02 atime regression fix candidate (issue #108 / PR #109)
 
 - During F01 PR #98 CI, F02 queued runner expected an `unstable` observation but recorded `access`, consistent with the directory scanner refusing an incidental directory `atime` update during enumeration. Added identity comparison based on stable `dev/ino/mode/nlink/uid/gid/size/mtime/ctime`, ignoring atime and duplicate numeric lstat fields. Unit tests verify atime-only updates are allowed while identity/owner/ctime changes still fail.
