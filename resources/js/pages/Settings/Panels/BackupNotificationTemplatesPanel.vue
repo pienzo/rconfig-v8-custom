@@ -70,6 +70,26 @@ async function showPreview() {
     }
 }
 
+async function sendEmailTest() {
+    if (current.value?.channel !== "email"
+        || !window.confirm("Inviare il test email (solo dati sintetici) al proprio indirizzo amministratore?")) return;
+    busy.value = true;
+    error.value = "";
+    message.value = "";
+    try {
+        const response = await axios.post("/api/settings/notification-templates/email/test", {
+            event_type: current.value.event_type,
+        });
+        if (response.data.submitted_to_mailer === true) {
+            message.value = "Test consegnato al mailer configurato. La consegna nella casella non è verificata.";
+        }
+    } catch (e) {
+        error.value = e.response?.data?.message || "Test email non riuscito.";
+    } finally {
+        busy.value = false;
+    }
+}
+
 async function sendTelegramTest() {
     if (current.value?.channel !== "telegram"
         || !window.confirm("Inviare un messaggio Telegram di prova al destinatario configurato sul server?")) return;
@@ -133,6 +153,7 @@ onMounted(load);
         <div class="flex flex-wrap gap-2">
             <button type="button" :disabled="busy || !current" class="rounded bg-blue-600 px-3 py-2 text-white disabled:opacity-50" @click="save">Salva</button>
             <button type="button" :disabled="busy || !current" class="rounded border px-3 py-2 disabled:opacity-50" @click="showPreview">Anteprima</button>
+            <button v-if="current?.channel === 'email'" type="button" :disabled="busy" class="rounded border px-3 py-2 disabled:opacity-50" @click="sendEmailTest">Invia test email</button>
             <button v-if="current?.channel === 'telegram'" type="button" :disabled="busy" class="rounded border px-3 py-2 disabled:opacity-50" @click="sendTelegramTest">Invia test Telegram</button>
             <button type="button" :disabled="busy || !current" class="rounded border px-3 py-2 disabled:opacity-50" @click="restoreDefaults">Ripristina</button>
         </div>

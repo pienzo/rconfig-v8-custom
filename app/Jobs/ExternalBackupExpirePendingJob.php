@@ -37,7 +37,9 @@ final class ExternalBackupExpirePendingJob implements ShouldQueue
             ->get()
             ->each(static function (ExternalBackupCheckRun $run) use ($states, $now): void {
                 try {
-                    $states->expire($run->id, $now, 'deadline_elapsed', $run->matched_filename);
+                    // Preserve the diagnostic reason from the latest observation.
+                    // Only an unobserved occurrence has a generic deadline error.
+                    $states->expire($run->id, $now, $run->reason ?? 'deadline_elapsed', $run->matched_filename);
                 } catch (DomainException) {
                     // A concurrent worker already finalized or rejected the run.
                 }
