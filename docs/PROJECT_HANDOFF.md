@@ -4,6 +4,14 @@
 **Purpose:** durable handoff between ChatGPT conversations. **Operational checkpoint:** [PROGRESS.md](PROGRESS.md). **Source audit:** [UPSTREAM_AUDIT.md](UPSTREAM_AUDIT.md). **Original requirements:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 in the ChatGPT project (not committed).
 **Evidence rule:** GitHub commits, PRs, issue records, and CI are authoritative for repository changes; only approved staging results can establish deployment or end-to-end behavior. Never infer completed work merely from a plan.
 
+## 2026-11-23 update — STEP 53 protected admin secret, PR #45 merged (dormant)
+
+Operator personal staging VM completed STEP 50–53: clean `custom` fast-forward to `ac53b212...`; admin secret preflight `--check` passed; explicit one-shot `--create` succeeded with **no secret output**; independent metadata check confirmed protected external file UID:GID `0:33`, mode `0640`, 65-byte 64-hex+newline content. The default Core account in MariaDB remains **unchanged**; no migrations, install, marker, role start or F02 activation. [Issue #40](https://github.com/pienzo/rconfig-v8-custom/issues/40) has operator evidence.
+
+[PR #45](https://github.com/pienzo/rconfig-v8-custom/pull/45) merged into `custom` at `a3e1dc59528b1fa4a2c5c544d806a6a794c8de2e` (**9/9 checks green**). Adds an inactive `staging:seal-default-admin --check|--apply` command and service, allowing a **future bootstrap-only container** to validate the exact seeded Core admin and SMTP defaults, transactionally rotate password/identity from the protected file, neutralize SMTP defaults and verify updates before any HTTP listener. It requires explicit synthetic-only Docker gate, exact staging endpoints, cached F02 off and single-file read-only secret mount. Seven DB tests passed in `tests/Fasttests`; GitHub CI also passed Pint/PHPStan/storage tests.
+
+**Next work** is a separately reviewed, explicit, fail-loud first-install schema/storage bootstrap and immutable source-built image + persistent state and marker. No app/Horizon/scheduler roles, no Core integrated `v8core:install`, no corporate/real devices. The operator VM local checkout still last reported `ac53b212...`; the newer PR #45 has **not** been applied to the VM. Optional OS connector issue #43 is closed as requested; continue manual VM commands one at a time.
+
 ## 2026-11-23 update — STEP 49 pass, PR #41/#42 merged, remote shell deferred
 
 Personal staging VM operator completed STEP 41–49: clean local `custom` fast-forward to `7bed4c101dc8c3b805767e6f526f8d1d71d1d1d6`, external root:0700 config directory, one-shot stable synthetic Laravel `.env` creation and independent root:gid33 0640 checks, MariaDB `rconfig_staging` zero tables, authenticated Redis DB0/DB1 zero keys, and successful **read-only** `bootstrap-preflight.sh --check`. Results are point-in-time snapshots. See [PROGRESS.md](PROGRESS.md) and [issue #40](https://github.com/pienzo/rconfig-v8-custom/issues/40).
