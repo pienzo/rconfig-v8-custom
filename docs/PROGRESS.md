@@ -7,6 +7,11 @@
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
 **Current gate:** F02 native verifier #88, F02 history #86, Telegram transport #92, F04 editor #90 merged to `custom`. F02 queued runner PR #94 remains unmerged and OFF by default; no verified receipt or SUCCESS, no completed release image or VM deployment. `main` kept upstream-clean.
 
+## 2026-11-23 — F02 terminal reason preservation candidate (#103)
+
+- F02 deadline sweeper and follow-up job now retain the latest validated observation reason (`missing`, `stale`, `unstable`, `access`, etc.) in the terminal FAILED check run, instead of losing it as `deadline_elapsed`. Only never-observed runs use the generic deadline reason.
+- Removed transient CI diagnostic from queued-runner test; added synthetic tests for missing-file, stale follow-up and unobserved deadline. No SUCCESS claims, no new queues, no DB migrations, no runtime activation or VM work. Pending CI/review.
+
 ## 2026-11-23 — F03 WhatsApp approved-template Cloud API transport candidate (#101)
 
 - Isolated, disabled-by-default adapter for Meta WhatsApp Cloud API `POST /{phone_number_id}/messages`, with server-configured approved backup.success/backup.failed templates, language and one recipient. No HTTP controller/queue/notification event invokes it yet; all endpoints and token/recipient settings are private and fixed server-side.

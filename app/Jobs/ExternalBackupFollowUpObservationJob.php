@@ -59,7 +59,7 @@ final class ExternalBackupFollowUpObservationJob implements ShouldQueue
         }
 
         if ($now->greaterThanOrEqualTo($deadline)) {
-            $runStates->expire($run->id, $now, 'deadline_elapsed', $run->matched_filename);
+            $runStates->expire($run->id, $now, $run->reason ?? 'deadline_elapsed', $run->matched_filename);
 
             return;
         }
