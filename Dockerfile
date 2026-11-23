@@ -127,6 +127,9 @@ RUN mkdir -p /usr/local/share/rconfig \
 # This script is inert until a separate Compose role explicitly selects it.
 COPY --chown=root:root --chmod=0755 docker/staging/role-entrypoint.sh /usr/local/bin/staging-role-entrypoint.sh
 
+# Inert, non-root staging bootstrap preflight; default Core ENTRYPOINT and CMD remain unchanged.
+COPY --chown=root:root --chmod=0755 docker/staging/bootstrap-container-entrypoint.sh /usr/local/bin/staging-bootstrap-container-entrypoint.sh
+
 ENV IS_DOCKER=true
 
 ARG SOURCE_REVISION=unknown
