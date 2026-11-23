@@ -2,11 +2,17 @@
 
 **Cross-chat handoff and full roadmap:** [PROJECT_HANDOFF.md](PROJECT_HANDOFF.md) (verified history, all phases, blockers, next steps). See [issue #23](https://github.com/pienzo/rconfig-v8-custom/issues/23) for documentation tracking.
 
-**Checkpoint:** 2026-11-23  
+**Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** F02 gated verified SUCCESS worker PR #110 MERGED (CI 5/5, `a1ae3fbbc793c74159e31e6a9a23905eae51f83a`). Real native Linux SHA-256 → Laravel worker → MySQL receipt integration PR #112 MERGED (CI 5/5, `42c4b0af0e532ed3c3fd691ef95401e2951ca0b9`), issue #111 CLOSED. F01 diff PR #98 and F02 scanner fix PR #109 merged. **All F02 runtime, queue and receipt flags remain OFF by default.** Remaining release gates: verified upload-finalization handoff, controlled rule activation, idempotent actual-result email/Telegram notifications (#113), full source-built Docker E2E and authorized staging review. `main` remains upstream-clean, no VM/production deployment.
+**Current gate:** F02 verified SUCCESS worker #110 and real native integration #112 merged, flags OFF by default; F01 #98 and F02 #109 merged. F03 durable F02 notification intents #115 and single-attempt claim #116 merged with 9/9 checks each (`00ff7cf6`, `d09cebb9`). Explicit Telegram dispatch candidate under issue #113 is being reviewed; automatic scheduling, native Core outcomes, secure SMTP, recipient approval and F02 finalized upload/activation plus Docker/staging/release gates remain open. `main` and VM unchanged.
 
+
+## 2026-11-24 — F03 notification ledger and single-attempt checkpoint (#113)
+
+- PR #115 and #116 merged after 9/9 GitHub checks each. Delivery intents are unique per event/channel/logical destination; pending rows are claimed before provider calls. Ambiguous outcomes are not automatically retried.
+- Explicit Telegram candidate uses persisted F02 terminal metadata and F04 templates, a numeric configured chat and an opaque HMAC destination key. No scheduler/backfill yet; recipient or APP_KEY changes require controlled review before replaying old runs. The global automatic delivery flag remains OFF. No IP, digest, raw exception or configuration contents are intentionally passed to templates.
+- Core SMTP settings disable certificate verification and have no explicit timeout; do not use them for new automatic delivery without a reviewed secure transport. CI for the new candidate is pending. No VM or production changes.
 
 ## 2026-11-23 — F02 real-native worker integration CI ACCEPTED (issue #111 / PR #112)
 
