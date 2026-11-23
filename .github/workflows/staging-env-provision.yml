@@ -1,0 +1,35 @@
+name: Staging synthetic environment provisioning
+
+on:
+  pull_request:
+    paths:
+      - 'docker/staging/provision-env.sh'
+      - 'docker/staging/role-entrypoint.sh'
+      - 'tests/staging/test-provision-env.sh'
+      - 'docker/staging/README.md'
+      - '.github/workflows/staging-env-provision.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-env:
+    name: Synthetic stable app env provisioning
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Validate scripts and provision disposable synthetic-only config
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n docker/staging/provision-env.sh
+          sh -n tests/staging/test-provision-env.sh
+          # /etc is intentionally required by the provisioner. This test
+          # runs with sudo ONLY on a disposable GitHub-hosted runner,
+          # generates throwaway credentials, and deletes its own unique
+          # /etc/rconfig-v8-staging-ci-* directory in a trap.
+          sudo sh tests/staging/test-provision-env.sh
