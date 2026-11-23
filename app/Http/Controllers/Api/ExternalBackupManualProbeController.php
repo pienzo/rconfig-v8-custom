@@ -126,15 +126,14 @@ final class ExternalBackupManualProbeController extends Controller
         );
     }
 
-    /** @param array<string, mixed> $scan
-     *  @return array<string, mixed>
+    /**
+     * @param  array<string, mixed>  $scan
+     * @return array<string, mixed>
      */
     private function compactSnapshot(array $scan): array
     {
         $files = $scan['files'];
-        usort($files, static fn (array $a, array $b): int =>
-            ($b['mtime'] <=> $a['mtime']) ?: strcmp($a['filename'], $b['filename'])
-        );
+        usort($files, static fn (array $a, array $b): int => ($b['mtime'] <=> $a['mtime']) ?: strcmp($a['filename'], $b['filename']));
 
         return [
             'directory_present' => $scan['directory_present'],
