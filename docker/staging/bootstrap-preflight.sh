@@ -41,7 +41,7 @@ require_exact() {
     grep -Fxq -- "$setting" "$app_env" || fail "unexpected $setting_name"
 }
 for setting in \
-    'APP_ENV=production' 'APP_DEBUG=false' \
+    'APP_ENV=production' 'APP_DEBUG=false' 'MAIL_MAILER=log' \
     'DB_CONNECTION=mysql' 'DB_HOST=db' 'DB_PORT=3306' \
     'DB_DATABASE=rconfig_staging' 'DB_USERNAME=rconfig_staging' \
     'REDIS_HOST=redis' 'REDIS_PORT=6379' 'REDIS_DB=0' 'REDIS_CACHE_DB=1' \

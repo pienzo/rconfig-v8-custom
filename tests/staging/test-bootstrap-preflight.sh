@@ -55,6 +55,22 @@ for index in 0 1; do
     sh docker/staging/bootstrap-preflight.sh --check
 done
 
+# Reject default outbound SMTP, missing and duplicate mailer setting.
+cp "$root/config/.env" "$root/mail-safe-original"
+sed -i 's/^MAIL_MAILER=log$/MAIL_MAILER=smtp/' "$root/config/.env"
+reject
+cp "$root/mail-safe-original" "$root/config/.env"
+chmod 0640 "$root/config/.env"
+sed -i '/^MAIL_MAILER=log$/d' "$root/config/.env"
+reject
+cp "$root/mail-safe-original" "$root/config/.env"
+chmod 0640 "$root/config/.env"
+printf '%s\n' 'MAIL_MAILER=log' >> "$root/config/.env"
+reject
+cp "$root/mail-safe-original" "$root/config/.env"
+chmod 0640 "$root/config/.env"
+sh docker/staging/bootstrap-preflight.sh --check
+
 # Reject config permission widening or F02 enablement.
 chmod 0644 "$root/config/.env"
 reject
