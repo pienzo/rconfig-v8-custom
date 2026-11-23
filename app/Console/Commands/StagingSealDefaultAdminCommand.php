@@ -97,7 +97,7 @@ final class StagingSealDefaultAdminCommand extends Command
 
     private function refuse(string $reason): int
     {
-        $this->error('staging seeded-admin seal refused: '.$reason);
+        $this->error('staging seeded-admin seal refused: ' . $reason);
 
         return self::FAILURE;
     }
