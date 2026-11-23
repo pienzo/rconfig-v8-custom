@@ -78,7 +78,9 @@ def copytree_exact(original, target):
 
 
 def key_from_env(path):
-    text = path.read_text(encoding="ascii")
+    # Core's .env.example (copied into .env.testing) can contain UTF-8
+    # comments; only the matched APP_KEY line must be strict ASCII/base64.
+    text = path.read_text(encoding="utf-8")
     values = [line.split("=", 1)[1] for line in text.splitlines()
               if line.startswith("APP_KEY=")]
     ensure(len(values) == 1
