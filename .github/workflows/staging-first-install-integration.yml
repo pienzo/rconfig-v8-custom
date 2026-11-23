@@ -1,0 +1,102 @@
+name: Synthetic Core first-install integration (disposable)
+
+on:
+  pull_request:
+    paths:
+      - 'tests/staging/integration/first-install.php'
+      - '.github/workflows/staging-first-install-integration.yml'
+      - 'app/Services/Staging/**'
+      - 'database/migrations/**'
+  workflow_dispatch:
+
+# Tests mutate ONLY GitHub-hosted short-lived service databases and /tmp.
+# No repository write permissions, secrets, deployments or VM credentials.
+permissions:
+  contents: read
+
+jobs:
+  first-install:
+    name: Real Core migrate and seal (${{ matrix.scenario }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [interrupted, success]
+
+    env:
+      STAGING_FIRST_INSTALL_CI: disposable-v1
+      APP_DIR_PATH: ${{ github.workspace }}
+      APP_ENV: testing
+      APP_DEBUG: 'false'
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_DATABASE: rconfig_ci_bootstrap_${{ matrix.scenario }}
+      DB_USERNAME: root
+      DB_PASSWORD: ''
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: '6379'
+      REDIS_DB: '0'
+      REDIS_CACHE_DB: '1'
+      QUEUE_CONNECTION: sync
+      CACHE_DRIVER: array
+      SESSION_DRIVER: array
+      MAIL_MAILER: log
+      RCONFIG_F02_QUEUE_ENABLED: 'false'
+
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'true'
+          MYSQL_DATABASE: rconfig_ci_bootstrap_${{ matrix.scenario }}
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=6
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=6
+
+    steps:
+      - name: Checkout the PR source (not the personal staging VM)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: PHP 8.4 and Core extensions
+        uses: shivammathur/setup-php@7c071dfe9dc99bdf297fa79cb49ea005b9fcadbc
+        with:
+          php-version: '8.4'
+          extensions: ftp, gd, ldap, sockets, pdo_mysql
+          coverage: none
+
+      - name: Create disposable Laravel test config, never output secrets
+        run: |
+          cp .env.example .env.testing
+          touch database/database.sqlite
+
+      - name: Install locked Core dependencies
+        uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda
+
+      - name: Generate ephemeral test-only Laravel key
+        run: php artisan key:generate --force --no-interaction
+
+      - name: Assert migration runner syntax
+        run: php -l tests/staging/integration/first-install.php
+
+      - name: Run actual Core first-install, injection and no-retry assertions
+        run: php tests/staging/integration/first-install.php "${{ matrix.scenario }}"
+
+      - name: Record only test outcome (no credentials or DB dumps)
+        if: always()
+        run: echo "Disposable ${{ matrix.scenario }} probe finished; hosted service containers expire with runner."
