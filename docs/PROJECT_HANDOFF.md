@@ -4,6 +4,16 @@
 **Purpose:** durable handoff between ChatGPT conversations. **Operational checkpoint:** [PROGRESS.md](PROGRESS.md). **Source audit:** [UPSTREAM_AUDIT.md](UPSTREAM_AUDIT.md). **Original requirements:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 in the ChatGPT project (not committed).
 **Evidence rule:** GitHub commits, PRs, issue records, and CI are authoritative for repository changes; only approved staging results can establish deployment or end-to-end behavior. Never infer completed work merely from a plan.
 
+## 2026-11-23 update — STEP 49 pass, PR #41/#42 merged, remote shell deferred
+
+Personal staging VM operator completed STEP 41–49: clean local `custom` fast-forward to `7bed4c101dc8c3b805767e6f526f8d1d71d1d1d6`, external root:0700 config directory, one-shot stable synthetic Laravel `.env` creation and independent root:gid33 0640 checks, MariaDB `rconfig_staging` zero tables, authenticated Redis DB0/DB1 zero keys, and successful **read-only** `bootstrap-preflight.sh --check`. Results are point-in-time snapshots. See [PROGRESS.md](PROGRESS.md) and [issue #40](https://github.com/pienzo/rconfig-v8-custom/issues/40).
+
+[PR #41](https://github.com/pienzo/rconfig-v8-custom/pull/41) added read-only bootstrap preflight and merged at `7bed4c101dc8c3b805767e6f526f8d1d71d1d1d6` (**9/9** green). [PR #42](https://github.com/pienzo/rconfig-v8-custom/pull/42) adds **inactive**, operator-explicit, atomic no-overwrite strong synthetic admin password provisioning and merged at `fb5b4884b479759c965c9b3ce58e7ebc2477064f` (**9/9** green). **PR #42 has not been fast-forwarded onto the VM or run there**. Never disclose its future generated credential in chat/logs/commits.
+
+**Next gate:** operator fast-forwards clean `gptadmin` checkout, then explicitly runs only the new script's `--check`, reviews result, and optionally authorizes separate `--create`. No Laravel migrations, persistent bootstrap marker, admin rotation, Apache/Horizon/scheduler or F02 activation have occurred. Integrated Core `v8core:install` and Docker entrypoint are unsafe for separated roles, and the older local source-built image must be rebuilt under a later reviewed plan. No corporate or live devices.
+
+GitHub has no OS access. [Issue #43](https://github.com/pienzo/rconfig-v8-custom/issues/43) documents an optional private access approach, **currently deferred by user**; keep manual operator-issued VM commands, one modifying step at a time.
+
 ## 2026-11-23 update — staging preflight and app config provisioner merged (inactive)
 
 [PR #37](https://github.com/pienzo/rconfig-v8-custom/pull/37) merged **8/8 green** at `aa1ca97f09a10691de92388118174d357b104ac0` and [PR #38](https://github.com/pienzo/rconfig-v8-custom/pull/38) merged **9/9 green** at `e87fdab6186a6777454680874ecc5ef2d7db109b`. The former adds an **inactive** isolated role entrypoint for future `app`, `horizon`, `scheduler` (with a strict offline preflight, F02 disabled, and one-shot bootstrap marker required); the latter adds an **operator-explicit**, root-only, atomic no-overwrite generator of a new stable synthetic `APP_KEY` and protected application `.env` from existing external MariaDB/Redis secrets. No role-enabled Compose, initial schema bootstrap or marker exists. The original integrated Core entrypoint/Supervisor and active DB/Redis containers remain unchanged.
