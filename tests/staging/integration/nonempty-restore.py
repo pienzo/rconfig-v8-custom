@@ -173,6 +173,7 @@ def main(phase, root):
                 and redis(6379, 1, "DBSIZE") == "0", "nonempty source Redis")
 
         (source / "storage").mkdir(parents=True, mode=0o750)
+        source.chmod(0o700)
         (source / "config").mkdir(mode=0o700)
         (source / "storage/device.cfg").write_bytes(b"synthetic-generation-A\n")
         (source / "storage/device.cfg").chmod(0o440)
@@ -206,6 +207,7 @@ def main(phase, root):
         # synthetic sources; no app/Horizon/scheduler exists in this workflow.
         # Never claim this serial dump+RDB+file copy is atomic with live writers.
         (snapshot / "redis").mkdir(parents=True, mode=0o700)
+        snapshot.chmod(0o700)
         (snapshot / "config").mkdir(mode=0o700)
         (snapshot / "storage").mkdir(mode=0o750)
         sql_dump = snapshot / "database.sql"
