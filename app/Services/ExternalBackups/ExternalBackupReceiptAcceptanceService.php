@@ -11,8 +11,9 @@ use InvalidArgumentException;
 use RuntimeException;
 
 /**
- * Transactional receipt + SUCCESS state machine, deliberately not yet wired
- * to jobs, HTTP or the scheduler. The acceptance flag defaults to OFF.
+ * Transactional receipt + SUCCESS state machine. A gated F02 follow-up job
+ * may call this service; the acceptance flag defaults to OFF. An observed
+ * descriptor hash alone is not proof of completed upload or trusted handoff.
  */
 final class ExternalBackupReceiptAcceptanceService
 {

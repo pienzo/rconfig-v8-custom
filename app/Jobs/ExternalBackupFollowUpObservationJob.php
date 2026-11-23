@@ -19,8 +19,9 @@ use InvalidArgumentException;
 use RuntimeException;
 
 /**
- * F02 second/subsequent observation. Stable candidates remain pending until
- * trusted receipt acceptance exists; no SUCCESS can be written by this job.
+ * F02 second/subsequent observation. A stable candidate may invoke the
+ * transactional receipt+SUCCESS service only behind an OFF-by-default gate.
+ * Deployment must separately validate a trusted completed-upload handoff.
  */
 final class ExternalBackupFollowUpObservationJob implements ShouldQueue
 {
