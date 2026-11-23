@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('tasks')->group(function () { // must be above the resource route
+    Route::post('/external-backup-pattern-preview', 'ExternalBackupPatternPreviewController@preview');
     Route::get('/external-backup-rules', 'ExternalBackupRuleController@index');
     Route::post('/external-backup-rules', 'ExternalBackupRuleController@store');
     Route::patch('/external-backup-rules/{externalBackupRule}', 'ExternalBackupRuleController@update');

@@ -9,6 +9,7 @@ import Pagination from "@/pages/Shared/Table/Pagination.vue";
 import RcConfirmAlertDialog from "@/pages/Shared/ConfirmAlertDialog/RcConfirmAlertDialog.vue";
 import TaskAddEditDialog from "@/pages/Tasks/TaskAddEditDialog.vue";
 import ExternalBackupRulesPanel from "@/pages/Tasks/ExternalBackupRulesPanel.vue";
+import ExternalBackupPatternPreview from "@/pages/Tasks/ExternalBackupPatternPreview.vue";
 import { Clock } from "lucide-vue-next";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -23,6 +24,7 @@ const { selectedRows, selectAll, toggleSelectAll, toggleSelectRow } = useRowSele
 // Task type filter - Core only has 3 download types
 const taskTypeFilter = ref("all");
 const showExternalRules = ref(false);
+const showExternalPatternPreview = ref(false);
 const taskTypeOptions = [
 	{ value: "all", label: "All Tasks" },
 	{ value: "rconfig:download-device", label: "Download by Device" },
@@ -94,6 +96,16 @@ onUnmounted(() => {
 			</div>
 			<div class="flex items-center justify-end">
 				<Button
+					type="button"
+					class="px-2 py-1 ml-2 text-sm"
+					size="sm"
+					variant="outline"
+					:aria-expanded="showExternalPatternPreview"
+					@click="showExternalPatternPreview = !showExternalPatternPreview"
+				>
+					{{ showExternalPatternPreview ? "Hide file pattern tester" : "Test backup file pattern" }}
+				</Button>
+				<Button
 					v-if="selectedRows.length"
 					class="px-2 py-1 bg-red-600 hover:bg-red-700 hover:animate-pulse"
 					size="md"
@@ -132,6 +144,7 @@ onUnmounted(() => {
 			</div>
 		</div>
 
+        <ExternalBackupPatternPreview v-if="showExternalPatternPreview" class="mx-6 mb-3" />
         <ExternalBackupRulesPanel v-if="showExternalRules" class="mx-6 mb-3" />
 
 		<div class="px-6">
