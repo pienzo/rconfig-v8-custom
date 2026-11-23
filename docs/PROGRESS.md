@@ -7,6 +7,12 @@
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
 **Current gate:** F02 native verifier #88, F02 history #86, Telegram transport #92, F04 editor #90 merged to `custom`. F02 queued runner PR #94 remains unmerged and OFF by default; no verified receipt or SUCCESS, no completed release image or VM deployment. `main` kept upstream-clean.
 
+## 2026-11-23 — F03 WhatsApp approved-template Cloud API transport candidate (#101)
+
+- Isolated, disabled-by-default adapter for Meta WhatsApp Cloud API `POST /{phone_number_id}/messages`, with server-configured approved backup.success/backup.failed templates, language and one recipient. No HTTP controller/queue/notification event invokes it yet; all endpoints and token/recipient settings are private and fixed server-side.
+- Six HTTP-fake tests for HTTPS template payload, empty body components, missing credentials, unrecognized events, malformed parameters and sanitized provider failures. No WhatsApp contacts or production credentials were used.
+- **Policy gate:** WABA onboarding, Meta Utility/template approval, recipient consent, pricing, rate limit, delivery webhooks and Direct Send eligibility remain unverified and outside the code. This implements approved-template fallback only, not free text/direct send. No VM deployment.
+
 ## 2026-11-23 — F04 admin-only synthetic email delivery test candidate (#99)
 
 - Proposed feature branch adds a POST test action to the existing backup-template Settings editor. Only the authenticated admin's own email receives synthetic content rendered from saved/default success/failure email templates; no arbitrary HTTP recipient or real backup data. The UI requires confirmation and reports only mailer submission, **not confirmed delivery**.
