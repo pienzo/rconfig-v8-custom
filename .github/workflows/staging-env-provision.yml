@@ -4,7 +4,9 @@ on:
   pull_request:
     paths:
       - 'docker/staging/provision-env.sh'
+      - 'docker/staging/enable-log-mailer.py'
       - 'docker/staging/role-entrypoint.sh'
+      - 'tests/staging/test-mail-log-migration.sh'
       - 'tests/staging/test-provision-env.sh'
       - 'docker/staging/README.md'
       - '.github/workflows/staging-env-provision.yml'
@@ -33,3 +35,11 @@ jobs:
           # generates throwaway credentials, and deletes its own unique
           # /etc/rconfig-v8-staging-ci-* directory in a trap.
           sudo sh tests/staging/test-provision-env.sh
+
+      - name: Exercise one-time protected legacy mailer migration on disposable fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -c 'import ast; ast.parse(open("docker/staging/enable-log-mailer.py", encoding="utf-8").read())'
+          sh -n tests/staging/test-mail-log-migration.sh
+          sudo env GITHUB_ACTIONS=true sh tests/staging/test-mail-log-migration.sh
