@@ -2,6 +2,10 @@
 
 namespace App\Console;
 
+use App\Jobs\ExternalBackupExpirePendingJob;
+use App\Jobs\ExternalBackupStartObservationJob;
+use App\Models\ExternalBackupRule;
+use Carbon\CarbonImmutable;
 use App\Jobs\CheckForUpdateJob;
 use App\Jobs\RunSecurityChecksJob;
 use App\Jobs\TaskDownloadRun;
@@ -59,10 +63,35 @@ class Kernel extends ConsoleKernel
                     continue;
                 }
 
+                // F02 has its own isolated queue and no native SSH/download job.
+                if ($task->task_command === 'rconfig:check-external-backup') {
+                    if (config('external-backups.runtime_enabled', false) && config('external-backups.queue_enabled', false)) {
+                        $rule = ExternalBackupRule::query()
+                            ->where('task_id', $task->id)
+                            ->where('enabled', true)
+                            ->first();
+
+                        if ($rule !== null) {
+                            $scheduledAt = CarbonImmutable::now('UTC')->startOfMinute()->format('Y-m-d H:i:s');
+                            $schedule->job(new ExternalBackupStartObservationJob($rule->id, $scheduledAt), 'ExternalBackupChecks', 'redis_external_backups')
+                                ->name('f02-external-backup-' . $rule->id)
+                                ->cron(implode(' ', $task->task_cron));
+                        }
+                    }
+
+                    continue;
+                }
+
                 // Use the scheduler to add the task at its desired frequency
                 $executionStartTime = microtime(true);
                 $this->download_task($executionStartTime, $task);
             }
+        }
+
+        if (config('external-backups.runtime_enabled', false) && config('external-backups.queue_enabled', false)) {
+            $schedule->job(new ExternalBackupExpirePendingJob, 'ExternalBackupChecks', 'redis_external_backups')
+                ->name('f02-expire-pending')
+                ->everyMinute();
         }
 
         $schedule->command(RunHealthChecksCommand::class)->everyFiveMinutes();

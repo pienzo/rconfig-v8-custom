@@ -41,7 +41,7 @@ final class ExternalBackupStartObservationJob implements ShouldQueue
         }
 
         $rule = ExternalBackupRule::with('task')->find($this->ruleId);
-        if ($rule === null || ! $rule->enabled || $rule->task?->is_paused) {
+        if ($rule === null || ! $rule->enabled || $rule->task === null || $rule->task->is_paused) {
             return;
         }
 

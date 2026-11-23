@@ -46,7 +46,7 @@ final class ExternalBackupFollowUpObservationJob implements ShouldQueue
 
         $run = ExternalBackupCheckRun::with('rule.task')->find($this->runId);
         if ($run === null || $run->status !== 'pending' || ! $run->rule?->enabled
-            || $run->rule->task?->is_paused) {
+            || $run->rule->task === null || $run->rule->task->is_paused) {
             return;
         }
 
@@ -78,7 +78,7 @@ final class ExternalBackupFollowUpObservationJob implements ShouldQueue
                 $scan,
                 $run->scheduled_at_utc->getTimestamp(),
                 $run->deadline_at_utc->getTimestamp(),
-                CarbonImmutable::createFromFormat('!Y-m-d H:i:s', $this->previousObservedAtUtc, 'UTC')->getTimestamp(),
+                CarbonImmutable::parse($this->previousObservedAtUtc, 'UTC')->getTimestamp(),
                 $now->getTimestamp(),
                 (int) $rule->quiet_seconds,
                 (int) $rule->minimum_bytes,
