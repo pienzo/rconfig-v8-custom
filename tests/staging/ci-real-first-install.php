@@ -18,6 +18,10 @@ use App\Services\Staging\StagingBootstrapStages;
 use App\Services\Staging\StagingBootstrapStateService;
 use Illuminate\Contracts\Console\Kernel;
 
+// Register Composer PSR-4 before declaring the CI-only stage decorator.
+// Merely loading the autoloader never runs migrations or starts services.
+require '/var/www/html/rconfig/vendor/autoload.php';
+
 function ciAssert(bool $condition, string $label): void
 {
     if (! $condition) {
@@ -83,7 +87,6 @@ try {
     ciAssert(count($argv) === 2 && in_array($argv[1], ['success', 'crash', 'inspect-crash'], true), 'scenario');
     ciAssert(is_readable('/var/www/html/rconfig/vendor/autoload.php'), 'source-built application dependencies');
 
-    require '/var/www/html/rconfig/vendor/autoload.php';
     $app = require '/var/www/html/rconfig/bootstrap/app.php';
     $app->make(Kernel::class)->bootstrap();
 
