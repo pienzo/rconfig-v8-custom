@@ -1,0 +1,78 @@
+name: Staging Core first-install migrations (disposable only)
+
+on:
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'compose.staging.yaml'
+      - 'compose.bootstrap.yaml'
+      - 'docker/staging/provision-env.sh'
+      - 'app/Services/Staging/**'
+      - 'database/migrations/**'
+      - 'tests/staging/ci-real-first-install.php'
+      - 'tests/staging/run-real-first-install.sh'
+      - '.github/workflows/staging-real-first-install.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write # Buildx layer cache only; never writes repository content.
+
+concurrency:
+  group: staging-first-install-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-core-first-install:
+    name: Real Core migrations and SIGKILL refusal on isolated disposable volumes
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      RCONFIG_STAGING_CI_RUNNER: disposable-v1
+      STAGING_APP_IMAGE: rconfig-first-install-ci:${{ github.sha }}
+
+    steps:
+      - name: Checkout exact PR test source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build source image pinned to tested GitHub commit
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ env.STAGING_APP_IMAGE }}
+          build-args: |
+            SOURCE_REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=staging-core-first-install
+          cache-to: type=gha,mode=max,scope=staging-core-first-install
+
+      - name: Validate CI-only probes without making state changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fxq tests .dockerignore
+          sh -n tests/staging/run-real-first-install.sh
+          docker run --rm --network none --user 1000:33 \
+            --entrypoint php \
+            -v "$GITHUB_WORKSPACE/tests/staging/ci-real-first-install.php:/tmp/ci-real-first-install.php:ro" \
+            "$STAGING_APP_IMAGE" -l /tmp/ci-real-first-install.php
+
+      - name: Run actual Laravel migration + admin seal and crash refusal
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh tests/staging/run-real-first-install.sh
+
+      - name: Synthetic-only summary
+        if: success()
+        shell: bash
+        run: |
+          echo 'Only disposable CI MariaDB/Redis/storage were used.'
+          echo 'Success and SIGKILL-before-seal are NOT consistent-backup/restore evidence.'
+          echo 'No VM or corporate resources accessed; no web/worker/scheduler enabled.'
