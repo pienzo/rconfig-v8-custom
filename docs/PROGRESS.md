@@ -5,19 +5,30 @@
 **Checkpoint:** 2026-11-23  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** F02 code merged into `custom` through PR #84 (`9ad86a814f0eec1c16006530cf5df64708975ffa`); preview, inactive rule editor, two-pass manual probe implemented with CI PASS, but no verified file receipt, durable worker or scheduling. VM untouched by these changes; `main` clean at upstream baseline `121cff1b243794af260f6c5850553b5f1b0af881`.
+**Current gate:** F02 native verifier #88, F02 history #86, Telegram transport #92, F04 editor #90 merged to `custom`. F02 queued runner PR #94 remains unmerged and OFF by default; no verified receipt or SUCCESS, no completed release image or VM deployment. `main` kept upstream-clean.
 
-## 2026-11-23 — F02 dormant queued scheduler / pending+failed run lifecycle candidate (#93)
+## 2026-11-23 — F02 isolated queued PENDING/FAILED runner candidate (#93, PR #94)
 
-- Code adds isolated `ExternalBackupStartObservationJob`, `ExternalBackupFollowUpObservationJob` and `ExternalBackupExpirePendingJob` on the existing F02 Redis queue. The native Core scheduler dispatches a per-rule cron only when BOTH `RCONFIG_F02_RUNTIME_ENABLED` and `RCONFIG_F02_QUEUE_ENABLED` are true, the rule is enabled and its Core Task unpaused. All new switches are **false by default**; current F02 editor cannot enable rules.
-- A scheduled occurrence is idempotently claimed and records `pending` first/second metadata observations; missing or overdue runs become persistent `failed` through existing transactional state service. Candidate file digest is inspected privately by the native helper, but the job **cannot create a verified file receipt or mark SUCCESS**. No external network, secrets, VM writes or production activation; synthetic queue tests and CI pending.
-- Next: introduce reviewed unique receipt acceptance and verified SUCCESS only after trusted intake handoff/OS staging evidence. Then expose safe task enable/pause controls, end-to-end staging checks, notifications and release.
+- Separate F02 jobs for scheduled idempotent claim, two-step metadata observations and pending-run deadline expiration; only an explicitly enabled rule and unpaused Core Task can schedule, with both global flags `RCONFIG_F02_RUNTIME_ENABLED` and `RCONFIG_F02_QUEUE_ENABLED` **false by default**. Native `TaskDownloadRun` whitelist remains untouched.
+- Results persist as `pending` or `failed` via the existing transactional ledger. Stable candidates may be inspected via the native SHA256 helper but do **not** generate verified receipts or SUCCESS yet. The GUI editor cannot activate F02 rules. No VM, production or sensitive device backup access. PR/CI under review.
+- Requires verified unique receipt and safe-file handoff contract, F02 activation UI, and staging end-to-end tests before a deployable complete monitor is claimed.
+
+## 2026-11-23 — F04 template editor (PR #90 merged, CI 9/9)
+
+- On feature branch: admin-only Settings panel and API with four global backup success/failure templates (email and Telegram), title/body editing, synthetic preview, reset defaults and updated-by audit. Allowlisted nonexecutable tokens; Telegram output HTML-escaped. CI/PR pending.
+- No actual delivery provider connected in this slice; Core email notifications still use their existing layout. No credentials, VM or external API calls.
 
 ## 2026-11-23 — F02 native read-only file digest verifier candidate (#87)
 
 - Native Linux `openat2` helper added with exact scanner metadata requirements, symlink/mount escape refusal, bounded SHA-256 streaming, before/after file-handle and pathname identity checks. Dockerfile compiles the helper from GPL source in an isolated build stage; PHP adapter is an internal service, not HTTP, queue or scheduler.
 - Hosted CI runs synthetic adversarial C/Python and PHP fixture tests. **Not** a validated backup-success or receipt path: the hash never reaches HTTP/notifications and is not inserted into the DB. The trusted intake-root ancestor contract, writer-finalization semantics, real kernel/seccomp/profile, and inode reuse remain staging review items. PR and CI pending; VM untouched.
 - [PR #86](https://github.com/pienzo/rconfig-v8-custom/pull/86) merged at `aeba80ef55ecb019bb668f5302c67763695408ad`, 5/5 CI, with history UI/API for persisted F02 check runs.
+
+## 2026-11-23 — F03 Telegram Bot API transport candidate (#91 / PR #92)
+
+- Feature branch adds a standalone Telegram Bot API `sendMessage` transport, using a fixed HTTPS endpoint, JSON payload, bounded timeouts, disabled redirects and sanitized exceptions. Deployment secrets `RCONFIG_TELEGRAM_BOT_TOKEN` and `RCONFIG_TELEGRAM_CHAT_ID` are read only from server-side config; delivery remains `RCONFIG_TELEGRAM_ENABLED=false` by default.
+- Includes synthetic HTTP fakes for disabled configuration, message payload, invalid UTF-8/configuration, provider rejection and network error. No request or event currently invokes this transport; **no real Telegram messages** have been sent.
+- Separate F04 template editor PR #90 is pending. The future dispatcher/ledger must accept only verified Core/F02 backup results and avoid duplicate delivery after queue retries. No VM modification or production release.
 
 ## 2026-11-23 — F02 persistent run history UI/API (PR #86 merged, CI 5/5)
 

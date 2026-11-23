@@ -15,6 +15,10 @@ const sections = computed(() => [
 				title: "System",
 				href: "/settings/system",
 			},
+            {
+                title: "Notification Templates",
+                href: "/settings/notification-templates",
+            },
 			{
 				title: "Update",
 				href: "/settings/update",
