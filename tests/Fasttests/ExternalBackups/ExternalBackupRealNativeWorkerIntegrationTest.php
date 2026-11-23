@@ -35,11 +35,11 @@ beforeEach(function () {
         'enabled' => true,
     ]);
 
-    $this->root = sys_get_temp_dir().'/rconfig-f02-real-native-'.bin2hex(random_bytes(8));
-    $this->inbox = $this->root.'/'.$this->device->id;
+    $this->root = sys_get_temp_dir() . '/rconfig-f02-real-native-' . bin2hex(random_bytes(8));
+    $this->inbox = $this->root . '/' . $this->device->id;
     mkdir($this->root, 0700);
     mkdir($this->inbox, 0700);
-    $this->file = $this->inbox.'/synthetic_today.cfg';
+    $this->file = $this->inbox . '/synthetic_today.cfg';
     file_put_contents($this->file, 'SYNTHETIC BACKUP DATA');
 
     $this->instant = CarbonImmutable::now('UTC')->startOfSecond();
@@ -50,7 +50,7 @@ beforeEach(function () {
     config()->set('external-backups.runtime_enabled', true);
     config()->set('external-backups.queue_enabled', true);
     config()->set('external-backups.receipt_acceptance_enabled', true);
-    config()->set('external-backups.receipt_hmac_key', 'base64:'.base64_encode(str_repeat('S', 32)));
+    config()->set('external-backups.receipt_hmac_key', 'base64:' . base64_encode(str_repeat('S', 32)));
     config()->set('external-backups.safe_digest_binary', $binary);
 
     $this->run = ExternalBackupCheckRun::create([
@@ -93,7 +93,7 @@ afterEach(function () {
         'receipt_hmac_key' => '',
         'safe_digest_binary' => '',
     ] as $key => $value) {
-        config()->set('external-backups.'.$key, $value);
+        config()->set('external-backups.' . $key, $value);
     }
 
     if (isset($this->run)) {
@@ -134,7 +134,7 @@ test('real compiled Linux verifier cannot produce success with receipt gate disa
 });
 
 test('replacing the observed file with an untrusted symlink cannot produce success', function () {
-    $this->outside = $this->root.'/outside.cfg';
+    $this->outside = $this->root . '/outside.cfg';
     file_put_contents($this->outside, 'UNTRUSTED TEST CONTENT');
     unlink($this->file);
     symlink($this->outside, $this->file);
