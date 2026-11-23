@@ -73,6 +73,49 @@ test('existing read only config can be overwritten by a later download', functio
     expect(fileOpsModeOf($second['filepath']))->toBe(0440, 'The file must be returned to read only after being rewritten.');
 });
 
+test('failed or short write cannot reuse a nonempty file as a successful backup', function () {
+    $first = fileOpsSaveConfig($this->categoryName, $this->deviceName, $this->dataBaseDir, ['original config']);
+
+    $fileops = new class('show running-config', $this->categoryName, $this->deviceName, 1, $this->dataBaseDir, 'cli') extends FileOperations
+    {
+        public string $existingPath;
+
+        public int|false $simulatedWrite = false;
+
+        public function createFile($command, $isJson = 0)
+        {
+            return $this->existingPath;
+        }
+
+        protected function writeFileContents(string $path, string $contents): int|false
+        {
+            if ($this->simulatedWrite === false) {
+                return false;
+            }
+
+            return parent::writeFileContents($path, substr($contents, 0, $this->simulatedWrite));
+        }
+    };
+    $fileops->existingPath = $first['filepath'];
+
+    $failed = $fileops->saveFile(['replacement config']);
+    expect($failed['download_status'])->toBeFalse();
+    expect(file_get_contents($first['filepath']))->toBe('original config');
+    expect(fileOpsModeOf($first['filepath']))->toBe(0440);
+
+    $fileops->simulatedWrite = 1;
+    $partial = $fileops->saveFile(['replacement config']);
+    expect($partial['download_status'])->toBeFalse();
+    expect($partial['filesize'])->toBe(1);
+    expect(fileOpsModeOf($first['filepath']))->toBe(0440);
+});
+
+test('zero-byte write is not a successful backup', function () {
+    $result = fileOpsSaveConfig($this->categoryName, $this->deviceName, $this->dataBaseDir, ['']);
+    expect($result['download_status'])->toBeFalse();
+    expect($result['filesize'])->toBe(0);
+});
+
 test('write window grants no access to other', function () {
     $fileops = new FileOperations(
         'show running-config',
