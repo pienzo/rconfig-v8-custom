@@ -158,9 +158,19 @@ coreRecoveryVerify(
     && DB::table('settings')->where('id', 1)->value('mail_driver') === 'log',
     'single protected Core admin and log-only settings'
 );
-coreRecoveryVerify((int) Redis::connection('default')->dbsize() === 0
-    && (int) Redis::connection('cache')->dbsize() === 0,
-    'no synthetic Redis fixtures until after Core migration');
+if ($source) {
+    coreRecoveryVerify((int) Redis::connection('default')->dbsize() === 0
+        && (int) Redis::connection('cache')->dbsize() === 0,
+        'no Redis fixture keys until after real Core migration');
+} else {
+    coreRecoveryVerify(
+        Redis::connection('default')->get('ci:core-state') === 'snapshot-A'
+        && Redis::connection('cache')->get('ci:core-cache') === 'snapshot-A'
+        && (int) Redis::connection('default')->dbsize() === 1
+        && (int) Redis::connection('cache')->dbsize() === 1,
+        'recovered Redis AOF DB0/DB1 retains precrash generation'
+    );
+}
 
 $attempt = $storage . '/.staging-bootstrap-attempt';
 $marker = $storage . '/.staging-bootstrap-complete';
