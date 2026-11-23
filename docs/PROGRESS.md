@@ -8,6 +8,13 @@
 **Current gate:** F02 native verifier #88, F02 history #86, Telegram transport #92, F04 editor #90 merged to `custom`. F02 queued runner PR #94 remains unmerged and OFF by default; no verified receipt or SUCCESS, no completed release image or VM deployment. `main` kept upstream-clean.
 
 
+## 2026-11-23 — F02 scheduled verified SUCCESS link candidate (#105)
+
+- Follow-up queue worker now connects the previously separate native descriptor evidence with `ExternalBackupReceiptAcceptanceService` **only** when `receipt_acceptance_enabled=true`. Candidate observation is recorded before the receipt+SUCCESS transaction; a refused proof stays pending for deadline failure, never becomes a false success.
+- Synthetic integration tests exercise stable file SUCCESS with one receipt, idempotent retry, gate-disabled candidate-only behavior, and rejected native evidence. No API enables rules, no worker or scheduler runtime flag changed, and no file-upload trust/provenance is claimed. Requires CI, staging finalization contract and explicit acceptance before enabling.
+- F02 scanner directory atime regression fix is tracked separately in PR #109; F01 Core diff bugfix in PR #98.
+
+
 ## 2026-11-23 — F02 guarded receipt and SUCCESS transaction candidate (#105)
 
 - A new service models the *transactional* file-receipt and SUCCESS state change, following two eligible observations and before the occurrence deadline. Retrying the same success is idempotent; a per-device HMAC file token plus existing unique DB constraints disallows a second scheduled occurrence from consuming the same physical file.
