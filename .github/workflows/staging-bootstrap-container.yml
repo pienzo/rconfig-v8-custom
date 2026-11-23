@@ -1,0 +1,75 @@
+name: Staging bootstrap container (read-only synthetic scaffold)
+
+on:
+  pull_request:
+    paths:
+      - 'compose.bootstrap.yaml'
+      - 'compose.staging.yaml'
+      - 'Dockerfile'
+      - 'docker/staging/bootstrap-container-entrypoint.sh'
+      - 'tests/staging/test-bootstrap-container-check.sh'
+      - '.github/workflows/staging-bootstrap-container.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-check:
+    name: Inert bootstrap-only Compose and entrypoint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Validate read-only shell guards and synthetic negative cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n docker/staging/bootstrap-container-entrypoint.sh
+          sh -n tests/staging/test-bootstrap-container-check.sh
+          sudo env GITHUB_ACTIONS=true sh tests/staging/test-bootstrap-container-check.sh
+
+      - name: Inspect rendered bootstrap-only Compose contract (no containers started)
+        shell: bash
+        run: |
+          set -euo pipefail
+          export STAGING_CONFIG_DIR="$RUNNER_TEMP/staging-config"
+          export STAGING_SECRETS_DIR="$RUNNER_TEMP/staging-secrets"
+          export STAGING_APP_IMAGE="rconfig-v8-custom:synthetic-ci-never-run"
+          mkdir -p "$STAGING_CONFIG_DIR" "$STAGING_SECRETS_DIR"
+          umask 077
+          printf 'APP_ENV=production\n' > "$STAGING_CONFIG_DIR/.env"
+          printf '%064d\n' 0 > "$STAGING_SECRETS_DIR/mariadb_app_password"
+          printf '%064d\n' 0 > "$STAGING_SECRETS_DIR/mariadb_root_password"
+          printf '%064d\n' 0 > "$STAGING_SECRETS_DIR/staging_admin_password"
+          printf 'requirepass %064d\n' 0 > "$STAGING_SECRETS_DIR/redis.conf"
+
+          docker compose -f compose.staging.yaml -f compose.bootstrap.yaml \
+            --profile bootstrap config --quiet
+          docker compose -f compose.staging.yaml -f compose.bootstrap.yaml \
+            --profile bootstrap config --format json | python3 -c '
+          import json,sys
+          cfg=json.load(sys.stdin)
+          svc=cfg["services"]["bootstrap"]
+          assert cfg["networks"]["staging_internal"]["internal"] is True
+          assert set(svc["networks"]) == {"staging_internal"}
+          assert svc["profiles"] == ["bootstrap"]
+          assert svc["user"] == "1000:33"
+          assert svc["read_only"] is True
+          assert "ALL" in svc["cap_drop"]
+          assert svc["pull_policy"] == "never"
+          assert svc["entrypoint"] == ["/bin/sh", "/usr/local/bin/staging-bootstrap-container-entrypoint.sh"]
+          assert svc["command"] == ["--check"]
+          assert not svc.get("ports")
+          assert not svc.get("depends_on")
+          assert svc["environment"]["RCONFIG_STAGING_BOOTSTRAP"] == "core-synthetic-v1"
+          mounts=svc["volumes"]
+          assert any(m["target"] == "/var/www/html/rconfig/.env" and m["read_only"] is True and m["type"] == "bind" for m in mounts)
+          assert any(m["target"] == "/var/www/html/rconfig/storage" and m["type"] == "volume" and m["source"] == "staging_storage" for m in mounts)
+          assert len(svc["secrets"]) == 1 and svc["secrets"][0]["target"] == "staging_admin_password"
+          for name,service in cfg["services"].items():
+              assert not service.get("ports"), f"published ports on {name}"
+          print("isolated bootstrap-only Compose manifest validated without starting containers")
+          '
