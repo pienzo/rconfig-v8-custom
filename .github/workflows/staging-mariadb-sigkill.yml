@@ -1,0 +1,152 @@
+name: MariaDB 10.11 first-install SIGKILL (disposable)
+
+on:
+  pull_request:
+    paths:
+      - 'tests/staging/integration/kill-migrate.php'
+      - '.github/workflows/staging-mariadb-sigkill.yml'
+      - 'app/Services/Staging/**'
+      - 'database/migrations/**'
+  workflow_dispatch:
+
+# No GitHub secrets, VM access, deployment credentials or repository writes.
+permissions:
+  contents: read
+
+jobs:
+  abrupt-php-death:
+    name: SIGKILL during Core migration and fresh CI reprovision
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      STAGING_CRASH_CI: disposable-mariadb-v1
+      APP_DIR_PATH: ${{ github.workspace }}
+      APP_ENV: testing
+      APP_DEBUG: 'false'
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_DATABASE: rconfig_ci_bootstrap_crash
+      DB_USERNAME: root
+      DB_PASSWORD: ''
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: '6379'
+      REDIS_DB: '0'
+      REDIS_CACHE_DB: '1'
+      QUEUE_CONNECTION: sync
+      CACHE_DRIVER: array
+      SESSION_DRIVER: array
+      MAIL_MAILER: log
+      RCONFIG_F02_QUEUE_ENABLED: 'false'
+
+    services:
+      mysql:
+        image: mariadb:10.11
+        env:
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: '1'
+          MARIADB_DATABASE: rconfig_ci_bootstrap_crash
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mariadb-admin ping -h 127.0.0.1 -u root"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=8
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=6
+
+    steps:
+      - name: Checkout PR source only
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up PHP 8.4
+        uses: shivammathur/setup-php@7c071dfe9dc99bdf297fa79cb49ea005b9fcadbc
+        with:
+          php-version: '8.4'
+          extensions: ftp, gd, ldap, sockets, pdo_mysql
+          coverage: none
+
+      - name: Prepare private throwaway framework config
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .env.example .env.testing
+          touch database/database.sqlite
+
+      - name: Install pinned Core dependencies
+        uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda
+
+      - name: Generate key only for disposable CI instance
+        run: php artisan key:generate --force --no-interaction
+
+      - name: Validate PHP crash probe syntax
+        run: php -l tests/staging/integration/kill-migrate.php
+
+      - name: Kill the actual Laravel migrator after first MariaDB DDL
+        shell: bash
+        run: |
+          set -euo pipefail
+          STAGING_CRASH_ROOT="$(mktemp -d /tmp/rconfig-staging-crash-XXXXXXXXXX)"
+          export STAGING_CRASH_ROOT
+          echo "STAGING_CRASH_ROOT=$STAGING_CRASH_ROOT" >> "$GITHUB_ENV"
+          chmod 0700 "$STAGING_CRASH_ROOT"
+          mkdir -m 0700 "$STAGING_CRASH_ROOT/failed-storage"
+
+          # Laravel emits MigrationEnded after real DDL; only this PHP
+          # subprocess is killed, never a database or runner service.
+          php tests/staging/integration/kill-migrate.php run \
+            > "$STAGING_CRASH_ROOT/child.log" 2>&1 &
+          pid=$!
+          trap 'kill -KILL "$pid" 2>/dev/null || true' EXIT
+
+          observed=0
+          for i in $(seq 1 120); do
+            if [ -f "$STAGING_CRASH_ROOT/migration-ended.ready" ]; then
+              observed=1
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              break
+            fi
+            sleep 0.25
+          done
+
+          if [ "$observed" -ne 1 ]; then
+            echo 'Expected Laravel migration did not reach committed DDL pause' >&2
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            exit 1
+          fi
+
+          kill -KILL "$pid"
+          set +e
+          wait "$pid" 2>/dev/null
+          code=$?
+          set -e
+          trap - EXIT
+          test "$code" -eq 137 || {
+            echo 'Expected real SIGKILL exit status 137' >&2
+            exit 1
+          }
+          printf 'Synthetic PHP migrator killed with SIGKILL, exit=137\n'
+
+      - name: Inspect orphaned claim, incomplete MariaDB and absent completion
+        run: php tests/staging/integration/kill-migrate.php inspect
+
+      - name: Reprovision only the dedicated empty-baseline disposable database
+        run: php tests/staging/integration/kill-migrate.php reprovision
+
+      - name: Independently verify fresh CI baseline and preserved failed claim
+        run: php tests/staging/integration/kill-migrate.php verify
+
+      - name: Report only synthetic outcome
+        if: always()
+        run: echo 'Disposable MariaDB SIGKILL and fresh reprovision finished; no VM access.'
