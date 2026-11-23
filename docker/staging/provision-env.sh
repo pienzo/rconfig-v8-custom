@@ -92,6 +92,7 @@ APP_FORCE_HTTPS=false
 APP_DIR_PATH=/var/www/html/rconfig
 LOG_CHANNEL=daily
 LOG_LEVEL=warning
+MAIL_MAILER=log
 DB_CONNECTION=mysql
 DB_HOST=db
 DB_PORT=3306

@@ -49,6 +49,8 @@ sh "$script" --create
 test "$(stat -c '%u:%g:%a' "$STAGING_CONFIG_DIR/.env")" = '0:33:640'
 grep -Fxq 'RCONFIG_F02_QUEUE_ENABLED=false' "$STAGING_CONFIG_DIR/.env"
 grep -Fxq 'APP_DEBUG=false' "$STAGING_CONFIG_DIR/.env"
+grep -Fxq 'MAIL_MAILER=log' "$STAGING_CONFIG_DIR/.env"
+test "$(grep -Ec '^MAIL_MAILER=' "$STAGING_CONFIG_DIR/.env")" -eq 1
 grep -Fxq 'HEALTHCHECK_OFFLINE_MODE=true' "$STAGING_CONFIG_DIR/.env"
 grep -Eq '^APP_KEY=base64:[A-Za-z0-9+/]{43}=$' "$STAGING_CONFIG_DIR/.env"
 db_read=$(sed -n 's/^DB_PASSWORD=//p' "$STAGING_CONFIG_DIR/.env")

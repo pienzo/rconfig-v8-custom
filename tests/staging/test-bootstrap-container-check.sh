@@ -24,6 +24,7 @@ chmod 0640 "$admin"
 cat > "$app/.env" <<'ENV'
 APP_ENV=production
 APP_DEBUG=false
+MAIL_MAILER=log
 DB_CONNECTION=mysql
 DB_HOST=db
 DB_PORT=3306
@@ -62,9 +63,24 @@ reject --check --apply
 reject --wat
 RCONFIG_STAGING_BOOTSTRAP=wrong reject --check
 RCONFIG_F02_QUEUE_ENABLED=true reject --check
+MAIL_MAILER=smtp reject --check
 
 chmod 0644 "$app/.env"
 reject --check
+chmod 0640 "$app/.env"
+
+cp "$app/.env" "$root/mail-safe-original"
+sed -i 's/^MAIL_MAILER=log$/MAIL_MAILER=smtp/' "$app/.env"
+reject --check
+cp "$root/mail-safe-original" "$app/.env"
+chmod 0640 "$app/.env"
+sed -i '/^MAIL_MAILER=log$/d' "$app/.env"
+reject --check
+cp "$root/mail-safe-original" "$app/.env"
+chmod 0640 "$app/.env"
+printf '%s\n' 'MAIL_MAILER=log' >> "$app/.env"
+reject --check
+cp "$root/mail-safe-original" "$app/.env"
 chmod 0640 "$app/.env"
 
 sed -i 's/^RCONFIG_F02_QUEUE_ENABLED=false$/RCONFIG_F02_QUEUE_ENABLED=true/' "$app/.env"

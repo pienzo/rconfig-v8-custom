@@ -39,6 +39,7 @@ fi
 [ "${RCONFIG_F02_QUEUE_ENABLED:-false}" = false ] ||
     fail 'F02 environment override forbidden'
 [ "${APP_DEBUG:-false}" = false ] || fail 'debug environment override forbidden'
+[ -z "${MAIL_MAILER+x}" ] || fail 'mail transport environment override forbidden'
 
 env_file=$app_dir/.env
 storage=$app_dir/storage
@@ -65,7 +66,7 @@ require_exact() {
 }
 
 for setting in \
-    'APP_ENV=production' 'APP_DEBUG=false' \
+    'APP_ENV=production' 'APP_DEBUG=false' 'MAIL_MAILER=log' \
     'DB_CONNECTION=mysql' 'DB_HOST=db' 'DB_PORT=3306' \
     'DB_DATABASE=rconfig_staging' 'DB_USERNAME=rconfig_staging' \
     'REDIS_HOST=redis' 'REDIS_PORT=6379' 'REDIS_DB=0' \
