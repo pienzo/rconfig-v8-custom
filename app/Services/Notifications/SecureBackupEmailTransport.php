@@ -66,14 +66,14 @@ final class SecureBackupEmailTransport
 
         if (! is_string($host) || ! filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)
             || $port === false || $port < 1 || $port > 65535
-            || ! in_array($mode, ['smtps', 'starttls'], true)
+            || $mode !== 'smtps'
             || ! is_string($username) || $username === '' || ! is_string($password) || $password === '') {
             throw new RuntimeException('Automatic backup SMTP is not configured.');
         }
 
-        $transport = new EsmtpTransport($host, $port, $mode === 'smtps');
+        $transport = new EsmtpTransport($host, $port, true);
         $transport->setRequireTls(true);
-        $transport->setAutoTls($mode === 'starttls');
+        $transport->setAutoTls(false);
         $transport->setUsername($username);
         $transport->setPassword($password);
         $stream = $transport->getStream();
