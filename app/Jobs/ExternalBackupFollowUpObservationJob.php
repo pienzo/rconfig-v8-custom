@@ -6,8 +6,10 @@ use App\Models\ExternalBackupCheckRun;
 use App\Services\ExternalBackups\ExternalBackupDirectoryScanner;
 use App\Services\ExternalBackups\ExternalBackupObservationPolicy;
 use App\Services\ExternalBackups\ExternalBackupRunStateService;
+use App\Services\ExternalBackups\ExternalBackupReceiptAcceptanceService;
 use App\Services\ExternalBackups\ExternalBackupSafeDigestAdapter;
 use Carbon\CarbonImmutable;
+use DomainException;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -38,7 +40,8 @@ final class ExternalBackupFollowUpObservationJob implements ShouldQueue
         ExternalBackupDirectoryScanner $scanner,
         ExternalBackupObservationPolicy $policy,
         ExternalBackupRunStateService $runStates,
-        ExternalBackupSafeDigestAdapter $digest
+        ExternalBackupSafeDigestAdapter $digest,
+        ExternalBackupReceiptAcceptanceService $receipts
     ): void {
         if (! config('external-backups.runtime_enabled', false) || ! config('external-backups.queue_enabled', false)) {
             return;
@@ -99,11 +102,26 @@ final class ExternalBackupFollowUpObservationJob implements ShouldQueue
                     throw new RuntimeException('F02 scanner candidate disappeared.');
                 }
 
-                $digest->inspect($rule, $candidate);
-                // Descriptor hash verified, but durable upload provenance and
-                // unique receipt claims are still under review: no SUCCESS.
+                $evidence = $digest->inspect($rule, $candidate);
                 $reason = 'requires_safe_open';
                 $wait = false;
+
+                // Deliberately OFF until the operator-approved finalization
+                // boundary, file identity and staging tests establish trust.
+                // Record the validated two-pass candidate before attempting
+                // the atomic receipt+SUCCESS transaction.
+                if (config('external-backups.receipt_acceptance_enabled', false) === true) {
+                    $runStates->recordPending($run->id, $now, $reason, $filename);
+
+                    try {
+                        $receipts->accept($run->id, $now, $filename, $evidence);
+                    } catch (DomainException|InvalidArgumentException|RuntimeException) {
+                        // Refusal must never be converted into SUCCESS.
+                        // Leave pending for the deadline sweeper to fail.
+                    }
+
+                    return;
+                }
             }
         } catch (InvalidArgumentException|RuntimeException) {
             $reason = 'access';
