@@ -56,7 +56,7 @@ coreRecoveryVerify(
 
 $root = getenv('STAGING_CORE_RESTORE_ROOT');
 coreRecoveryVerify(is_string($root)
-    && preg_match('#\A/tmp/rconfig-core-restore-[A-Za-z0-9]{10}\z/D', $root) === 1
+    && preg_match('#\A/tmp/rconfig-core-restore-[A-Za-z0-9]{10}\z#D', $root) === 1
     && is_dir($root)
     && ! is_link($root)
     && realpath($root) === $root
