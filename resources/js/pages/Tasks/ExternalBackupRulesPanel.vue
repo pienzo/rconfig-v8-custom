@@ -16,6 +16,28 @@ const previewRuleId = ref(null);
 const previewLoading = ref(false);
 const previewError = ref("");
 const previewData = ref(null);
+const probeState = ref({});
+const probeLoadingId = ref(null);
+
+async function verifyNow(rule) {
+    probeLoadingId.value = rule.id;
+    const existing = probeState.value[rule.id];
+    try {
+        const response = await axios.post("/api/tasks/external-backup-rules/" + rule.id + "/verify-now", {
+            checkpoint: existing?.checkpoint || null,
+        });
+        probeState.value[rule.id] = response.data;
+    } catch (error) {
+        probeState.value[rule.id] = {
+            status: "error",
+            reason: error.response?.data?.message || "Verification request failed.",
+            checkpoint: null,
+        };
+    } finally {
+        probeLoadingId.value = null;
+    }
+}
+
 
 async function previewFiles(rule) {
     previewRuleId.value = rule.id;
@@ -196,7 +218,20 @@ onMounted(() => load());
                 <div class="flex gap-2">
                     <button type="button" class="rounded border px-2 py-1" @click="edit(row)">Edit</button>
                     <button type="button" class="rounded border px-2 py-1" @click="previewFiles(row)">Preview files</button>
+                    <button type="button" class="rounded border px-2 py-1"
+                        :disabled="probeLoadingId === row.id" @click="verifyNow(row)">
+                        {{ probeLoadingId === row.id ? "Verifica..." : (probeState[row.id]?.checkpoint ? "Ricontrolla stabilità" : "Verifica ora") }}
+                    </button>
                     <button type="button" class="rounded border px-2 py-1 text-red-500" @click="remove(row)">Delete</button>
+                </div>
+                <div v-if="probeState[row.id]" class="w-full rounded bg-muted p-2 text-xs" aria-live="polite">
+                    <p class="font-semibold">Valutazione preliminare: {{ probeState[row.id].status }}</p>
+                    <p>Motivo: {{ probeState[row.id].reason }} <span v-if="probeState[row.id].filename">({{ probeState[row.id].filename }})</span></p>
+                    <p v-if="probeState[row.id].checkpoint">Attendi {{ probeState[row.id].retry_after_seconds }} secondi prima di ricontrollare.</p>
+                    <p v-if="probeState[row.id].window_start_utc">Finestra manuale: {{ probeState[row.id].window_start_utc }} → {{ probeState[row.id].window_end_utc }}</p>
+                    <p class="text-amber-600 dark:text-amber-400">
+                        Nessun SUCCESS registrato: anche un file stabile richiede la verifica sicura del contenuto e della ricevuta.
+                    </p>
                 </div>
                 <div v-if="previewRuleId === row.id" class="w-full rounded bg-muted p-2" aria-live="polite">
                     <p v-if="previewLoading">Reading filenames...</p>
