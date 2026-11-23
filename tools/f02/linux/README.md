@@ -37,3 +37,9 @@ Requirements: Linux kernel with `openat2()` support (5.6+), `gcc`, and Python 3.
 **Licensing:** this self-contained prototype uses GPL-3.0-or-later SPDX metadata consistent with the Core `LICENSE.txt`; the repository's conflicting MIT metadata remains a separately tracked release issue.
 
 **Release gate:** review ADR-0002, confirm Linux staging OS/kernel/filesystem, test root-parent permissions and concurrent replacement/mount races, design a secure descriptor handoff, and verify integration with read-only PHP inspection and idempotent receipt claims. **No feature activation or staging provisioning authorized by this document.**
+
+## Native read-only digest verifier candidate (issue #87)
+
+`f02_safe_digest.c` adds an independently testable Linux SHA-256 inspector. It uses the same no-symlink/no-mount-crossing `openat2` resolution as the original probe, checks the scanner's exact numeric metadata, hashes the read-only descriptor in bounded chunks, checks nanosecond stat identity before/after and checks the final pathname still refers to the same inode. It emits only JSON evidence `descriptor_checked_only` (no file contents, no success or receipt). The binary is designed to be compiled without privileges in the custom image and executed by the PHP adapter as the ordinary app user.
+
+Tests: `python3 -m unittest discover -s tools/f02/linux/tests -p 'test_*.py' -v`. The build requires a C11 compiler, `libssl-dev` and Linux `openat2`. **Do not treat passing hosted CI as proof of deployment trust**: protect the configured inbox root's parents and isolate the uploader from the reader. Existing writer permissions, mount behavior, process hard timeouts and actual arrival identity still require staging validation before enabling receipt acceptance.
