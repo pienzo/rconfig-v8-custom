@@ -39,7 +39,8 @@ final class SecureBackupEmailTransport
         }
 
         $transport = $this->buildTransport();
-        $email = (new Email())->from($from)->to($recipient)->subject($title)->text($body);
+        $email = new Email;
+        $email->from($from)->to($recipient)->subject($title)->text($body);
 
         return [
             'destination' => hash_hmac('sha256', 'email:' . $recipient, $key),
