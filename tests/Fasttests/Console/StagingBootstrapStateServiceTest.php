@@ -39,8 +39,37 @@ test('sealed state requires new admin hash and completely neutralized SMTP', fun
 
     expect($state->isSealed($password))->toBeFalse()
         ->and((new SealDefaultAdminService)->apply($password))->toBeTrue()
-        ->and($state->isMigrated())->toBeFalse()
-        ->and($state->isSealed($password))->toBeTrue()
+        ->and($state->isMigrated())->toBeFalse();
+
+    // Check each invariant independently before trusting the aggregate gate.
+    // These assertions report boolean predicates, never passwords or hashes.
+    $admin = DB::table('users')->where('id', 1)->first();
+    $settings = DB::table('settings')->where('id', 1)->first();
+
+    $checks = [
+        'migration ledger complete' => $state->hasCompleteMigrationLedger(),
+        'exactly one user' => DB::table('users')->count() === 1,
+        'exactly one settings row' => DB::table('settings')->count() === 1,
+        'admin name' => $admin !== null && $admin->name === 'Staging administrator',
+        'admin email' => $admin !== null && $admin->email === 'staging-admin@example.invalid',
+        'admin role' => $admin !== null && strcasecmp((string) $admin->role, 'Admin') === 0,
+        'admin credential' => $admin !== null && \Illuminate\Support\Facades\Hash::check($password, (string) $admin->password),
+        'mail host' => $settings !== null && $settings->mail_host === '127.0.0.1',
+        'mail port' => $settings !== null && (int) $settings->mail_port === 1025,
+        'mail driver' => $settings !== null && $settings->mail_driver === 'log',
+        'mail sender' => $settings !== null && $settings->mail_from_email === 'staging-admin@example.invalid',
+        'mail recipient' => $settings !== null && $settings->mail_to_email === 'staging-admin@example.invalid',
+        'mail authentication disabled' => $settings !== null && (int) $settings->mail_authcheck === 0,
+        'mail username cleared' => $settings !== null && $settings->mail_username === null,
+        'mail password cleared' => $settings !== null && $settings->mail_password === null,
+        'PHP debugging disabled' => $settings !== null && (int) $settings->phpDebugging === 0,
+    ];
+
+    foreach ($checks as $label => $passed) {
+        expect($passed)->toBeTrue('Sealed state invariant: ' . $label);
+    }
+
+    expect($state->isSealed($password))->toBeTrue()
         ->and($state->isSealed(str_repeat('f', 64)))->toBeFalse();
 
     DB::table('settings')->where('id', 1)->update(['mail_driver' => 'smtp']);
