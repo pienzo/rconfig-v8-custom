@@ -8,6 +8,7 @@ import NoResults from "@/pages/Shared/Table/NoResults.vue";
 import Pagination from "@/pages/Shared/Table/Pagination.vue";
 import RcConfirmAlertDialog from "@/pages/Shared/ConfirmAlertDialog/RcConfirmAlertDialog.vue";
 import TaskAddEditDialog from "@/pages/Tasks/TaskAddEditDialog.vue";
+import ExternalBackupRulesPanel from "@/pages/Tasks/ExternalBackupRulesPanel.vue";
 import { Clock } from "lucide-vue-next";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -21,6 +22,7 @@ const { selectedRows, selectAll, toggleSelectAll, toggleSelectRow } = useRowSele
 
 // Task type filter - Core only has 3 download types
 const taskTypeFilter = ref("all");
+const showExternalRules = ref(false);
 const taskTypeOptions = [
 	{ value: "all", label: "All Tasks" },
 	{ value: "rconfig:download-device", label: "Download by Device" },
@@ -102,6 +104,15 @@ onUnmounted(() => {
 				</Button>
 
 				<Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    class="px-2 py-1 ml-2 text-sm"
+                    @click="showExternalRules = !showExternalRules"
+                >
+                    {{ showExternalRules ? "Hide external backup rules" : "External backup rules" }}
+                </Button>
+				<Button
 					type="submit"
 					class="px-2 py-1 ml-2 text-sm bg-blue-600 hover:bg-blue-700 hover:animate-pulse"
 					size="sm"
@@ -120,6 +131,8 @@ onUnmounted(() => {
 				/>
 			</div>
 		</div>
+
+        <ExternalBackupRulesPanel v-if="showExternalRules" class="mx-6 mb-3" />
 
 		<div class="px-6">
 			<Table>
@@ -418,6 +431,7 @@ onUnmounted(() => {
 							<!-- ACTIONS MENU -->
 							<TableCell class="text-start">
 								<ActionsMenu
+                                    v-if="row.task_command !== 'rconfig:check-external-backup'"
 									:row-data="row"
 									:show-task-pause-btn="true"
 									:show-view-history-btn="true"
@@ -429,6 +443,7 @@ onUnmounted(() => {
 									@on-edit="viewEditDialog(row.id)"
 									@on-delete="deleteTask(row.id)"
 								/>
+                                <span v-else class="text-xs text-muted-foreground">Manage under External backup rules</span>
 							</TableCell>
 							<!-- ACTIONS MENU -->
 						</TableRow>
