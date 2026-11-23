@@ -5,14 +5,14 @@
 **Checkpoint:** 2026-11-23  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** F01 diff PR #98, F02 directory identity fix PR #109, F02 queued runner PR #94 and F02 guarded receipt worker PR #110 are MERGED on `custom` (`a1ae3fbbc793c74159e31e6a9a23905eae51f83a`). F02 runtime/queue/receipt flags remain OFF by default. Issue #111 tests the real native verifier-to-worker/SQL path in throwaway CI, not an approved upload-finalization contract. Still pending: F02 trusted handoff, controlled task activation, real result-notification dispatcher, source-built Docker E2E, and authorized release gates. `main` stays upstream-clean; no VM/production deployment.
+**Current gate:** F02 gated verified SUCCESS worker PR #110 MERGED (CI 5/5, `a1ae3fbbc793c74159e31e6a9a23905eae51f83a`). Real native Linux SHA-256 → Laravel worker → MySQL receipt integration PR #112 MERGED (CI 5/5, `42c4b0af0e532ed3c3fd691ef95401e2951ca0b9`), issue #111 CLOSED. F01 diff PR #98 and F02 scanner fix PR #109 merged. **All F02 runtime, queue and receipt flags remain OFF by default.** Remaining release gates: verified upload-finalization handoff, controlled rule activation, idempotent actual-result email/Telegram notifications (#113), full source-built Docker E2E and authorized staging review. `main` remains upstream-clean, no VM/production deployment.
 
 
-## 2026-11-23 — F02 real-native worker integration CI candidate (issue #111)
+## 2026-11-23 — F02 real-native worker integration CI ACCEPTED (issue #111 / PR #112)
 
 - [PR #110](https://github.com/pienzo/rconfig-v8-custom/pull/110) MERGED into `custom` at `a1ae3fbbc793c74159e31e6a9a23905eae51f83a` after CI run `45273095564` passed all five checks. It connects the queued F02 two-observation candidate to native digest evidence and the atomic receipt+SUCCESS ledger **only** with the explicit receipt gate on. Default flags remain off and are not enabled in any deployed environment.
 - This new separate candidate compiles the **actual** Linux `f02_safe_digest.c` in hosted CI with the Dockerfile compiler flags, then invokes `ExternalBackupFollowUpObservationJob` through the real PHP adapter, using a synthetic private inbox and transactional MySQL test database. Assertions cover a single SUCCESS receipt, retry idempotency, receipt-gate OFF and untrusted symlink replacement.
-- Scope: no FTP/SFTP session, immutable uploader finalization or OS-validated staging trust is demonstrated; even a real SHA-256 of a stable descriptor is not proof of backup restorable contents or completed file delivery. This CI-only branch requires CI green and review before merge. No VM, `main` or production modifications.
+- Scope: no FTP/SFTP session, immutable uploader finalization or OS-validated staging trust is demonstrated; even a real SHA-256 of a stable descriptor is not proof of backup restorable contents or completed file delivery. PR #112 merged at `42c4b0af0e532ed3c3fd691ef95401e2951ca0b9`, CI run `45277221225` **5/5 PASS**, including actual compiled-native worker/receipt test and all existing crash/queue regression steps. Issue #111 closed. No VM, `main` or production modifications.
 
 ## 2026-11-23 — F02 scheduled verified SUCCESS link candidate (#105)
 
