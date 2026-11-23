@@ -4,6 +4,14 @@
 **Purpose:** durable handoff between ChatGPT conversations. **Operational checkpoint:** [PROGRESS.md](PROGRESS.md). **Source audit:** [UPSTREAM_AUDIT.md](UPSTREAM_AUDIT.md). **Original requirements:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 in the ChatGPT project (not committed).
 **Evidence rule:** GitHub commits, PRs, issue records, and CI are authoritative for repository changes; only approved staging results can establish deployment or end-to-end behavior. Never infer completed work merely from a plan.
 
+## 2026-11-23 update — STEP 84 MariaDB10.11 SIGKILL integration accepted
+
+[PR #69](https://github.com/pienzo/rconfig-v8-custom/pull/69) merged at `d2aae99d1a118661d754b4d46dabb8f8e4c8dc1c` after dedicated [MariaDB10.11 SIGKILL](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45215093903) **green** and Core [CI](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45215093624) **5/5 green** (PHP 1,705 passed, 5 skipped). GitHub `main` still clean upstream `121cff1b243794af260f6c5850553b5f1b0af881`.
+
+The new hosted test deliberately pauses a real Core Laravel migration after MariaDB commits its first table, sends **SIGKILL** to the disposable PHP child (exit 137), then independently verifies the incomplete migration ledger, persistent 0700 attempt directory, absence of final completion marker and refusal to treat schema as fresh. It reprovisions a **fresh empty CI database and new private storage** and verifies MariaDB/Redis DB0/DB1 empty, preserving the failed attempt evidence and synthetic APP_KEY. **This is NOT a tested restore of persisted database/Redis/filesystem data**, power-cut/DDL atomicity, egress or strict staging Docker identity. #57 and #40 remain OPEN. **No changes to personal `vm-gpt`** after its operator STEP 82; image remains earlier `977c3152`, checkout `9910e66e`, no migrations/web/Horizon/scheduler/F02.
+
+Next required gates: actual consistent synthetic MariaDB 10.11/Redis7/storage/.env backup-and-restore with nonempty sentinel fixtures, host egress isolation, reproducible source-built Docker image SHA and independent operator approval before any VM bootstrap apply.
+
 ## 2026-11-23 update — STEP 83 real first-install CI MERGED (#57)
 
 GitHub `custom` at `fdf4bda0f6392116fe73c5ad72b25709786fe2ca` after [PR #67](https://github.com/pienzo/rconfig-v8-custom/pull/67), confirmed successful [first-install matrix](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45209459841) **2/2** and standard [CI](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45209459361) **5/5**. `main` still upstream `121cff1b243794af260f6c5850553b5f1b0af881`.
