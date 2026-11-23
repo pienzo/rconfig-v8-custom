@@ -12,14 +12,14 @@ use InvalidArgumentException;
  */
 final class ExternalBackupNotificationLedger
 {
-    public function reconcile(int $runId, string $channel, string $destinationKey): ?int
+    public function reconcile(int $runId, string $channel, string $destinationKey, bool $singleDestination = false): ?int
     {
         if ($runId < 1 || ! in_array($channel, BackupMessageTemplateRenderer::CHANNELS, true)
             || preg_match('/\A[a-z0-9_-]{1,64}\z/', $destinationKey) !== 1) {
             throw new InvalidArgumentException('Invalid notification delivery identity.');
         }
 
-        return DB::transaction(function () use ($runId, $channel, $destinationKey): ?int {
+        return DB::transaction(function () use ($runId, $channel, $destinationKey, $singleDestination): ?int {
             $run = ExternalBackupCheckRun::query()->whereKey($runId)->lockForUpdate()->firstOrFail();
             $receipt = $run->receipt()->first();
 
@@ -39,6 +39,16 @@ final class ExternalBackupNotificationLedger
                 'channel' => $channel,
                 'destination_key' => $destinationKey,
             ];
+
+            if ($singleDestination && DB::table('custom_backup_notification_deliveries')
+                ->where('source_type', 'external-file')
+                ->where('source_id', $runId)
+                ->where('channel', $channel)
+                ->where('destination_key', '<>', $destinationKey)
+                ->exists()) {
+                // A configuration rotation must not silently reroute an old intent.
+                return null;
+            }
 
             $table = DB::table('custom_backup_notification_deliveries');
             $existing = $table->where($identity)->value('id');
