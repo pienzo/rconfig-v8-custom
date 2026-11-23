@@ -84,6 +84,15 @@ jobs:
           sudo env GITHUB_ACTIONS=true CI_SOURCE_SECRETS_DIR="$STAGING_SECRETS_DIR" \
             sh tests/staging/test-bootstrap-preflight.sh
 
+      - name: Test synthetic one-shot administrator secret provisioning
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n docker/staging/provision-admin-secret.sh
+          sh -n tests/staging/test-provision-admin-secret.sh
+          sudo env GITHUB_ACTIONS=true CI_SOURCE_SECRETS_DIR="$STAGING_SECRETS_DIR" \
+            sh tests/staging/test-provision-admin-secret.sh
+
       - name: Report redacted status on failure
         if: failure()
         shell: bash
