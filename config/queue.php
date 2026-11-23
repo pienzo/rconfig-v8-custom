@@ -72,6 +72,15 @@ return [
         ],
         // F02 is not dispatched or supervised until an explicitly reviewed
         // integration enables it. Do not alter Core's native redis retry_after.
+        'redis_backup_notifications' => [
+            'driver' => 'redis',
+            'connection' => 'default',
+            'queue' => 'BackupNotifications',
+            'retry_after' => 120,
+            'block_for' => null,
+            'after_commit' => true,
+        ],
+
         'redis_external_backups' => [
             'driver' => 'redis',
             'connection' => 'default',
