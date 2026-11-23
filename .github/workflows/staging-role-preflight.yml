@@ -1,0 +1,35 @@
+name: Staging role entrypoint preflight (synthetic)
+
+on:
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - 'docker/staging/role-entrypoint.sh'
+      - 'docker/staging/README.md'
+      - 'tests/staging/test-role-entrypoint.sh'
+      - '.github/workflows/staging-role-preflight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  role-preflight:
+    name: Staging role preflight guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Run synthetic fail-closed tests without containers or secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n docker/staging/role-entrypoint.sh
+          sh -n tests/staging/test-role-entrypoint.sh
+          sh tests/staging/test-role-entrypoint.sh docker/staging/role-entrypoint.sh
+          grep -Fq 'COPY --chown=root:root --chmod=0755 docker/staging/role-entrypoint.sh /usr/local/bin/staging-role-entrypoint.sh' Dockerfile
+          grep -Fq 'ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]' Dockerfile
+          grep -Fq 'CMD ["supervisord", "-c", "/etc/supervisor/supervisord.conf"]' Dockerfile
+          printf 'Default upstream Core startup unchanged: OK\n'
