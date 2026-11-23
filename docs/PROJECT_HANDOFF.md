@@ -4,6 +4,12 @@
 **Purpose:** durable handoff between ChatGPT conversations. **Operational checkpoint:** [PROGRESS.md](PROGRESS.md). **Source audit:** [UPSTREAM_AUDIT.md](UPSTREAM_AUDIT.md). **Original requirements:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 in the ChatGPT project (not committed).
 **Evidence rule:** GitHub commits, PRs, issue records, and CI are authoritative for repository changes; only approved staging results can establish deployment or end-to-end behavior. Never infer completed work merely from a plan.
 
+## 2026-11-23 update — Issue #57 candidate: real first-install integration isolated to CI
+
+A new GitHub feature branch `feature/staging-ci-real-migrations` proposes dedicated GitHub-hosted only tests for the **actual** Laravel/Core bootstrap coordinator using two disposable isolated MariaDB10.11/Redis7 Compose projects and a source-built image. It exercises successful fresh migration → seeded admin/SMTP preflight → protected admin sealing → complete marker, as well as an actual PHP SIGKILL after real migrations before sealing, followed by no-retry/partial-marker checks in a separate process. A PHP harness is bind-mounted read-only for these tests; `.dockerignore` continues to exclude test probes from any distributed image. Exact VM host config/keys are NOT used, and app/worker/HTTP remain off.
+
+**These are proposed tests pending CI, not completed deployment or crash-consistent restore evidence.** They do not prove MariaDB/Redis/storage/APP_KEY backup-and-restore, host internet egress rules, power-failure durability, or an authorized VM bootstrap apply. Keep #57/#40 open. After CI results, record exact run SHA and failures if any. Operator `vm-gpt` remains after STEP 82 with healthy/fresh MariaDB/Redis and `MAIL_MAILER=log`, but no migrations. Existing PR #65 docs checkpoint was merged at `1b12802dc8c06ac9d2066ac0e201d8eae0c29af4`.
+
 ## 2026-11-23 update — STEP 75–82 SUCCESSFUL operator SMTP transition / staging check
 
 On personal synthetic `vm-gpt` (operator reports, **not direct OS connector**): checkout `custom` fast-forwarded cleanly from `977c3152` to `9910e66ea63394cf350ff0b177bae8e8702ae084`; the Docker app image was **not** rebuilt. The protected root:33/mode0640 legacy .env initially had no MAIL_MAILER. `docker/staging/enable-log-mailer.py --check` → `legacy candidate (no changes)`; explicit one-time `--apply` → `log-only; private rollback preserved`; repeat `--check` → `log-only (no changes)`. Its private root-only backup contains sensitive values; never transmit or publish it.
