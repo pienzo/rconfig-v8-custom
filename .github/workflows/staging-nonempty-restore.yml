@@ -1,0 +1,133 @@
+name: Staging nonempty snapshot restore (disposable)
+
+on:
+  pull_request:
+    paths:
+      - 'tests/staging/integration/nonempty-restore.py'
+      - '.github/workflows/staging-nonempty-restore.yml'
+      - 'compose.staging.yaml'
+  workflow_dispatch:
+
+# Disposable GitHub-hosted service containers only; no repository writes,
+# staging VM access, production credentials, artifacts, or secrets.
+permissions:
+  contents: read
+
+jobs:
+  nonempty-restore:
+    name: MariaDB10.11 Redis7 RDB storage and APP_KEY recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      CI: 'true'
+      STAGING_RESTORE_CI: isolated-v1
+
+    services:
+      sql_source:
+        image: mariadb:10.11
+        env:
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: '1'
+          MARIADB_DATABASE: rconfig_ci_snapshot_source
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mariadb-admin ping -h 127.0.0.1 -u root"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=8
+
+      sql_restored:
+        image: mariadb:10.11
+        env:
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: '1'
+          MARIADB_DATABASE: rconfig_ci_snapshot_restored
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="mariadb-admin ping -h 127.0.0.1 -u root"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=8
+
+      redis_source:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=6
+
+    steps:
+      - name: Checkout tested source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Install disposable MariaDB and Redis CLI tools
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mariadb-client redis-tools
+
+      - name: Check CI-only Python syntax
+        run: python3 -m py_compile tests/staging/integration/nonempty-restore.py
+
+      - name: Allocate protected throwaway root (never inside Git)
+        shell: bash
+        run: |
+          root="$(mktemp -d /tmp/rconfig-restore-XXXXXXXXXX)"
+          chmod 0700 "$root"
+          echo "STAGING_RESTORE_ROOT=$root" >> "$GITHUB_ENV"
+
+      - name: Seed nonempty fixtures and create/check full snapshot
+        run: python3 tests/staging/integration/nonempty-restore.py prepare
+
+      - name: Simulate abrupt death AFTER independent source mutations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/staging/integration/nonempty-restore.py damage \
+            > "$STAGING_RESTORE_ROOT/damage.log" 2>&1 &
+          pid=$!
+          trap 'kill -KILL "$pid" 2>/dev/null || true' EXIT
+          observed=0
+          for _ in $(seq 1 120); do
+            if [ -f "$STAGING_RESTORE_ROOT/crash.ready" ]; then
+              observed=1
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              break
+            fi
+            sleep 0.25
+          done
+          if [ "$observed" -ne 1 ]; then
+            echo 'Synthetic writer did not reach the crash checkpoint' >&2
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            exit 1
+          fi
+          kill -KILL "$pid"
+          set +e
+          wait "$pid" 2>/dev/null
+          code=$?
+          set -e
+          trap - EXIT
+          test "$code" -eq 137 || {
+            echo 'Expected actual SIGKILL exit code 137' >&2
+            exit 1
+          }
+          echo 'Synthetic source modification interrupted with real SIGKILL (137)'
+
+      - name: Restore verified pre-crash snapshot to independent instances
+        run: python3 tests/staging/integration/nonempty-restore.py restore
+
+      - name: Independently verify nonempty recovery and unchanged APP_KEY
+        run: python3 tests/staging/integration/nonempty-restore.py verify
+
+      - name: Stop only this disposable restored Redis
+        if: always()
+        run: |
+          docker rm -f rconfig-ci-snapshot-redis-restored >/dev/null 2>&1 || true
+          echo 'Disposable recovery Redis cleanup complete (no project volumes touched).'
