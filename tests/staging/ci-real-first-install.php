@@ -93,6 +93,26 @@ try {
     ciAssert(count($argv) === 2 && in_array($argv[1], ['success', 'crash', 'inspect-crash'], true), 'scenario');
     ciAssert(is_readable('/var/www/html/rconfig/vendor/autoload.php'), 'source-built application dependencies');
 
+    if ($argv[1] === 'crash') {
+        // Docker's PID 1 has special signal handling semantics. Fork BEFORE
+        // Laravel opens DB/Redis connections, then kill the actual non-PID1
+        // bootstrap child with SIGKILL after real migrations. The parent
+        // verifies the wait status; an ordinary exit is a failed crash test.
+        ciAssert(function_exists('pcntl_fork') && function_exists('pcntl_waitpid'), 'pcntl available');
+        $child = pcntl_fork();
+        ciAssert($child !== -1, 'disposable bootstrap child fork');
+
+        if ($child > 0) {
+            $waited = pcntl_waitpid($child, $status);
+            ciAssert($waited === $child, 'observed bootstrap child exit');
+            ciAssert(pcntl_wifsignaled($status), 'child terminated by a signal');
+            ciAssert(pcntl_wtermsig($status) === SIGKILL, 'child terminated by SIGKILL');
+
+            echo "disposable bootstrap child terminated by SIGKILL after real migrations\n";
+            exit(137);
+        }
+    }
+
     $app = require '/var/www/html/rconfig/bootstrap/app.php';
     $app->make(Kernel::class)->bootstrap();
 
