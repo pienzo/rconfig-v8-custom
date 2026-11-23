@@ -7,6 +7,12 @@
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
 **Current gate:** F02 code merged into `custom` through PR #84 (`9ad86a814f0eec1c16006530cf5df64708975ffa`); preview, inactive rule editor, two-pass manual probe implemented with CI PASS, but no verified file receipt, durable worker or scheduling. VM untouched by these changes; `main` clean at upstream baseline `121cff1b243794af260f6c5850553b5f1b0af881`.
 
+## 2026-11-23 — F02 dormant queued scheduler / pending+failed run lifecycle candidate (#93)
+
+- Code adds isolated `ExternalBackupStartObservationJob`, `ExternalBackupFollowUpObservationJob` and `ExternalBackupExpirePendingJob` on the existing F02 Redis queue. The native Core scheduler dispatches a per-rule cron only when BOTH `RCONFIG_F02_RUNTIME_ENABLED` and `RCONFIG_F02_QUEUE_ENABLED` are true, the rule is enabled and its Core Task unpaused. All new switches are **false by default**; current F02 editor cannot enable rules.
+- A scheduled occurrence is idempotently claimed and records `pending` first/second metadata observations; missing or overdue runs become persistent `failed` through existing transactional state service. Candidate file digest is inspected privately by the native helper, but the job **cannot create a verified file receipt or mark SUCCESS**. No external network, secrets, VM writes or production activation; synthetic queue tests and CI pending.
+- Next: introduce reviewed unique receipt acceptance and verified SUCCESS only after trusted intake handoff/OS staging evidence. Then expose safe task enable/pause controls, end-to-end staging checks, notifications and release.
+
 ## 2026-11-23 — F02 native read-only file digest verifier candidate (#87)
 
 - Native Linux `openat2` helper added with exact scanner metadata requirements, symlink/mount escape refusal, bounded SHA-256 streaming, before/after file-handle and pathname identity checks. Dockerfile compiles the helper from GPL source in an isolated build stage; PHP adapter is an internal service, not HTTP, queue or scheduler.
