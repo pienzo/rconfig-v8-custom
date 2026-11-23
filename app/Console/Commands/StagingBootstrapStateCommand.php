@@ -13,7 +13,6 @@ final class StagingBootstrapStateCommand extends Command
 {
     protected $signature = 'staging:bootstrap-state
                             {--phase= : Exactly one of fresh, migrated, sealed}';
-
     protected $description = 'Read-only synthetic staging schema, queue and admin-state gate';
 
     public function handle(StagingBootstrapStateService $state): int
