@@ -7,6 +7,12 @@
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
 **Current gate:** F02 native verifier #88, F02 history #86, Telegram transport #92, F04 editor #90 merged to `custom`. F02 queued runner PR #94 remains unmerged and OFF by default; no verified receipt or SUCCESS, no completed release image or VM deployment. `main` kept upstream-clean.
 
+## 2026-11-23 — F02 atomic verified receipt ledger candidate (#105)
+
+- Introduces a **disabled** transactional SUCCESS/receipt writer with row lock, scheduled UTC-window validation, candidate/filename match, one receipt per run and per-device opaque-token uniqueness. Synthetic tests cover idempotence, duplicate claims, failed run refusal, invalid inputs and deadline rejection.
+- **Not an activated SUCCESS path.** No trusted finalization/identity token producer exists; only a future audited handoff can call the service. The gate is hard-coded false by default, with no HTTP/worker/scheduler call sites and no production migration or VM change. Upload-provenance and helper/staging trust must be validated before enabling acceptance.
+
+
 ## 2026-11-23 — F02 terminal reason preservation candidate (#103)
 
 - F02 deadline sweeper and follow-up job now retain the latest validated observation reason (`missing`, `stale`, `unstable`, `access`, etc.) in the terminal FAILED check run, instead of losing it as `deadline_elapsed`. Only never-observed runs use the generic deadline reason.
