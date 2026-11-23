@@ -94,6 +94,12 @@ class Kernel extends ConsoleKernel
                 ->everyMinute();
         }
 
+        if (config('custom-backup-notifications.enabled', false) === true) {
+            $schedule->call(static function (): void {
+                app(\App\Services\Notifications\ExternalBackupNotificationReconciler::class)->enqueue();
+            })->name('f03-reconcile-external-backup-notifications')->everyMinute()->withoutOverlapping(2);
+        }
+
         $schedule->command(RunHealthChecksCommand::class)->everyFiveMinutes();
         $schedule->command(ScheduleCheckHeartbeatCommand::class)->everyFiveMinutes();
         $schedule->command('queue:prune-batches --hours=48 --unfinished=72')->daily();
