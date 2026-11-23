@@ -58,9 +58,15 @@ final class CiKillAfterMigratedStages implements StagingBootstrapStages
         }
 
         fwrite(STDERR, "disposable SIGKILL injection reached after real migrations\n");
-        posix_kill(posix_getpid(), SIGKILL);
+        $sent = posix_kill(posix_getpid(), SIGKILL);
 
-        throw new RuntimeException('synthetic CI crash gate: SIGKILL delivery failed');
+        if (! $sent) {
+            throw new RuntimeException('synthetic CI crash gate: SIGKILL syscall refused errno=' . (int) posix_get_last_error());
+        }
+
+        // Delivery should terminate this process before this is reached.
+        usleep(500000);
+        throw new RuntimeException('synthetic CI crash gate: SIGKILL returned without termination');
     }
 
     public function seal(): bool
