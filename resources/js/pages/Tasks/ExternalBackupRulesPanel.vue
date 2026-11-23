@@ -12,6 +12,25 @@ const infoMessage = ref("");
 const editingId = ref(null);
 const currentPage = ref(1);
 const lastPage = ref(1);
+const previewRuleId = ref(null);
+const previewLoading = ref(false);
+const previewError = ref("");
+const previewData = ref(null);
+
+async function previewFiles(rule) {
+    previewRuleId.value = rule.id;
+    previewLoading.value = true;
+    previewError.value = "";
+    previewData.value = null;
+    try {
+        const response = await axios.get(`/api/tasks/external-backup-rules/${rule.id}/files-preview`);
+        previewData.value = response.data;
+    } catch (error) {
+        previewError.value = error.response?.data?.message || "Cannot inspect the configured inbox.";
+    } finally {
+        previewLoading.value = false;
+    }
+}
 
 function initial() {
     return {
@@ -176,7 +195,23 @@ onMounted(() => load());
                 </div>
                 <div class="flex gap-2">
                     <button type="button" class="rounded border px-2 py-1" @click="edit(row)">Edit</button>
+                    <button type="button" class="rounded border px-2 py-1" @click="previewFiles(row)">Preview files</button>
                     <button type="button" class="rounded border px-2 py-1 text-red-500" @click="remove(row)">Delete</button>
+                </div>
+                <div v-if="previewRuleId === row.id" class="w-full rounded bg-muted p-2" aria-live="polite">
+                    <p v-if="previewLoading">Reading filenames...</p>
+                    <p v-else-if="previewError" class="text-red-500" role="alert">{{ previewError }}</p>
+                    <template v-else-if="previewData">
+                        <p class="font-semibold">Metadata only — backup completion and validity NOT verified.</p>
+                        <p v-if="!previewData.directory_present">Device folder not present.</p>
+                        <p v-else>Inspected {{ previewData.scanned_entries }} entries.</p>
+                        <ul class="mt-1 space-y-1">
+                            <li v-for="file in previewData.files" :key="file.filename" class="break-all font-mono">
+                                {{ file.filename }} ({{ file.size_bytes }} bytes · {{ file.mtime_utc }})
+                            </li>
+                            <li v-if="previewData.files.length === 0">No matching regular files.</li>
+                        </ul>
+                    </template>
                 </div>
             </li>
             <li v-if="rows.length === 0" class="text-sm text-muted-foreground">No external backup rules configured.</li>
