@@ -9,21 +9,17 @@ final class SyntheticStagingBootstrapStages implements StagingBootstrapStages
 {
     /** @var list<string> */
     public array $calls = [];
-
     /** @var list<bool> */
     public array $freshResults = [true, true];
-
     public ?string $failAt = null;
-
     public ?string $throwAt = null;
-
     public ?string $storage = null;
 
     public function fresh(): bool
     {
-        $this->record('fresh');
+        $allowed = $this->record('fresh');
 
-        return array_shift($this->freshResults) ?? true;
+        return $allowed && (array_shift($this->freshResults) ?? true);
     }
 
     public function migrate(): bool
