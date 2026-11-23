@@ -73,6 +73,17 @@ jobs:
           docker compose -f compose.staging.yaml --profile infra ps
           test "$(docker compose -f compose.staging.yaml --profile infra ps --status running --services | wc -l)" -eq 2
 
+      - name: Test read-only bootstrap preflight with disposable DB and Redis probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n docker/staging/bootstrap-preflight.sh
+          sh -n tests/staging/test-bootstrap-preflight.sh
+          # Root is required only for protected /etc config, on ephemeral
+          # GitHub-hosted runners; no staging VM or external endpoint touched.
+          sudo env GITHUB_ACTIONS=true CI_SOURCE_SECRETS_DIR="$STAGING_SECRETS_DIR" \
+            sh tests/staging/test-bootstrap-preflight.sh
+
       - name: Report redacted status on failure
         if: failure()
         shell: bash
