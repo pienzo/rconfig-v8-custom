@@ -3,8 +3,8 @@
 use App\Models\CustomBackupNotificationTemplate;
 use App\Models\User;
 use App\Notifications\CustomBackupTestMailNotification;
-use Illuminate\Support\Facades\Notification;
 use App\Services\Notifications\BackupMessageTemplateRenderer;
+use Illuminate\Support\Facades\Notification;
 
 beforeEach(function () {
     $this->beginTransaction();
@@ -110,7 +110,7 @@ test('F04 email test submits only a synthetic message to the authenticated admin
         $mail = $notification->toMail($this->admin);
 
         return $mail->subject === 'F02 SW-DEMO-01 FAILED'
-            && ! str_contains(implode(' ', $mail->introLines), 'outside@example.invalid')
+            && str_contains(implode(' ', $mail->introLines), 'outside@example.invalid') === false
             && str_contains(implode(' ', $mail->introLines), 'synthetic_20261123.cfg');
     });
     Notification::assertCount(1);

@@ -10,9 +10,9 @@ use App\Services\Notifications\TelegramBotTransport;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Notification;
-use Throwable;
 use InvalidArgumentException;
 use RuntimeException;
+use Throwable;
 
 final class BackupNotificationTemplateController extends Controller
 {
