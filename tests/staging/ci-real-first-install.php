@@ -25,6 +25,56 @@ function ciAssert(bool $condition, string $label): void
     }
 }
 
+final class CiKillAfterMigratedStages implements StagingBootstrapStages
+{
+    public function __construct(private readonly StagingBootstrapStages $real) {}
+
+    public function fresh(): bool
+    {
+        if (! $this->real->fresh()) {
+            throw new RuntimeException('synthetic CI crash gate: freshness refused');
+        }
+
+        return true;
+    }
+
+    public function migrate(): bool
+    {
+        if (! $this->real->migrate()) {
+            throw new RuntimeException('synthetic CI crash gate: migration refused');
+        }
+
+        return true;
+    }
+
+    public function migrated(): bool
+    {
+        if (! $this->real->migrated()) {
+            throw new RuntimeException('synthetic CI crash gate: Core seed inspection refused');
+        }
+
+        fwrite(STDERR, "disposable SIGKILL injection reached after real migrations\n");
+        posix_kill(posix_getpid(), SIGKILL);
+
+        throw new RuntimeException('synthetic CI crash gate: SIGKILL delivery failed');
+    }
+
+    public function seal(): bool
+    {
+        throw new RuntimeException('synthetic CI crash gate: unexpected admin seal');
+    }
+
+    public function sealed(): bool
+    {
+        throw new RuntimeException('synthetic CI crash gate: unexpected sealed state');
+    }
+
+    public function postflight(): bool
+    {
+        throw new RuntimeException('synthetic CI crash gate: unexpected postflight');
+    }
+}
+
 try {
     ciAssert(PHP_SAPI === 'cli', 'PHP CLI only');
     ciAssert(getenv('GITHUB_ACTIONS') === 'true', 'GitHub-hosted CI only');
@@ -83,7 +133,9 @@ try {
 
         // getenv() after Laravel boot contains protected Dotenv values too.
         // Check only the original Linux process snapshot, without contents.
-        if (! (new StagingBootstrapProcessEnvironmentGuard)->safe()) {
+        $initialEnvironment = new StagingBootstrapProcessEnvironmentGuard;
+
+        if ($initialEnvironment->safe() === false) {
             fwrite(STDERR, "disposable gate failed check: original-process-environment\n");
         }
     }
@@ -117,55 +169,7 @@ try {
         // A real successful Laravel migrate and Core-seed verification occur
         // before SIGKILL. The process dies while the default admin is unsealed.
         // This MUST be confined to an internal-only disposable CI network.
-        $fault = new class($stages) implements StagingBootstrapStages {
-            public function __construct(private readonly StagingBootstrapStages $real) {}
-
-            public function fresh(): bool
-            {
-                if (! $this->real->fresh()) {
-                    throw new RuntimeException('synthetic CI crash gate: freshness refused');
-                }
-
-                return true;
-            }
-
-            public function migrate(): bool
-            {
-                if (! $this->real->migrate()) {
-                    throw new RuntimeException('synthetic CI crash gate: migration refused');
-                }
-
-                return true;
-            }
-
-            public function migrated(): bool
-            {
-                if (! $this->real->migrated()) {
-                    throw new RuntimeException('synthetic CI crash gate: Core seed inspection refused');
-                }
-
-                fwrite(STDERR, "disposable SIGKILL injection reached after real migrations\n");
-                posix_kill(posix_getpid(), SIGKILL);
-
-                throw new RuntimeException('synthetic CI crash gate: SIGKILL delivery failed');
-            }
-
-            public function seal(): bool
-            {
-                throw new RuntimeException('crash path attempted to seal');
-            }
-
-            public function sealed(): bool
-            {
-                throw new RuntimeException('crash path attempted to check sealed');
-            }
-
-            public function postflight(): bool
-            {
-                throw new RuntimeException('crash path attempted to publish');
-            }
-        };
-
+        $fault = new CiKillAfterMigratedStages($stages);
         // Never return normally from a successful injected SIGKILL.
         $coordinator->run($storage, $fault);
         throw new RuntimeException('synthetic CI crash gate: coordinator returned before SIGKILL');
@@ -195,8 +199,10 @@ try {
     // only their PHP class and safe SQLSTATE (never the exception message).
     $message = $failure->getMessage();
 
-    if (str_starts_with($message, 'synthetic first-install assertion failed: ')
-        || str_starts_with($message, 'synthetic CI crash gate: ')) {
+    $safeDiagnostic = str_starts_with($message, 'synthetic first-install assertion failed: ')
+        || str_starts_with($message, 'synthetic CI crash gate: ');
+
+    if ($safeDiagnostic) {
         fwrite(STDERR, $message . PHP_EOL);
     } else {
         $type = get_debug_type($failure);
