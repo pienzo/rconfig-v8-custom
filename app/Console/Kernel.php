@@ -109,7 +109,7 @@ class Kernel extends ConsoleKernel
      */
     private function scheduleSecurityReview(): void
     {
-        if (config('rConfig.is_demo') || ! config('security-checks.schedule_enabled', true)) {
+        if (config('rConfig.is_demo') || config('security-checks.schedule_enabled', true) === false) {
             return;
         }
 
@@ -125,7 +125,7 @@ class Kernel extends ConsoleKernel
      */
     private function download_task($executionStartTime, $task)
     {
-        if (! in_array($task->task_command, TaskDownloadRun::ALLOWED_TASK_COMMANDS, true)) {
+        if (in_array($task->task_command, TaskDownloadRun::ALLOWED_TASK_COMMANDS, true) === false) {
             Log::warning('Scheduler skipped a task with an unsupported task command.', [
                 'task_id' => $task->id,
                 'task_command' => $task->task_command,
