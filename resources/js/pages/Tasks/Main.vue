@@ -93,16 +93,16 @@ onUnmounted(() => {
 				/>
 			</div>
 			<div class="flex items-center justify-end">
-                <Button
-                    type="button"
-                    class="px-2 py-1 ml-2 text-sm"
-                    size="sm"
-                    variant="outline"
-                    :aria-expanded="showExternalPatternPreview"
-                    @click="showExternalPatternPreview = !showExternalPatternPreview"
-                >
-                    {{ showExternalPatternPreview ? "Hide file pattern tester" : "Test backup file pattern" }}
-                </Button>
+				<Button
+					type="button"
+					class="px-2 py-1 ml-2 text-sm"
+					size="sm"
+					variant="outline"
+					:aria-expanded="showExternalPatternPreview"
+					@click="showExternalPatternPreview = !showExternalPatternPreview"
+				>
+					{{ showExternalPatternPreview ? "Hide file pattern tester" : "Test backup file pattern" }}
+				</Button>
 				<Button
 					v-if="selectedRows.length"
 					class="px-2 py-1 bg-red-600 hover:bg-red-700 hover:animate-pulse"
@@ -133,7 +133,7 @@ onUnmounted(() => {
 			</div>
 		</div>
 
-        <ExternalBackupPatternPreview v-if="showExternalPatternPreview" class="mx-6 mb-3" />
+		<ExternalBackupPatternPreview v-if="showExternalPatternPreview" class="mx-6 mb-3" />
 
 		<div class="px-6">
 			<Table>
