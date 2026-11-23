@@ -330,11 +330,18 @@ def backup(root):
     run(["docker", "start", SOURCE_REDIS])
     wait_redis(6387)
     state_source(root, ORIGINAL)
+    # Only a nonsecret fixed signal is visible to the unprivileged writer;
+    # the root-owned 0700 snapshot itself must remain inaccessible.
+    ready = root / "snapshot.ready"
+    ensure(not ready.exists(), "single-use snapshot signal")
+    ready.write_text("verified-snapshot\n")
+    os.chown(ready, int(os.environ["RUNNER_UID"]), int(os.environ["RUNNER_GID"]))
+    ready.chmod(0o600)
     print("CI: quiesced full Core SQL + stopped Redis AOF + protected storage/.env snapshot verified")
 
 
 def damage(root):
-    ensure((root / "snapshot/manifest.json").is_file()
+    ensure((root / "snapshot.ready").read_text() == "verified-snapshot\n"
            and not (root / "writer.ready").exists(), "single-use fault point")
     state_source(root, ORIGINAL)
     maria(3306, SOURCE_DB,
