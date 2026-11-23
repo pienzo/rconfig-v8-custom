@@ -67,17 +67,12 @@ final class StagingBootstrapContainerGate implements StagingBootstrapRuntimeGate
             return false;
         }
 
-        // Process-level overrides can supersede the protected .env file.
-        foreach ([
-            'APP_KEY', 'APP_ENV', 'APP_DEBUG', 'DB_CONNECTION', 'DB_HOST',
-            'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD', 'DB_SOCKET',
-            'REDIS_HOST', 'REDIS_PORT', 'REDIS_PASSWORD', 'REDIS_DB',
-            'REDIS_CACHE_DB', 'QUEUE_CONNECTION', 'CACHE_DRIVER',
-            'SESSION_DRIVER', 'RCONFIG_F02_QUEUE_ENABLED', 'MAIL_MAILER',
-        ] as $key) {
-            if (getenv($key) !== false) {
-                return false;
-            }
+        // Laravel Dotenv uses PutenvAdapter and makes protected .env values
+        // visible through getenv(). Only the initial Linux execve snapshot
+        // distinguishes actual Docker/process overrides from those values.
+        // Missing procfs or blocked keys must refuse the one-shot bootstrap.
+        if (! (new StagingBootstrapProcessEnvironmentGuard)->safe()) {
+            return false;
         }
 
         $dbPassword = config('database.connections.mysql.password');
