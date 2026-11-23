@@ -79,7 +79,6 @@ test('failed or short write cannot reuse a nonempty file as a successful backup'
     $fileops = new class('show running-config', $this->categoryName, $this->deviceName, 1, $this->dataBaseDir, 'cli') extends FileOperations
     {
         public string $existingPath;
-
         public int|false $simulatedWrite = false;
 
         public function createFile($command, $isJson = 0)
