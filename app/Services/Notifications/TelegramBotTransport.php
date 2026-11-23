@@ -10,30 +10,14 @@ use RuntimeException;
 /**
  * Disabled-by-default Telegram Bot API transport.
  *
- * No controller, queue worker, or Core event invokes this class yet.
+ * Used by the synthetic test endpoint and explicit gated F02 dispatcher.
  * Never log token-bearing URLs or API response bodies.
  */
 final class TelegramBotTransport
 {
     public function send(string $htmlText): void
     {
-        if (config('rconfig-telegram.enabled') !== true) {
-            throw new RuntimeException('Telegram delivery is disabled.');
-        }
-
-        $token = config('rconfig-telegram.bot_token');
-        $chatId = config('rconfig-telegram.chat_id');
-
-        if (! is_string($token) || preg_match('/\A[0-9]{5,15}:[A-Za-z0-9_-]{30,100}\z/D', $token) !== 1
-            || ! is_string($chatId) || preg_match('/\A(?:-?[0-9]{1,20}|@[A-Za-z0-9_]{5,32})\z/D', $chatId) !== 1) {
-            throw new RuntimeException('Telegram delivery is not configured.');
-        }
-
-        // Conservative UTF-8 byte cap protects the Bot API 4096-char limit.
-        // Rendered HTML must already have escaped its variable values.
-        if ($htmlText === '' || strlen($htmlText) > 4096 || preg_match('//u', $htmlText) !== 1) {
-            throw new InvalidArgumentException('Telegram message is empty, invalid, or too long.');
-        }
+        ['token' => $token, 'chat_id' => $chatId] = $this->validatedConfiguration($htmlText);
 
         try {
             $response = Http::asJson()
@@ -56,5 +40,45 @@ final class TelegramBotTransport
             // Do not include provider error text; it may echo chat identifiers.
             throw new RuntimeException('Telegram provider rejected the message.');
         }
+    }
+
+    /**
+     * Validate before claiming a delivery. Automatic sending accepts only a
+     * stable numeric chat ID, not a mutable public username.
+     */
+    public function automaticDestinationKey(string $htmlText): string
+    {
+        $config = $this->validatedConfiguration($htmlText);
+        $key = config('app.key');
+        if (preg_match('/\A-?[1-9][0-9]{0,19}\z/', $config['chat_id']) !== 1
+            || ! is_string($key) || $key === '') {
+            throw new RuntimeException('Automatic Telegram destination is not configured.');
+        }
+
+        return hash_hmac('sha256', 'telegram:' . $config['chat_id'], $key);
+    }
+
+    /** @return array{token: string, chat_id: string} */
+    private function validatedConfiguration(string $htmlText): array
+    {
+        if (config('rconfig-telegram.enabled') !== true) {
+            throw new RuntimeException('Telegram delivery is disabled.');
+        }
+
+        $token = config('rconfig-telegram.bot_token');
+        $chatId = config('rconfig-telegram.chat_id');
+
+        if (! is_string($token) || preg_match('/\A[0-9]{5,15}:[A-Za-z0-9_-]{30,100}\z/D', $token) !== 1
+            || ! is_string($chatId) || preg_match('/\A(?:-?[0-9]{1,20}|@[A-Za-z0-9_]{5,32})\z/D', $chatId) !== 1) {
+            throw new RuntimeException('Telegram delivery is not configured.');
+        }
+
+        // Conservative UTF-8 byte cap protects the Bot API 4096-char limit.
+        // Rendered HTML must already have escaped its variable values.
+        if ($htmlText === '' || strlen($htmlText) > 4096 || preg_match('//u', $htmlText) !== 1) {
+            throw new InvalidArgumentException('Telegram message is empty, invalid, or too long.');
+        }
+
+        return ['token' => $token, 'chat_id' => $chatId];
     }
 }
