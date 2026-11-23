@@ -253,3 +253,14 @@ jobs:
         # A short reservation is configured IN MEMORY only for an isolated worker.
         # SIGKILL targets only its own PHP queue:work subprocess, never Horizon.
         run: F02_SYNTHETIC_REDIS_QUEUE=1 php tools/f02/queue/redelivery.php
+
+      
+      - name: Test F02 real native SHA-256 through Laravel worker and receipt (hosted only)
+        # Compiles the same unprivileged helper as Dockerfile on a throwaway
+        # GitHub Linux runner. These tests explicitly enable F02 only in-process.
+        # Not proof of uploader finalization or authorized staging deployment.
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror tools/f02/linux/f02_safe_digest.c \
+            -lcrypto -o "$RUNNER_TEMP/rconfig-f02-safe-digest"
+          F02_NATIVE_E2E_BINARY="$RUNNER_TEMP/rconfig-f02-safe-digest" \
+            php artisan test --compact tests/Fasttests/ExternalBackups/ExternalBackupRealNativeWorkerIntegrationTest.php
