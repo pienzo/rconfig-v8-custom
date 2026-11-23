@@ -138,9 +138,21 @@ try {
     ciAssert(file_get_contents($marker) === 'staging-bootstrap-v1', 'retry did not replace marker');
 
     echo "disposable real Core migration + seeded-admin seal + completion marker: PASSED\n";
-} catch (Throwable) {
-    // Never echo database exceptions or stack traces: migration errors can
-    // contain private SQL inputs or authentication details in other settings.
-    fwrite(STDERR, "disposable real-migrations probe refused; inspect sanitized hosted CI state\n");
+} catch (Throwable $failure) {
+    // A known assertion uses only a fixed, source-reviewed label. Other
+    // exceptions may embed SQL, connection strings or credentials, so report
+    // only their PHP class and safe SQLSTATE (never the exception message).
+    $message = $failure->getMessage();
+
+    if (str_starts_with($message, 'synthetic first-install assertion failed: ')) {
+        fwrite(STDERR, $message . PHP_EOL);
+    } else {
+        $type = get_debug_type($failure);
+        $code = (string) $failure->getCode();
+        $safeCode = preg_match('/\A[A-Za-z0-9]{1,6}\z/D', $code) === 1 ? $code : 'unavailable';
+
+        fwrite(STDERR, "disposable first-install exception: {$type}; safe-code={$safeCode}\n");
+    }
+
     exit(1);
 }
