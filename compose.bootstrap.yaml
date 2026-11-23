@@ -1,0 +1,49 @@
+# Explicit bootstrap-only, read-only service overlay for synthetic staging.
+# Must be combined with compose.staging.yaml. No default service, migration,
+# installer, HTTP listener or background worker is started by this file.
+# This first increment accepts --check ONLY; --apply is deliberately absent.
+name: rconfig-v8-custom-staging
+
+services:
+  bootstrap:
+    profiles: [bootstrap]
+    image: ${STAGING_APP_IMAGE:?Provide a reviewed source-built image tag, never upstream prebuilt}
+    pull_policy: never
+    restart: "no"
+    user: "1000:33"
+    entrypoint: ["/bin/sh", "/usr/local/bin/staging-bootstrap-container-entrypoint.sh"]
+    command: ["--check"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      RCONFIG_STAGING_BOOTSTRAP: core-synthetic-v1
+    volumes:
+      # The protected Laravel app configuration stays outside Git and image.
+      - type: bind
+        source: ${STAGING_CONFIG_DIR:?Provide protected external staging config}/.env
+        target: /var/www/html/rconfig/.env
+        read_only: true
+      # A future explicit bootstrap will use this volume for a persistent,
+      # security-reviewed installation marker and Core storage skeleton.
+      - type: volume
+        source: staging_storage
+        target: /var/www/html/rconfig/storage
+    secrets:
+      - source: staging_admin_password
+        target: staging_admin_password
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,mode=1777
+      - /var/www/html/rconfig/bootstrap/cache:rw,nosuid,nodev,uid=1000,gid=33,mode=0770
+    networks:
+      - staging_internal
+
+# The file-backed secret is mounted at /run/secrets/staging_admin_password
+# only for this one-shot container. Ordinary roles never receive it.
+secrets:
+  staging_admin_password:
+    file: ${STAGING_SECRETS_DIR:?Provide private synthetic staging secrets}/staging_admin_password
+
+volumes:
+  staging_storage:
