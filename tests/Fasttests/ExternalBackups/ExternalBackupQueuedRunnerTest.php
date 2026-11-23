@@ -68,12 +68,7 @@ test('F02 scheduled first observation claims a durable pending occurrence and qu
     app()->call([$start, 'handle']);
 
     $run = ExternalBackupCheckRun::firstOrFail();
-    if ($run->reason === null) {
-        throw new RuntimeException('F02 test diagnostic (synthetic): status=' . $run->status
-            . ' deadline=' . $run->getRawOriginal('deadline_at_utc')
-            . ' observed=' . (string) $run->getRawOriginal('last_observed_at_utc')
-            . ' now=' . CarbonImmutable::now('UTC')->format('Y-m-d H:i:s'));
-    }
+    expect($run->last_observed_at_utc)->not->toBeNull();
     expect($run->status)->toBe('pending');
     expect($run->reason)->toBe('unstable');
     expect($run->device_id)->toBe($this->device->id);
@@ -95,6 +90,7 @@ test('F02 missing backup expires to durable FAILED without a receipt or SUCCESS'
     app()->call([new ExternalBackupExpirePendingJob, 'handle']);
 
     expect(ExternalBackupCheckRun::firstOrFail()->status)->toBe('failed');
+    expect(ExternalBackupCheckRun::firstOrFail()->reason)->toBe('missing');
     expect(ExternalBackupFileReceipt::count())->toBe(0);
 });
 
@@ -135,4 +131,40 @@ test('F02 runtime flag and per-rule pause disable all automatic observations', f
     $this->rule->update(['enabled' => false]);
     app()->call([new ExternalBackupStartObservationJob($this->rule->id, f02RunStartInstant($this->instant)), 'handle']);
     expect(ExternalBackupCheckRun::count())->toBe(0);
+});
+
+test('F02 expiry without an observation retains the generic deadline_elapsed reason', function () {
+    $run = ExternalBackupCheckRun::create([
+        'rule_id' => $this->rule->id,
+        'device_id' => $this->device->id,
+        'scheduled_at_utc' => $this->instant->subSeconds(121)->format('Y-m-d H:i:s'),
+        'deadline_at_utc' => $this->instant->subSecond()->format('Y-m-d H:i:s'),
+        'status' => 'pending',
+    ]);
+
+    app()->call([new ExternalBackupExpirePendingJob, 'handle']);
+
+    expect($run->fresh()->status)->toBe('failed');
+    expect($run->fresh()->reason)->toBe('deadline_elapsed');
+});
+
+test('F02 follow-up expiry preserves the last validated failure reason', function () {
+    $observedAt = $this->instant->subSeconds(10)->format('Y-m-d H:i:s');
+    $run = ExternalBackupCheckRun::create([
+        'rule_id' => $this->rule->id,
+        'device_id' => $this->device->id,
+        'scheduled_at_utc' => $this->instant->subSeconds(121)->format('Y-m-d H:i:s'),
+        'deadline_at_utc' => $this->instant->subSecond()->format('Y-m-d H:i:s'),
+        'status' => 'pending',
+        'reason' => 'stale',
+        'first_observed_at_utc' => $observedAt,
+        'last_observed_at_utc' => $observedAt,
+    ]);
+
+    $previousScan = ['directory_present' => false, 'scanned_entries' => 0, 'files' => []];
+    app()->call([new ExternalBackupFollowUpObservationJob($run->id, $previousScan, $observedAt), 'handle']);
+
+    expect($run->fresh()->status)->toBe('failed');
+    expect($run->fresh()->reason)->toBe('stale');
+    expect(ExternalBackupFileReceipt::count())->toBe(0);
 });
