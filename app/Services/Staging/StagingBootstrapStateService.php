@@ -58,7 +58,9 @@ final class StagingBootstrapStateService
             && $settings->mail_to_email === 'staging-admin@example.invalid'
             && (int) $settings->mail_authcheck === 0
             && $settings->mail_username === null
-            && $settings->mail_password === null
+            // Both SQL NULL and an empty string carry no SMTP credential.
+            // Any nonempty stored password must still reject bootstrap.
+            && ($settings->mail_password === null || $settings->mail_password === '')
             && (int) $settings->phpDebugging === 0;
     }
 

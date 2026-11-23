@@ -62,7 +62,7 @@ test('sealed state requires new admin hash and completely neutralized SMTP', fun
         'mail recipient' => $settings !== null && $settings->mail_to_email === 'staging-admin@example.invalid',
         'mail authentication disabled' => $settings !== null && (int) $settings->mail_authcheck === 0,
         'mail username cleared' => $settings !== null && $settings->mail_username === null,
-        'mail password cleared' => $settings !== null && $settings->mail_password === null,
+        'mail password cleared (null or empty)' => $settings !== null && in_array($settings->mail_password, [null, ''], true),
         'PHP debugging disabled' => $settings !== null && (int) $settings->phpDebugging === 0,
     ];
 
@@ -74,6 +74,14 @@ test('sealed state requires new admin hash and completely neutralized SMTP', fun
         ->and($state->isSealed(str_repeat('f', 64)))->toBeFalse();
 
     DB::table('settings')->where('id', 1)->update(['mail_driver' => 'smtp']);
+
+    expect($state->isSealed($password))->toBeFalse();
+
+    // A nonempty residual SMTP credential is never an acceptable sealed state.
+    DB::table('settings')->where('id', 1)->update([
+        'mail_driver' => 'log',
+        'mail_password' => 'synthetic-stale-password',
+    ]);
 
     expect($state->isSealed($password))->toBeFalse();
 });
