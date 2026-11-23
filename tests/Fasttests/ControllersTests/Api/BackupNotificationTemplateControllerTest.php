@@ -2,6 +2,8 @@
 
 use App\Models\CustomBackupNotificationTemplate;
 use App\Models\User;
+use App\Notifications\CustomBackupTestMailNotification;
+use Illuminate\Support\Facades\Notification;
 use App\Services\Notifications\BackupMessageTemplateRenderer;
 
 beforeEach(function () {
@@ -86,4 +88,45 @@ test('F04 refuses non-administrators for all API actions', function () {
         'channel' => 'email', 'title' => 'test', 'body' => 'test',
     ])->assertForbidden();
     $this->deleteJson('/api/settings/notification-templates/email/backup.success')->assertForbidden();
+});
+
+test('F04 email test submits only a synthetic message to the authenticated admin', function () {
+    Notification::fake();
+
+    $this->putJson('/api/settings/notification-templates/email/backup.failed', [
+        'title' => 'F02 {{device.name}} {{backup.status}}',
+        'body' => 'Reason: {{backup.error}} | {{backup.filename}}',
+    ])->assertOk();
+
+    $this->postJson('/api/settings/notification-templates/email/test', [
+        'event_type' => 'backup.failed',
+        'recipient' => 'outside@example.invalid',
+    ])->assertOk()
+        ->assertJsonPath('submitted_to_mailer', true)
+        ->assertJsonPath('delivered', false)
+        ->assertJsonPath('synthetic_only', true);
+
+    Notification::assertSentTo($this->admin, CustomBackupTestMailNotification::class, function ($notification) {
+        $mail = $notification->toMail($this->admin);
+
+        return $mail->subject === 'F02 SW-DEMO-01 FAILED'
+            && ! str_contains(implode(' ', $mail->introLines), 'outside@example.invalid')
+            && str_contains(implode(' ', $mail->introLines), 'synthetic_20261123.cfg');
+    });
+    Notification::assertCount(1);
+});
+
+test('F04 email test refuses non-admin and rejects invalid event without sending', function () {
+    Notification::fake();
+
+    $this->postJson('/api/settings/notification-templates/email/test', [
+        'event_type' => 'invalid.event',
+    ])->assertUnprocessable();
+    Notification::assertNothingSent();
+
+    $this->actingAs(User::factory()->create(['role' => 'User']));
+    $this->postJson('/api/settings/notification-templates/email/test', [
+        'event_type' => 'backup.failed',
+    ])->assertForbidden();
+    Notification::assertNothingSent();
 });

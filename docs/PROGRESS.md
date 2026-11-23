@@ -7,6 +7,12 @@
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
 **Current gate:** F02 code merged into `custom` through PR #84 (`9ad86a814f0eec1c16006530cf5df64708975ffa`); preview, inactive rule editor, two-pass manual probe implemented with CI PASS, but no verified file receipt, durable worker or scheduling. VM untouched by these changes; `main` clean at upstream baseline `121cff1b243794af260f6c5850553b5f1b0af881`.
 
+## 2026-11-23 — F04 admin-only synthetic email delivery test candidate (#99)
+
+- Proposed feature branch adds a POST test action to the existing backup-template Settings editor. Only the authenticated admin's own email receives synthetic content rendered from saved/default success/failure email templates; no arbitrary HTTP recipient or real backup data. The UI requires confirmation and reports only mailer submission, **not confirmed delivery**.
+- Uses Core Laravel Notification mail channel, provider-neutral and without SMTP secrets. PHPUnit tests fake all mail notifications; no real email is sent in CI. No automatic F02 result dispatch, no VM changes or production activation. PR must pass CI before merge.
+
+
 ## 2026-11-23 — F04 email/Telegram template editor candidate (#89)
 
 - On feature branch: admin-only Settings panel and API with four global backup success/failure templates (email and Telegram), title/body editing, synthetic preview, reset defaults and updated-by audit. Allowlisted nonexecutable tokens; Telegram output HTML-escaped. CI/PR pending.

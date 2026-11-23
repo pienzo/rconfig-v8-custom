@@ -4,10 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\CustomBackupNotificationTemplate;
+use App\Notifications\CustomBackupTestMailNotification;
 use App\Services\Notifications\BackupMessageTemplateRenderer;
 use App\Services\Notifications\TelegramBotTransport;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Notification;
+use Throwable;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -102,6 +105,54 @@ final class BackupNotificationTemplateController extends Controller
         }
 
         return response()->json(['preview' => $result, 'synthetic_only' => true, 'sent' => false]);
+    }
+
+    public function testEmail(Request $request, BackupMessageTemplateRenderer $renderer): JsonResponse
+    {
+        $this->requireAdmin($request);
+        $data = $request->validate([
+            'event_type' => ['required', 'in:backup.success,backup.failed'],
+        ]);
+
+        $admin = $request->user();
+        if (filter_var($admin->email, FILTER_VALIDATE_EMAIL) === false) {
+            return response()->json(['message' => 'L\'amministratore non ha un indirizzo email valido.'], 422);
+        }
+
+        $event = $data['event_type'];
+        $template = CustomBackupNotificationTemplate::query()
+            ->where('channel', 'email')
+            ->where('event_type', $event)
+            ->first();
+        $defaults = $renderer->defaults('email', $event);
+
+        try {
+            $rendered = $renderer->render(
+                'email',
+                $template?->title ?? $defaults['title'],
+                $template?->body ?? $defaults['body'],
+                $this->previewValues($renderer, $event)
+            );
+        } catch (InvalidArgumentException) {
+            return response()->json(['message' => 'Il template email non è valido.'], 422);
+        }
+
+        try {
+            Notification::sendNow(
+                $admin,
+                new CustomBackupTestMailNotification($rendered['title'], $rendered['body'])
+            );
+        } catch (Throwable) {
+            return response()->json(['message' => 'Test email non riuscito. Controllare il mailer.'], 502);
+        }
+
+        // The mail transport accepted the request; provider delivery is not
+        // verified here (especially when MAIL_MAILER=log).
+        return response()->json([
+            'submitted_to_mailer' => true,
+            'delivered' => false,
+            'synthetic_only' => true,
+        ]);
     }
 
     public function testTelegram(
