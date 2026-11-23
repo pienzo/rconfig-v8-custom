@@ -80,6 +80,21 @@ final class ExternalBackupReceiptAcceptanceService
                 throw new DomainException('F02 file was already consumed in a previous run.');
             }
 
+            // Recheck the current run window against descriptor metadata,
+            // not only against the prior scanner decision.
+            $fileTime = (int) $descriptorEvidence['mtime'];
+            $changeTime = (int) $descriptorEvidence['ctime'];
+            $seconds = $instant->getTimestamp();
+            $skew = (int) $rule->clock_skew_seconds;
+            if ($descriptorEvidence['size'] < (int) $rule->minimum_bytes
+                || $fileTime < $scheduled->getTimestamp() - $skew
+                || $fileTime >= $deadline->getTimestamp()
+                || $fileTime > $seconds + $skew
+                || $changeTime > $seconds + $skew
+                || $seconds - max($fileTime, $changeTime) < (int) $rule->quiet_seconds) {
+                throw new DomainException('F02 file identity is not fresh and stable for this occurrence.');
+            }
+
             ExternalBackupFileReceipt::query()->create([
                 'check_run_id' => $run->id,
                 'device_id' => $run->device_id,
