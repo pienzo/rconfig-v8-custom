@@ -123,6 +123,10 @@ RUN mkdir -p /usr/local/share/rconfig \
 # the bare-metal supervisor/systemctl restarts (which need sudo) and to manage
 # storage permissions the container way. Kept low in the file so it does not
 # invalidate the apt and composer layers above it.
+# Optional staging role launcher. The existing Core ENTRYPOINT/CMD remain unchanged.
+# This script is inert until a separate Compose role explicitly selects it.
+COPY --chown=root:root --chmod=0755 docker/staging/role-entrypoint.sh /usr/local/bin/staging-role-entrypoint.sh
+
 ENV IS_DOCKER=true
 
 ARG SOURCE_REVISION=unknown
