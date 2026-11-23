@@ -3,7 +3,7 @@
 **Status:** Proposed, security review required.  
 **Work item:** [F02 issue #5](https://github.com/pienzo/rconfig-v8-custom/issues/5).  
 **Source baseline:** rConfig V8 Core `core-8.3.0`, custom branch after [PR #11](https://github.com/pienzo/rconfig-v8-custom/pull/11).  
-**Implementation:** Partial descriptor-inspection library only; secure pathname opener is **not implemented**. **This ADR must not be interpreted as approval to accept uploaded files.**
+**Implementation (updated 2026-11-23):** Native unprivileged Linux `openat2`/SHA-256 verifier is packaged in the custom Dockerfile; a guarded receipt+SUCCESS code path is merged but **all F02 activation flags default to OFF**. This ADR still requires staging trust and upload-completion validation before any operational acceptance.
 
 ## Context
 
@@ -71,7 +71,7 @@ This probe uses `RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS |
 - Verify permission matrix for uploader, Laravel worker and optional adapter. Never expose worker privileges to uploaders or CI jobs from untrusted forks.
 - Record exact OS/kernel/PHP/filesystem, adapter SHA, run results and rollback in staging. A GitHub-hosted CI run alone is **not** F02 end-to-end acceptance.
 
-**Current decision:** keep F02 operationally disabled. Continue independent GitHub-based development, but **do not implement or merge a backup-success path** until this ADR is reviewed against the authorized staging OS and an audited opener design has passed tests.
+**Current decision (2026-11-23):** keep F02 operationally disabled. The guarded receipt+SUCCESS service and worker wiring (PR #110) and compiled-helper-to-worker synthetic integration (PR #112) are in `custom` with 5/5 CI, but they are **not authorized for operational activation**. Before setting receipt/runtime/queue flags true on any staging or production system, verify the actual trusted upload-finalization boundary, ancestor/mount/permissions contract and adversarial staging behavior. A synthetic descriptor hash alone remains insufficient; no production-ready receipt is claimed.
 
 ## Rollback and confidentiality
 
