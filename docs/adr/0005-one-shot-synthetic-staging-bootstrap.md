@@ -13,6 +13,18 @@ Steps 56–63 completed on the operator's VM. The clean-SHA source image `rconfi
 
 The upstream-integrated `docker/entrypoint.sh` and `v8core:install` can change `APP_KEY`, Redis configuration, permissions, schema or process topology, and must NOT be used for this split-role bootstrap. The initial users migration seeds a **known** administrator and the settings migration seeds an outbound SMTP default; `staging:seal-default-admin` exists only as a dormant follow-up command. A Core migration can clear the Redis `default` queue. MariaDB DDL can commit implicitly: a half-complete `artisan migrate` must not be treated as an atomic transaction or safely replayed. At this checkpoint there are 78 migration files in `database/migrations`, not all side effects have been independently classified. No HTTP listener may start while the default administrator exists.
 
+## Targeted migration source spot-check (not a full audit)
+
+The following selected migrations were directly inspected in `custom` alongside the already known user/settings and Redis queue migrations:
+
+- `2026_11_06_161252_pause_tasks_with_unsupported_task_command.php` can **update task rows** by pausing unsupported task commands and logs warnings. Fresh empty tasks should not have entries, but an existing database is not an acceptable first-install target.
+- `2026_10_26_121325_seed_health_check_notification_defaults.php` and `2026_11_19_232254_seed_security_check_notification_defaults.php` insert notification defaults. Their `down()` paths delete those defaults; this is additional evidence against casual rollback on a populated database.
+- `2026_05_29_100000_add_mail_transport_security_flags_to_settings_table.php` alters settings columns, demonstrating dependency on the initial settings table.
+- `2026_11_22_160000_create_external_backup_check_schema.php` creates F02 rule/run/receipt tables; **this does not enable F02 background runtime**.
+- `2026_11_20_072349_clear_unworked_default_queue.php` calls Redis queue `clear('default')` if configured, and cannot reverse that action. Require *empty authenticated Redis* before any migration.
+
+This is a **targeted** review, not verification of all 78 migration files. The implementation gate must classify the remainder before first VM `--apply`.
+
 ## Design decision for the NEXT implementation PR (still inactive)
 
 Keep `bootstrap --check` exactly read-only. Introduce a **separate**, opt-in, operator-invoked mutating bootstrap service/entrypoint, with its own explicit Compose profile (proposed name `bootstrap-write`). It must not be selected by the regular app, Horizon or scheduler roles or the default Core entrypoint. No published ports or implicit `depends_on` starts; use only existing internal staging network; source-built image pinned by reviewed SHA and validated image label. Work as UID 1000:GID 33 with read-only image filesystem and individually mounted protected `.env` and bootstrap-only admin credential; writable application storage only in the dedicated named volume and short-lived cache/tmpfs. Never put a secret value in CLI args, Docker environment, debug output or repository.
