@@ -43,6 +43,8 @@ final class StagingBootstrapProcessEnvironmentGuard
             return false;
         }
 
+        $found = false;
+
         foreach (explode("\0", $snapshot) as $entry) {
             if ($entry === '') {
                 continue;
@@ -54,6 +56,7 @@ final class StagingBootstrapProcessEnvironmentGuard
                 return false;
             }
 
+            $found = true;
             $key = substr($entry, 0, $separator);
 
             if (in_array($key, self::BLOCKED, true)) {
@@ -61,6 +64,6 @@ final class StagingBootstrapProcessEnvironmentGuard
             }
         }
 
-        return true;
+        return $found;
     }
 }
