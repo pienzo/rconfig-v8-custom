@@ -13,6 +13,8 @@ return [
     'backup_destination' => env('BACKUP_DESTINATION', 'rconfig'),
     'is_demo' => env('IS_DEMO', false),
     'mask_device_credentials' => env('MASK_DEVICE_CREDENTIALS', false),
+    // Fail-closed staging bootstrap gate; resolve .env before config:cache.
+    'f02_queue_enabled' => env('RCONFIG_F02_QUEUE_ENABLED', false),
 
     /*
     |--------------------------------------------------------------------------
