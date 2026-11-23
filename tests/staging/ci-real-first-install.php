@@ -45,6 +45,54 @@ try {
     $stages = new LaravelStagingBootstrapStages($state, $sealer, $gate);
     $coordinator = new StagingBootstrapCoordinator;
 
+    if (! $gate->permitted()) {
+        // Diagnostic labels only; never display any env value, secret,
+        // password fingerprint, connection string or SQL exception.
+        $protected = static fn (string $path): bool => is_file($path)
+            && ! is_link($path)
+            && fileowner($path) === 0
+            && filegroup($path) === 33
+            && (fileperms($path) & 0777) === 0640;
+        $checks = [
+            'uid1000-gid33' => posix_geteuid() === 1000 && posix_getegid() === 33,
+            'docker-bootstrap-identity' => getenv('IS_DOCKER') === 'true'
+                && getenv('RCONFIG_STAGING_BOOTSTRAP') === 'core-synthetic-v1',
+            'app-env-debug' => config('app.env') === 'production' && config('app.debug') === false,
+            'mysql-dedicated' => config('database.default') === 'mysql'
+                && config('database.connections.mysql.host') === 'db'
+                && (string) config('database.connections.mysql.port') === '3306'
+                && config('database.connections.mysql.database') === 'rconfig_staging'
+                && config('database.connections.mysql.username') === 'rconfig_staging',
+            'redis-db-mapping' => $gate->redisIndicesValid(),
+            'queue-cache-session' => config('queue.default') === 'redis'
+                && config('cache.default') === 'redis'
+                && config('session.driver') === 'redis',
+            'framework-mail-log' => config('mail.default') === 'log',
+            'f02-off' => config('rConfig.f02_queue_enabled', true) === false,
+            'env-protected' => $protected(base_path('.env')),
+            'admin-secret-protected' => $protected('/run/secrets/staging_admin_password'),
+            'env-key-format' => preg_match('/\\Abase64:[A-Za-z0-9+\\/]{43}=\\z/D', (string) config('app.key')) === 1,
+        ];
+
+        foreach ($checks as $label => $allowed) {
+            if (! $allowed) {
+                fwrite(STDERR, 'disposable gate failed check: ' . $label . PHP_EOL);
+            }
+        }
+
+        foreach ([
+            'APP_KEY', 'APP_ENV', 'APP_DEBUG', 'DB_CONNECTION', 'DB_HOST',
+            'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD', 'DB_SOCKET',
+            'REDIS_HOST', 'REDIS_PORT', 'REDIS_PASSWORD', 'REDIS_DB',
+            'REDIS_CACHE_DB', 'QUEUE_CONNECTION', 'CACHE_DRIVER',
+            'SESSION_DRIVER', 'RCONFIG_F02_QUEUE_ENABLED', 'MAIL_MAILER',
+        ] as $name) {
+            if (getenv($name) !== false) {
+                fwrite(STDERR, 'disposable gate failed process-env check: ' . $name . PHP_EOL);
+            }
+        }
+    }
+
     ciAssert($gate->permitted(), 'real synthetic container gate');
     ciAssert(config('mail.default') === 'log', 'Laravel mail transport log');
     ciAssert(config('rConfig.f02_queue_enabled') === false, 'F02 disabled');
