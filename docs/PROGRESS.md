@@ -7,11 +7,26 @@
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
 **Current gate:** F02 native verifier #88, F02 history #86, Telegram transport #92, F04 editor #90 merged to `custom`. F02 queued runner PR #94 remains unmerged and OFF by default; no verified receipt or SUCCESS, no completed release image or VM deployment. `main` kept upstream-clean.
 
+
 ## 2026-11-23 — F01 existing Core diff bugfix candidate (#97 / PR #98)
 
 - Verified Core already has a Monaco side-by-side compare between any two stored config versions; no diff duplication required.
 - This PR removes a randomized loader timer, waits for both selected configurations and their file contents to finish loading, reports errors for missing input and fixes exporting compared source texts (was invoking undefined `model.fileName` on a diff editor). Models and editor are disposed at unmount.
 - Vitest covers delayed right file, fetch failure and invalid config IDs. PR and CI ongoing, no production/VM changes.
+
+## 2026-11-23 — F02 atime regression fix candidate (issue #108 / PR #109)
+
+- During F01 PR #98 CI, F02 queued runner expected an `unstable` observation but recorded `access`, consistent with the directory scanner refusing an incidental directory `atime` update during enumeration. Added identity comparison based on stable `dev/ino/mode/nlink/uid/gid/size/mtime/ctime`, ignoring atime and duplicate numeric lstat fields. Unit tests verify atime-only updates are allowed while identity/owner/ctime changes still fail.
+- No change to symlink, file descriptor or receipt acceptance; F02 runtime still OFF by default. Pending full CI and review; no VM operations.
+
+
+## 2026-11-23 — F02 guarded receipt and SUCCESS transaction candidate (#105)
+
+- A new service models the *transactional* file-receipt and SUCCESS state change, following two eligible observations and before the occurrence deadline. Retrying the same success is idempotent; a per-device HMAC file token plus existing unique DB constraints disallows a second scheduled occurrence from consuming the same physical file.
+- The opaque token is derived from per-device basename and Linux descriptor identity (device, inode, size, mtime/ctime with nanoseconds, SHA-256) with a separate fixed-length private key, independent of APP_KEY. Do not rotate the HMAC key without migrating or preserving the duplicate identity mapping.
+- **Not connected to the F02 scheduler, jobs, HTTP or notifications.** A descriptor hash by itself does not prove completed upload or an immutable handoff. The acceptance gate remains false by default; without an audited filesystem boundary and synthetic staging end-to-end tests, nothing can mark a real backup SUCCESS.
+- Added CI synthetic tests for atomic receipt/success, no duplicate use, disabled gate, expired and unobserved runs, invalid key/metadata, stale file and paused task. No VM work or real backup content.
+
 
 ## 2026-11-23 — F02 terminal reason preservation candidate (#103)
 
