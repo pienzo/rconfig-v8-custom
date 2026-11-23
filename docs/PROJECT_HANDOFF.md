@@ -4,6 +4,14 @@
 **Purpose:** durable handoff between ChatGPT conversations. **Operational checkpoint:** [PROGRESS.md](PROGRESS.md). **Source audit:** [UPSTREAM_AUDIT.md](UPSTREAM_AUDIT.md). **Original requirements:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 in the ChatGPT project (not committed).
 **Evidence rule:** GitHub commits, PRs, issue records, and CI are authoritative for repository changes; only approved staging results can establish deployment or end-to-end behavior. Never infer completed work merely from a plan.
 
+## 2026-11-23 update — STEP 83 real first-install CI MERGED (#57)
+
+GitHub `custom` at `fdf4bda0f6392116fe73c5ad72b25709786fe2ca` after [PR #67](https://github.com/pienzo/rconfig-v8-custom/pull/67), confirmed successful [first-install matrix](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45209459841) **2/2** and standard [CI](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45209459361) **5/5**. `main` still upstream `121cff1b243794af260f6c5850553b5f1b0af881`.
+
+New CI tests actually execute Core `Artisan::call('migrate', ['--force' => true, '--no-interaction' => true])` through `LaravelStagingBootstrapStages` and `StagingBootstrapCoordinator` on separate disposable hosted MySQL8/Redis7 services. Scenario `success`: blank SQL/Redis first, real Core migrations, seeded-admin password change and SMTP database neutralization, complete ledger, private completion marker and retry refusal. Scenario `interrupted`: deliberate post-migration/pre-admin-seal false result, private attempt preserved, final marker withheld, initial admin still unsealed and rerun refused. Uses a synthetic CI runtime gate, **not** the stricter Docker-hosted `StagingBootstrapContainerGate`. Fault return is **not** process SIGKILL, power loss, MariaDB10.11 equivalence, or tested coherent backup/restore.
+
+**vm-gpt unchanged from STEP 82**: operator checkout `9910e66e`, image built from `977c3152`, private .env log-only, infra fresh and no migrations, web, workers, scheduler or F02. Issue #57 and #40 remain OPEN. Next: real abrupt-death/fault testing and consistent restore/egress/source-image gates on disposable synthetic systems; no VM write-mode installation until separately reviewed.
+
 ## 2026-11-23 update — STEP 75–82 SUCCESSFUL operator SMTP transition / staging check
 
 On personal synthetic `vm-gpt` (operator reports, **not direct OS connector**): checkout `custom` fast-forwarded cleanly from `977c3152` to `9910e66ea63394cf350ff0b177bae8e8702ae084`; the Docker app image was **not** rebuilt. The protected root:33/mode0640 legacy .env initially had no MAIL_MAILER. `docker/staging/enable-log-mailer.py --check` → `legacy candidate (no changes)`; explicit one-time `--apply` → `log-only; private rollback preserved`; repeat `--check` → `log-only (no changes)`. Its private root-only backup contains sensitive values; never transmit or publish it.
