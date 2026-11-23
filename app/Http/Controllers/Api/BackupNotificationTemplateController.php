@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\CustomBackupNotificationTemplate;
 use App\Services\Notifications\BackupMessageTemplateRenderer;
+use App\Services\Notifications\TelegramBotTransport;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use InvalidArgumentException;
+use RuntimeException;
 
 final class BackupNotificationTemplateController extends Controller
 {
@@ -85,6 +87,7 @@ final class BackupNotificationTemplateController extends Controller
         $this->requireAdmin($request);
         $data = $request->validate([
             'channel' => ['required', 'in:email,telegram'],
+            'event_type' => ['sometimes', 'in:backup.success,backup.failed'],
             'title' => ['required', 'string', 'max:255'],
             'body' => ['required', 'string', 'max:8192'],
         ]);
@@ -92,13 +95,60 @@ final class BackupNotificationTemplateController extends Controller
         try {
             $result = $renderer->render(
                 $data['channel'], $data['title'], $data['body'],
-                $renderer->syntheticPreviewValues()
+                $this->previewValues($renderer, $data['event_type'] ?? 'backup.success')
             );
         } catch (InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
         return response()->json(['preview' => $result, 'synthetic_only' => true, 'sent' => false]);
+    }
+
+    public function testTelegram(
+        Request $request,
+        BackupMessageTemplateRenderer $renderer,
+        TelegramBotTransport $transport
+    ): JsonResponse {
+        $this->requireAdmin($request);
+
+        $data = $request->validate([
+            'event_type' => ['required', 'in:backup.success,backup.failed'],
+        ]);
+
+        if (config('rconfig-telegram.enabled') !== true) {
+            return response()->json(['message' => 'Telegram non è abilitato sul server.'], 503);
+        }
+
+        $event = $data['event_type'];
+        $template = CustomBackupNotificationTemplate::query()
+            ->where('channel', 'telegram')
+            ->where('event_type', $event)
+            ->first();
+        $defaults = $renderer->defaults('telegram', $event);
+
+        try {
+            $rendered = $renderer->render(
+                'telegram',
+                $template?->title ?? $defaults['title'],
+                $template?->body ?? $defaults['body'],
+                $this->previewValues($renderer, $event)
+            );
+            $transport->send($rendered['formatted_text']);
+        } catch (InvalidArgumentException|RuntimeException) {
+            // No token-bearing URL or provider body is ever returned to HTTP clients.
+            return response()->json(['message' => 'Invio Telegram non riuscito. Verificare la configurazione del server.'], 502);
+        }
+
+        return response()->json(['sent' => true, 'synthetic_only' => true]);
+    }
+
+    /** @return array<string, string> */
+    private function previewValues(BackupMessageTemplateRenderer $renderer, string $event): array
+    {
+        $values = $renderer->syntheticPreviewValues();
+        $values['backup.status'] = $event === 'backup.failed' ? 'FAILED' : 'SUCCESS';
+
+        return $values;
     }
 
     private function requireAdmin(Request $request): void
