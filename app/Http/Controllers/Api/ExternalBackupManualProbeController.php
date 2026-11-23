@@ -52,14 +52,14 @@ final class ExternalBackupManualProbeController extends Controller
                 throw ValidationException::withMessages(['checkpoint' => 'Invalid verification checkpoint.']);
             }
 
-            if (is_array($previous) === false || ($previous['v'] ?? null) !== 1
+            if (false === is_array($previous) || ($previous['v'] ?? null) !== 1
                 || ($previous['rule_id'] ?? null) !== $externalBackupRule->id
-                || is_string($previous['fingerprint'] ?? null) === false
-                || hash_equals($fingerprint, $previous['fingerprint']) === false
-                || is_int($previous['observed_at'] ?? null) === false
-                || is_int($previous['scheduled_at'] ?? null) === false
-                || is_int($previous['deadline_at'] ?? null) === false
-                || is_array($previous['scan'] ?? null) === false
+                || false === is_string($previous['fingerprint'] ?? null)
+                || false === hash_equals($fingerprint, $previous['fingerprint'])
+                || false === is_int($previous['observed_at'] ?? null)
+                || false === is_int($previous['scheduled_at'] ?? null)
+                || false === is_int($previous['deadline_at'] ?? null)
+                || false === is_array($previous['scan'] ?? null)
                 || $previous['observed_at'] < $previous['scheduled_at']
                 || $previous['observed_at'] >= $previous['deadline_at']
                 || $now < $previous['observed_at']
