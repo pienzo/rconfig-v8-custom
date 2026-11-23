@@ -477,8 +477,15 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (Refused, OSError, KeyError, UnicodeError, ValueError,
-            subprocess.TimeoutExpired):
-        print("Disposable full Core/AOF recovery gate refused (no private data output)",
+    except Refused as exc:
+        # These reasons originate only from constant strings in this CI
+        # harness. Never include command stderr, SQL, APP_KEY or file bytes.
+        print("Disposable full Core/AOF recovery refused: " + str(exc),
+              file=sys.stderr)
+        sys.exit(1)
+    except (OSError, KeyError, UnicodeError, ValueError,
+            subprocess.TimeoutExpired) as exc:
+        print("Disposable full Core/AOF recovery refused (" +
+              type(exc).__name__ + "; no private data displayed)",
               file=sys.stderr)
         sys.exit(1)
