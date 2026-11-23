@@ -79,6 +79,10 @@ class TaskController extends ApiBaseController
 
     public function update($id, UpdateTaskRequest $request)
     {
+        if (Task::query()->whereKey($id)->where('task_command', ExternalBackupRuleController::TASK_COMMAND)->exists()) {
+            return response()->json(['message' => 'Edit external file checks from the F02 rules panel.'], 409);
+        }
+
         $model = parent::updateResource($id, $request->toDTO()->toArray(), 1);
         $model->id = $id;
 
@@ -93,6 +97,10 @@ class TaskController extends ApiBaseController
 
     public function destroy($id, $return = 0)
     {
+        if (Task::query()->whereKey($id)->where('task_command', ExternalBackupRuleController::TASK_COMMAND)->exists()) {
+            return response()->json(['message' => 'Delete external file checks from the F02 rules panel.'], 409);
+        }
+
         $model = parent::destroy($id, 1);
 
         $model->delete();
@@ -108,6 +116,9 @@ class TaskController extends ApiBaseController
 
     public function togglePauseTask($id)
     {
+        if (Task::query()->whereKey($id)->where('task_command', ExternalBackupRuleController::TASK_COMMAND)->exists()) {
+            return response()->json(['message' => 'F02 execution is not available yet.'], 409);
+        }
 
         $model = $this->model->find($id);
         $model->is_paused = ! $model->is_paused;

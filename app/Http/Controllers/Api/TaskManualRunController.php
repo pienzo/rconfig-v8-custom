@@ -35,6 +35,10 @@ class TaskManualRunController extends Controller
             return $this->failureResponse($e->getMessage());
         }
 
+        if ($task['task_command'] === ExternalBackupRuleController::TASK_COMMAND) {
+            return response()->json(['message' => 'F02 file checks are not executable yet.'], 409);
+        }
+
         $this->logTaskStarted($task['id']);
 
         $download_commands = ['rconfig:download-device', 'rconfig:download-tag', 'rconfig:download-category'];
