@@ -76,3 +76,9 @@ This probe uses `RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS |
 ## Rollback and confidentiality
 
 This ADR changes documentation only; reverting it is a normal reviewed Git PR. No VM, server, credentials, real backups or filesystem mounts are created or modified here. All fixtures must be anonymous, synthetic and safe to publish.
+
+## Native SHA-256 verifier candidate added (#87; not activated)
+
+A follow-up Linux helper `tools/f02/linux/f02_safe_digest.c` is available for review. Unlike the initial open-only prototype, it performs bounded streaming SHA-256 on an `openat2`-confined, regular, single-link file after checking the expected `lstat()` device/inode/size/mtime/ctime. It confirms descriptor and visible basename metadata again after reading and records nanosecond-resolution timestamps in its private JSON output. Laravel's `ExternalBackupSafeDigestAdapter` invokes the compiled binary with array arguments through Symfony Process (no shell) and rejects nonconforming output. The custom Dockerfile can package the binary in an unprivileged container.
+
+This remains an internal **descriptor/hash observation**, not verified upload provenance or a SUCCESS receipt. The root's ancestor chain is outside `openat2` anchoring, hard I/O bounds need staging proof, and a writer retaining file mutation rights can change the file between two observations or after verification. The future acceptance contract must address verified transfer finalization, immutable handoff or equivalent, per-device receipt uniqueness and trusted staging OS. Never send the private SHA-256 to the browser or log. No scheduled F02 runtime enables this code today.
