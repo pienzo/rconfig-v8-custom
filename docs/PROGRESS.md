@@ -7,6 +7,15 @@
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
 **Current gate:** F02 native verifier #88, F02 history #86, Telegram transport #92, F04 editor #90 merged to `custom`. F02 queued runner PR #94 remains unmerged and OFF by default; no verified receipt or SUCCESS, no completed release image or VM deployment. `main` kept upstream-clean.
 
+
+## 2026-11-23 — F02 guarded receipt and SUCCESS transaction candidate (#105)
+
+- A new service models the *transactional* file-receipt and SUCCESS state change, following two eligible observations and before the occurrence deadline. Retrying the same success is idempotent; a per-device HMAC file token plus existing unique DB constraints disallows a second scheduled occurrence from consuming the same physical file.
+- The opaque token is derived from per-device basename and Linux descriptor identity (device, inode, size, mtime/ctime with nanoseconds, SHA-256) with a separate fixed-length private key, independent of APP_KEY. Do not rotate the HMAC key without migrating or preserving the duplicate identity mapping.
+- **Not connected to the F02 scheduler, jobs, HTTP or notifications.** A descriptor hash by itself does not prove completed upload or an immutable handoff. The acceptance gate remains false by default; without an audited filesystem boundary and synthetic staging end-to-end tests, nothing can mark a real backup SUCCESS.
+- Added CI synthetic tests for atomic receipt/success, no duplicate use, disabled gate, expired and unobserved runs, invalid key/metadata, stale file and paused task. No VM work or real backup content.
+
+
 ## 2026-11-23 — F02 terminal reason preservation candidate (#103)
 
 - F02 deadline sweeper and follow-up job now retain the latest validated observation reason (`missing`, `stale`, `unstable`, `access`, etc.) in the terminal FAILED check run, instead of losing it as `deadline_elapsed`. Only never-observed runs use the generic deadline reason.
