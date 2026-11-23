@@ -16,6 +16,53 @@ const previewRuleId = ref(null);
 const previewLoading = ref(false);
 const previewError = ref("");
 const previewData = ref(null);
+const historyRuleId = ref(null);
+const historyRows = ref([]);
+const historyPage = ref(1);
+const historyLastPage = ref(1);
+const historyBusy = ref(false);
+const historyError = ref("");
+
+async function loadHistory(ruleId, page = 1) {
+    historyRuleId.value = ruleId;
+    historyPage.value = page;
+    historyBusy.value = true;
+    historyError.value = "";
+    historyRows.value = [];
+
+    try {
+        const response = await axios.get(
+            `/api/tasks/external-backup-rules/${ruleId}/runs`,
+            { params: { page, per_page: 10 } }
+        );
+        historyRows.value = response.data.data;
+        historyPage.value = response.data.current_page;
+        historyLastPage.value = response.data.last_page;
+    } catch (error) {
+        historyError.value = error.response?.data?.message || "Impossibile caricare lo storico.";
+    } finally {
+        historyBusy.value = false;
+    }
+}
+
+function toggleHistory(rule) {
+    if (historyRuleId.value === rule.id) {
+        historyRuleId.value = null;
+        historyRows.value = [];
+    } else {
+        loadHistory(rule.id);
+    }
+}
+
+function displayRunStatus(run) {
+    if (run.status === "success" && !run.receipt_exists) return "INCONSISTENT: missing receipt";
+    return String(run.status || "unknown").toUpperCase();
+}
+
+function displayUtc(value) {
+    return value ? new Date(value).toLocaleString("it-IT", { timeZone: "UTC" }) + " UTC" : "—";
+}
+
 const probeState = ref({});
 const probeLoadingId = ref(null);
 
@@ -218,6 +265,9 @@ onMounted(() => load());
                 <div class="flex gap-2">
                     <button type="button" class="rounded border px-2 py-1" @click="edit(row)">Edit</button>
                     <button type="button" class="rounded border px-2 py-1" @click="previewFiles(row)">Preview files</button>
+                    <button type="button" class="rounded border px-2 py-1" @click="toggleHistory(row)">
+                        {{ historyRuleId === row.id ? "Chiudi storico" : "Storico" }}
+                    </button>
                     <button type="button" class="rounded border px-2 py-1"
                         :disabled="probeLoadingId === row.id" @click="verifyNow(row)">
                         {{ probeLoadingId === row.id ? "Verifica..." : (probeState[row.id]?.checkpoint ? "Ricontrolla stabilità" : "Verifica ora") }}
@@ -232,6 +282,36 @@ onMounted(() => load());
                     <p class="text-amber-600 dark:text-amber-400">
                         Nessun SUCCESS registrato: anche un file stabile richiede la verifica sicura del contenuto e della ricevuta.
                     </p>
+                </div>
+
+                <div v-if="historyRuleId === row.id" class="w-full rounded bg-muted p-2 text-xs" aria-live="polite">
+                    <h5 class="mb-2 font-semibold">Storico controlli F02 — {{ row.device?.device_name }}</h5>
+                    <p v-if="historyBusy">Caricamento...</p>
+                    <p v-else-if="historyError" class="text-red-500" role="alert">{{ historyError }}</p>
+                    <template v-else>
+                        <div v-if="historyRows.length === 0" class="text-muted-foreground">Nessuna esecuzione registrata.</div>
+                        <ul v-else class="space-y-2">
+                            <li v-for="run in historyRows" :key="run.id" class="rounded border p-2">
+                                <div class="font-semibold">
+                                    #{{ run.id }} — {{ displayRunStatus(run) }}
+                                    <span v-if="run.receipt_exists"> · ricevuta presente</span>
+                                </div>
+                                <div>Motivo: {{ run.reason || "—" }}</div>
+                                <div>Programmata: {{ displayUtc(run.scheduled_at_utc) }}</div>
+                                <div>Scadenza: {{ displayUtc(run.deadline_at_utc) }}</div>
+                                <div>Ultima osservazione: {{ displayUtc(run.last_observed_at_utc) }}</div>
+                                <div v-if="run.matched_filename" class="break-all font-mono">File: {{ run.matched_filename }}</div>
+                            </li>
+                        </ul>
+                        <div v-if="historyLastPage > 1" class="mt-2 flex items-center gap-2">
+                            <button type="button" class="rounded border px-2 py-1" :disabled="historyPage <= 1"
+                                @click="loadHistory(row.id, historyPage - 1)">Precedente</button>
+                            <span>{{ historyPage }} / {{ historyLastPage }}</span>
+                            <button type="button" class="rounded border px-2 py-1" :disabled="historyPage >= historyLastPage"
+                                @click="loadHistory(row.id, historyPage + 1)">Successiva</button>
+                        </div>
+                    </template>
+                    <p class="mt-2 text-muted-foreground">Mostra esclusivamente esiti registrati; un controllo preliminare non è un backup riuscito.</p>
                 </div>
                 <div v-if="previewRuleId === row.id" class="w-full rounded bg-muted p-2" aria-live="polite">
                     <p v-if="previewLoading">Reading filenames...</p>

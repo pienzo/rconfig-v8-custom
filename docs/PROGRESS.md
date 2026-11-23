@@ -5,9 +5,15 @@
 **Checkpoint:** 2026-11-23  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** Application F02 development on GitHub: PR #78 glob/regex preview merged at `efe7930229f77848dffd8bfba06641b8f3b74f9f`; PR #80 dormant F02 rule editor merged at `6a822389a00dd4417f32c99642ff6e37f6c7837f`; PR #82 read-only filesystem preview merged at `b357b3ccc429a8e952d298c7ad6907bd7795e1e0`, all with 5/5 standard CI PASS. `main` remains upstream-clean `121cff1b243794af260f6c5850553b5f1b0af881`. VM has not been touched by these GitHub updates; no current staged app deployment, production release, or actual F02 SUCCESS.
+**Current gate:** F02 code merged into `custom` through PR #84 (`9ad86a814f0eec1c16006530cf5df64708975ffa`); preview, inactive rule editor, two-pass manual probe implemented with CI PASS, but no verified file receipt, durable worker or scheduling. VM untouched by these changes; `main` clean at upstream baseline `121cff1b243794af260f6c5850553b5f1b0af881`.
 
-## 2026-11-23 — F02 manual two-pass verification PR candidate (#83)
+## 2026-11-23 — F02 persistent run history UI/API candidate (#85)
+
+- New feature branch: authenticated, paginated per-rule `external_backup_check_runs` history endpoint and GUI panel under Tasks. Displays persisted `pending`/`failed` (or a future verified success with receipt), timestamps, reason and matched basename. Does not expose backup contents or receipt tokens; a success without receipt is shown as inconsistent.
+- Synthetic API tests cover empty history, per-rule isolation, descending order, pagination cap and missing rule. No migrations, scheduler activation, VM changes or artificially created SUCCESS results. Pending CI and PR review.
+- The preceding F02 manual two-pass metadata check from [PR #84](https://github.com/pienzo/rconfig-v8-custom/pull/84) was merged at `9ad86a814f0eec1c16006530cf5df64708975ffa` with 5/5 CI PASS. No durable check run or receipt is created by that feature.
+
+## 2026-11-23 — F02 manual two-pass verification (PR #84 merged, CI 5/5)
 
 - Implemented on a feature branch, not yet accepted: authenticated, rate-limited POST check and Tasks GUI buttons for two nonblocking observations of device-inbox metadata; use the existing scanner and observation policy. A Laravel encrypted/authenticated client-held checkpoint binds to device/rule settings, provides a manual UTC window and enforces the configured quiet interval. Fasttests cover an unchanged candidate, missing file/deadline, changed file, premature retry, modified rule and a tampered/reused token.
 - The only positive state is `candidate_requires_safe_open`, **never SUCCESS**. No file content reads, no check-run/receipt rows, no scheduler activation, no VM changes. A reviewed safe-open adapter, durable run/receipt events and scheduling are required before F02 is operational.
