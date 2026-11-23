@@ -7,6 +7,13 @@
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
 **Current gate:** F02 native verifier #88, F02 history #86, Telegram transport #92, F04 editor #90 merged to `custom`. F02 queued runner PR #94 remains unmerged and OFF by default; no verified receipt or SUCCESS, no completed release image or VM deployment. `main` kept upstream-clean.
 
+## 2026-11-23 — F03 WhatsApp approved-template Cloud API transport candidate (#101)
+
+- Isolated, disabled-by-default adapter for Meta WhatsApp Cloud API `POST /{phone_number_id}/messages`, with server-configured approved backup.success/backup.failed templates, language and one recipient. No HTTP controller/queue/notification event invokes it yet; all endpoints and token/recipient settings are private and fixed server-side.
+- Six HTTP-fake tests for HTTPS template payload, empty body components, missing credentials, unrecognized events, malformed parameters and sanitized provider failures. No WhatsApp contacts or production credentials were used.
+- **Policy gate:** WABA onboarding, Meta Utility/template approval, recipient consent, pricing, rate limit, delivery webhooks and Direct Send eligibility remain unverified and outside the code. This implements approved-template fallback only, not free text/direct send. No VM deployment.
+
+
 ## 2026-11-23 — F02 isolated queued PENDING/FAILED runner candidate (#93, PR #94)
 
 - Separate F02 jobs for scheduled idempotent claim, two-step metadata observations and pending-run deadline expiration; only an explicitly enabled rule and unpaused Core Task can schedule, with both global flags `RCONFIG_F02_RUNTIME_ENABLED` and `RCONFIG_F02_QUEUE_ENABLED` **false by default**. Native `TaskDownloadRun` whitelist remains untouched.
