@@ -9,6 +9,7 @@ Route::prefix('tasks')->group(function () { // must be above the resource route
     Route::patch('/external-backup-rules/{externalBackupRule}', 'ExternalBackupRuleController@update');
     Route::delete('/external-backup-rules/{externalBackupRule}', 'ExternalBackupRuleController@destroy');
     Route::get('/external-backup-rules/{externalBackupRule}/files-preview', 'ExternalBackupFilePreviewController@preview');
+    Route::get('/external-backup-rules/{externalBackupRule}/runs', 'ExternalBackupRunHistoryController@index');
     Route::post('/external-backup-rules/{externalBackupRule}/verify-now', 'ExternalBackupManualProbeController@check')->middleware('throttle:6,1');
     Route::post('/validate-task', 'TaskController@validateTask');
     Route::post('/run-manual-task', 'TaskManualRunController@runManualTask');
