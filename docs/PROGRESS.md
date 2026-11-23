@@ -12,6 +12,16 @@
 - F02 deadline sweeper and follow-up job now retain the latest validated observation reason (`missing`, `stale`, `unstable`, `access`, etc.) in the terminal FAILED check run, instead of losing it as `deadline_elapsed`. Only never-observed runs use the generic deadline reason.
 - Removed transient CI diagnostic from queued-runner test; added synthetic tests for missing-file, stale follow-up and unobserved deadline. No SUCCESS claims, no new queues, no DB migrations, no runtime activation or VM work. Pending CI/review.
 
+## 2026-11-23 — F03 WhatsApp approved-template Cloud API transport candidate (#101)
+
+- Isolated, disabled-by-default adapter for Meta WhatsApp Cloud API `POST /{phone_number_id}/messages`, with server-configured approved backup.success/backup.failed templates, language and one recipient. No HTTP controller/queue/notification event invokes it yet; all endpoints and token/recipient settings are private and fixed server-side.
+- Six HTTP-fake tests for HTTPS template payload, empty body components, missing credentials, unrecognized events, malformed parameters and sanitized provider failures. No WhatsApp contacts or production credentials were used.
+- **Policy gate:** WABA onboarding, Meta Utility/template approval, recipient consent, pricing, rate limit, delivery webhooks and Direct Send eligibility remain unverified and outside the code. This implements approved-template fallback only, not free text/direct send. No VM deployment.
+
+## 2026-11-23 — F04 admin-only synthetic email delivery test candidate (#99)
+
+- Proposed feature branch adds a POST test action to the existing backup-template Settings editor. Only the authenticated admin's own email receives synthetic content rendered from saved/default success/failure email templates; no arbitrary HTTP recipient or real backup data. The UI requires confirmation and reports only mailer submission, **not confirmed delivery**.
+- Uses Core Laravel Notification mail channel, provider-neutral and without SMTP secrets. PHPUnit tests fake all mail notifications; no real email is sent in CI. No automatic F02 result dispatch, no VM changes or production activation. PR must pass CI before merge.
 
 ## 2026-11-23 — F02 isolated queued PENDING/FAILED runner candidate (#93, PR #94)
 
