@@ -13,7 +13,7 @@ const props = defineProps({
 });
 
 const toggleStateMultiple = ref([]); //'dark', 'lineNumbers', 'hideUnchanged', 'minimap', 'stickyscroll'
-const { checkDarkModeIsSet, checkHideUnchangedIsSet, checkLineNumbersIsSet, checkMiniMapIsSet, checkStickyScrollIsSet, copyItem, downloadCompare, initDiffEditor, toggleEditorDarkMode, toggleEditorLineNumbers, toggleHideUnchanged, toggleEditorMinimap, toggleHideUnchanged: unusedHideUnchanged, toggleStickyScroll } = useCodeEditor(monaco);
+const { checkDarkModeIsSet, checkHideUnchangedIsSet, checkLineNumbersIsSet, checkMiniMapIsSet, checkStickyScrollIsSet, copyItem, downloadCompare, initDiffEditor, toggleEditorDarkMode, toggleEditorLineNumbers, toggleHideUnchanged, toggleEditorMinimap, toggleStickyScroll } = useCodeEditor(monaco);
 
 onMounted(() => {
   initializeToggleStates();

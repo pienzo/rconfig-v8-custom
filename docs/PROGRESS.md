@@ -1,10 +1,11 @@
+# rConfig V8 Custom — Progress
+
 ## 2026-11-23 — F01 Core Config Compare bugfix candidate (#97)
 
 - Audit: rConfig Core already supports selecting two backed-up config versions, fetching their contents and displaying a Monaco diff. No duplicated diff engine.
 - Small GUI fix eliminates a randomized timer that could display Monaco before both HTTP file reads finish; errors remain visible instead of using partial/undefined content. Export button now downloads both compared source texts rather than referencing undefined `model.fileName`; editor/models are disposed on unmount.
 - Vitest with controlled delayed HTTP requests verifies load gating, errors and invalid IDs. No backend/VM changes, CI pending. Final user-facing validation is part of staging sign-off.
 
-# rConfig V8 Custom — Progress
 
 **Cross-chat handoff and full roadmap:** [PROJECT_HANDOFF.md](PROJECT_HANDOFF.md) (verified history, all phases, blockers, next steps). See [issue #23](https://github.com/pienzo/rconfig-v8-custom/issues/23) for documentation tracking.
 
