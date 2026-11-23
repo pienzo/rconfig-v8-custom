@@ -25,7 +25,9 @@ final class LaravelStagingBootstrapStages implements StagingBootstrapStages
 
     public function migrate(): bool
     {
-        if (! $this->gate->permitted()) {
+        if (! $this->gate->permitted()
+            || ! $this->gate->attemptClaimed()
+            || ! $this->state->isFresh()) {
             return false;
         }
 
@@ -36,7 +38,9 @@ final class LaravelStagingBootstrapStages implements StagingBootstrapStages
             '--no-interaction' => true,
         ]);
 
-        return $status === 0 && $this->gate->permitted();
+        return $status === 0
+            && $this->gate->permitted()
+            && $this->gate->attemptClaimed();
     }
 
     public function migrated(): bool
@@ -46,7 +50,9 @@ final class LaravelStagingBootstrapStages implements StagingBootstrapStages
 
     public function seal(): bool
     {
-        if (! $this->gate->permitted() || ! $this->state->isMigrated()) {
+        if (! $this->gate->permitted()
+            || ! $this->gate->attemptClaimed()
+            || ! $this->state->isMigrated()) {
             return false;
         }
 
@@ -57,7 +63,9 @@ final class LaravelStagingBootstrapStages implements StagingBootstrapStages
         }
 
         try {
-            return $this->sealer->apply($password) && $this->gate->permitted();
+            return $this->sealer->apply($password)
+                && $this->gate->permitted()
+                && $this->gate->attemptClaimed();
         } finally {
             unset($password);
         }
@@ -87,6 +95,7 @@ final class LaravelStagingBootstrapStages implements StagingBootstrapStages
         // Recheck the security boundary and the actual DB state independently.
         // This does NOT certify Docker host egress or recovery readiness.
         return $this->gate->permitted()
+            && $this->gate->attemptClaimed()
             && $this->gate->postflightReady()
             && $this->sealed()
             && ! $this->sealer->ready()

@@ -15,6 +15,7 @@ function syntheticBootstrapGate(string $password, bool $storageReady = true): St
 {
     $gate = Mockery::mock(StagingBootstrapRuntimeGate::class);
     $gate->shouldReceive('permitted')->andReturn(true);
+    $gate->shouldReceive('attemptClaimed')->andReturn(true);
     $gate->shouldReceive('replacementPassword')->andReturn($password);
     $gate->shouldReceive('postflightReady')->andReturn($storageReady);
 

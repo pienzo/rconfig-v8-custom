@@ -10,6 +10,9 @@ interface StagingBootstrapRuntimeGate
 {
     public function permitted(): bool;
 
+    /** True only for the claimed persistent one-shot attempt (0700). */
+    public function attemptClaimed(): bool;
+
     /** Return a private synthetic credential, or null; never log its contents. */
     public function replacementPassword(): ?string;
 

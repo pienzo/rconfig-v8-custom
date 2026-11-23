@@ -6,6 +6,19 @@ use App\Services\Staging\StagingBootstrapContainerGate;
 use App\Services\Staging\StagingBootstrapRuntimeGate;
 use App\Services\Staging\StagingBootstrapStateService;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Redis;
+
+function mockFreshSyntheticSqlAndRedis(): void
+{
+    DB::shouldReceive('selectOne')->once()->andReturn((object) ['table_count' => 0]);
+    $db0 = Mockery::mock();
+    $db0->shouldReceive('dbsize')->once()->andReturn(0);
+    $db1 = Mockery::mock();
+    $db1->shouldReceive('dbsize')->once()->andReturn(0);
+    Redis::shouldReceive('connection')->once()->with('default')->andReturn($db0);
+    Redis::shouldReceive('connection')->once()->with('cache')->andReturn($db1);
+}
 
 test('concrete synthetic container gate refuses normal CI processes', function () {
     // A normal hosted test runner is not uid1000:gid33 in the dedicated role.
@@ -64,6 +77,8 @@ test('blocked synthetic gate never invokes the Laravel migration command', funct
 test('migration executes only the reviewed noninteractive force command', function () {
     $gate = Mockery::mock(StagingBootstrapRuntimeGate::class);
     $gate->shouldReceive('permitted')->twice()->andReturn(true);
+    $gate->shouldReceive('attemptClaimed')->twice()->andReturn(true);
+    mockFreshSyntheticSqlAndRedis();
     $gate->shouldReceive('replacementPassword')->never();
 
     Artisan::shouldReceive('call')
@@ -79,6 +94,8 @@ test('migration executes only the reviewed noninteractive force command', functi
 test('a failed migration command prevents the follow-up stage', function () {
     $gate = Mockery::mock(StagingBootstrapRuntimeGate::class);
     $gate->shouldReceive('permitted')->once()->andReturn(true);
+    $gate->shouldReceive('attemptClaimed')->once()->andReturn(true);
+    mockFreshSyntheticSqlAndRedis();
 
     Artisan::shouldReceive('call')
         ->once()
@@ -93,6 +110,8 @@ test('a failed migration command prevents the follow-up stage', function () {
 test('the migration stage rejects a revoked runtime gate after a zero exit', function () {
     $gate = Mockery::mock(StagingBootstrapRuntimeGate::class);
     $gate->shouldReceive('permitted')->twice()->andReturn(true, false);
+    $gate->shouldReceive('attemptClaimed')->once()->andReturn(true);
+    mockFreshSyntheticSqlAndRedis();
 
     Artisan::shouldReceive('call')
         ->once()
@@ -107,6 +126,8 @@ test('the migration stage rejects a revoked runtime gate after a zero exit', fun
 test('a migration exception propagates without creating a success state', function () {
     $gate = Mockery::mock(StagingBootstrapRuntimeGate::class);
     $gate->shouldReceive('permitted')->once()->andReturn(true);
+    $gate->shouldReceive('attemptClaimed')->once()->andReturn(true);
+    mockFreshSyntheticSqlAndRedis();
 
     Artisan::shouldReceive('call')
         ->once()
@@ -116,4 +137,15 @@ test('a migration exception propagates without creating a success state', functi
     $adapter = new LaravelStagingBootstrapStages(new StagingBootstrapStateService, new SealDefaultAdminService, $gate);
 
     expect(fn () => $adapter->migrate())->toThrow(RuntimeException::class);
+});
+
+test('a missing persistent attempt refuses migration despite a synthetic gate', function () {
+    $gate = Mockery::mock(StagingBootstrapRuntimeGate::class);
+    $gate->shouldReceive('permitted')->once()->andReturn(true);
+    $gate->shouldReceive('attemptClaimed')->once()->andReturn(false);
+    Artisan::shouldReceive('call')->never();
+
+    $adapter = new LaravelStagingBootstrapStages(new StagingBootstrapStateService, new SealDefaultAdminService, $gate);
+
+    expect($adapter->migrate())->toBeFalse();
 });

@@ -104,6 +104,34 @@ final class StagingBootstrapContainerGate implements StagingBootstrapRuntimeGate
             && hash_equals($this->initialKeyFingerprint, hash('sha256', $key));
     }
 
+    public function attemptClaimed(): bool
+    {
+        if (! $this->permitted()) {
+            return false;
+        }
+
+        $storage = storage_path();
+        $attempt = $storage . '/.staging-bootstrap-attempt';
+        $marker = $storage . '/.staging-bootstrap-complete';
+        clearstatcache(true, $attempt);
+        $mode = @fileperms($attempt);
+
+        return $storage === base_path('storage')
+            && is_dir($storage)
+            && ! is_link($storage)
+            && realpath($storage) === $storage
+            && is_dir($attempt)
+            && ! is_link($attempt)
+            && realpath($attempt) === $attempt
+            && fileowner($attempt) === 1000
+            && filegroup($attempt) === 33
+            && $mode !== false
+            && ($mode & 0777) === 0700
+            && is_writable($attempt)
+            && ! file_exists($marker)
+            && ! is_link($marker);
+    }
+
     public function replacementPassword(): ?string
     {
         if (! $this->permitted()) {
