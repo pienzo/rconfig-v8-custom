@@ -7,9 +7,7 @@ use App\Services\Staging\StagingBootstrapStages;
 
 final class SyntheticStagingBootstrapStages implements StagingBootstrapStages
 {
-    /** @var list<string> */
     public array $calls = [];
-    /** @var list<bool> */
     public array $freshResults = [true, true];
     public ?string $failAt = null;
     public ?string $throwAt = null;
