@@ -39,7 +39,7 @@ final class StagingSealDefaultAdminCommand extends Command
             || config('database.connections.mysql.database') !== 'rconfig_staging'
             || config('database.connections.mysql.username') !== 'rconfig_staging'
             || config('database.redis.default.host') !== 'redis'
-            || env('RCONFIG_F02_QUEUE_ENABLED', false) !== false) {
+            || config('rConfig.f02_queue_enabled', true) !== false) {
             return $this->refuse('synthetic bootstrap-only environment gate failed');
         }
 
