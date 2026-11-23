@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('settings')->group(function () {
     Route::get('/notification-templates', 'BackupNotificationTemplateController@index');
     Route::post('/notification-templates/preview', 'BackupNotificationTemplateController@preview');
+    Route::post('/notification-templates/telegram/test', 'BackupNotificationTemplateController@testTelegram')->middleware('throttle:3,1');
     Route::put('/notification-templates/{channel}/{event}', 'BackupNotificationTemplateController@save');
     Route::delete('/notification-templates/{channel}/{event}', 'BackupNotificationTemplateController@reset');
     Route::resource('/settings', 'SettingBannerController')->only(['show']);

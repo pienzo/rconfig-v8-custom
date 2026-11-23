@@ -19,6 +19,7 @@ function selectTemplate() {
     body.value = current.value?.body || "";
     preview.value = null;
     error.value = "";
+    message.value = "";
 }
 
 async function load() {
@@ -58,11 +59,30 @@ async function showPreview() {
     error.value = "";
     try {
         const response = await axios.post("/api/settings/notification-templates/preview", {
-            channel: current.value.channel, title: title.value, body: body.value,
+            channel: current.value.channel, event_type: current.value.event_type,
+            title: title.value, body: body.value,
         });
         preview.value = response.data.preview;
     } catch (e) {
         error.value = e.response?.data?.message || "Anteprima non disponibile.";
+    } finally {
+        busy.value = false;
+    }
+}
+
+async function sendTelegramTest() {
+    if (current.value?.channel !== "telegram"
+        || !window.confirm("Inviare un messaggio Telegram di prova al destinatario configurato sul server?")) return;
+    busy.value = true;
+    error.value = "";
+    message.value = "";
+    try {
+        const response = await axios.post("/api/settings/notification-templates/telegram/test", {
+            event_type: current.value.event_type,
+        });
+        if (response.data.sent === true) message.value = "Messaggio di prova inviato via Telegram.";
+    } catch (e) {
+        error.value = e.response?.data?.message || "Test Telegram non riuscito.";
     } finally {
         busy.value = false;
     }
@@ -113,6 +133,7 @@ onMounted(load);
         <div class="flex flex-wrap gap-2">
             <button type="button" :disabled="busy || !current" class="rounded bg-blue-600 px-3 py-2 text-white disabled:opacity-50" @click="save">Salva</button>
             <button type="button" :disabled="busy || !current" class="rounded border px-3 py-2 disabled:opacity-50" @click="showPreview">Anteprima</button>
+            <button v-if="current?.channel === 'telegram'" type="button" :disabled="busy" class="rounded border px-3 py-2 disabled:opacity-50" @click="sendTelegramTest">Invia test Telegram</button>
             <button type="button" :disabled="busy || !current" class="rounded border px-3 py-2 disabled:opacity-50" @click="restoreDefaults">Ripristina</button>
         </div>
         <p v-if="error" role="alert" class="text-red-500">{{ error }}</p>
