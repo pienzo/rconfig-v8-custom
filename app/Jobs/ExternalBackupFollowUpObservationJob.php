@@ -40,7 +40,7 @@ final class ExternalBackupFollowUpObservationJob implements ShouldQueue
         ExternalBackupRunStateService $runStates,
         ExternalBackupSafeDigestAdapter $digest
     ): void {
-        if (! config('external-backups.runtime_enabled', false)) {
+        if (! config('external-backups.runtime_enabled', false) || ! config('external-backups.queue_enabled', false)) {
             return;
         }
 
@@ -52,7 +52,13 @@ final class ExternalBackupFollowUpObservationJob implements ShouldQueue
 
         $rule = $run->rule;
         $now = CarbonImmutable::now('UTC')->startOfSecond();
-        if ($now->greaterThanOrEqualTo($run->deadline_at_utc)) {
+        $scheduled = CarbonImmutable::createFromFormat('!Y-m-d H:i:s', $run->getRawOriginal('scheduled_at_utc'), 'UTC');
+        $deadline = CarbonImmutable::createFromFormat('!Y-m-d H:i:s', $run->getRawOriginal('deadline_at_utc'), 'UTC');
+        if ($scheduled === false || $deadline === false) {
+            throw new RuntimeException('Invalid stored F02 UTC occurrence window.');
+        }
+
+        if ($now->greaterThanOrEqualTo($deadline)) {
             $runStates->expire($run->id, $now, 'deadline_elapsed', $run->matched_filename);
 
             return;
@@ -76,8 +82,8 @@ final class ExternalBackupFollowUpObservationJob implements ShouldQueue
             $decision = $policy->evaluate(
                 $this->previousScan,
                 $scan,
-                $run->scheduled_at_utc->getTimestamp(),
-                $run->deadline_at_utc->getTimestamp(),
+                $scheduled->getTimestamp(),
+                $deadline->getTimestamp(),
                 CarbonImmutable::parse($this->previousObservedAtUtc, 'UTC')->getTimestamp(),
                 $now->getTimestamp(),
                 (int) $rule->quiet_seconds,
@@ -105,7 +111,7 @@ final class ExternalBackupFollowUpObservationJob implements ShouldQueue
 
         $runStates->recordPending($run->id, $now, $reason, $filename);
 
-        if ($wait && $now->addSeconds((int) $rule->quiet_seconds)->lessThan($run->deadline_at_utc)) {
+        if ($wait && $now->addSeconds((int) $rule->quiet_seconds)->lessThan($deadline)) {
             $files = $scan['files'];
             usort($files, static fn (array $a, array $b): int => ($b['mtime'] <=> $a['mtime']) ?: strcmp($a['filename'], $b['filename']));
             $snapshot = [

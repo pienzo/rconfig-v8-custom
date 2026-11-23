@@ -36,7 +36,7 @@ final class ExternalBackupStartObservationJob implements ShouldQueue
         ExternalBackupDirectoryScanner $scanner,
         ExternalBackupRunStateService $runStates
     ): void {
-        if (! config('external-backups.runtime_enabled', false)) {
+        if (! config('external-backups.runtime_enabled', false) || ! config('external-backups.queue_enabled', false)) {
             return;
         }
 
@@ -56,7 +56,14 @@ final class ExternalBackupStartObservationJob implements ShouldQueue
             return;
         }
 
-        if ($now->greaterThanOrEqualTo($run->deadline_at_utc)) {
+        // MySQL datetime values are UTC by contract; never infer app timezone
+        // from an Eloquent datetime cast (Core defaults to Europe/Dublin).
+        $deadline = CarbonImmutable::createFromFormat('!Y-m-d H:i:s', $run->getRawOriginal('deadline_at_utc'), 'UTC');
+        if ($deadline === false) {
+            throw new RuntimeException('Invalid stored F02 deadline UTC.');
+        }
+
+        if ($now->greaterThanOrEqualTo($deadline)) {
             $runStates->expire($run->id, $now, 'deadline_elapsed');
 
             return;

@@ -93,8 +93,35 @@ function pinnedQueue(ReflectionClass $reflection): ?string
     return null;
 }
 
+/**
+ * A disabled-by-default optional F02 queue is intentionally absent from
+ * active Horizon supervisors. It is valid only when its isolated connection
+ * and gated supervisor declaration exist. Native queues still must be worked.
+ */
+function isDormantExternalBackupQueue(?string $queue): bool
+{
+    if ($queue !== 'ExternalBackupChecks'
+        || config('external-backups.queue_enabled', false) !== false
+        || config('queue.connections.redis_external_backups.queue') !== 'ExternalBackupChecks'
+        || config('queue.connections.redis_external_backups.driver') !== 'redis') {
+        return false;
+    }
+
+    $horizonSource = File::get(config_path('horizon.php'));
+
+    return str_contains($horizonSource, "'queue' => ['ExternalBackupChecks']")
+        && str_contains($horizonSource, 'RCONFIG_F02_QUEUE_ENABLED');
+}
+
 test('Horizon works rConfigDefault in every environment', function () {
     expect(horizonWorkedQueues())->toContain('rConfigDefault');
+});
+
+test('optional F02 supervisor remains gated while Core queues stay worked', function () {
+    expect(config('external-backups.queue_enabled'))->toBeFalse();
+    expect(horizonWorkedQueues())->not->toContain('ExternalBackupChecks');
+    expect(isDormantExternalBackupQueue('ExternalBackupChecks'))->toBeTrue();
+    expect(config('queue.connections.redis_external_backups.after_commit'))->toBeTrue();
 });
 
 test('job discovery finds the queued jobs', function () {
@@ -109,7 +136,7 @@ test('every queued job sets a queue that Horizon works', function () {
     foreach (queueableJobClasses() as $class) {
         $queue = pinnedQueue(new ReflectionClass($class));
 
-        if ($queue === null || ! in_array($queue, $worked, true)) {
+        if ($queue === null || (! in_array($queue, $worked, true) && ! isDormantExternalBackupQueue($queue))) {
             $offenders[] = $class . ' -> ' . ($queue ?? 'no queue set (lands on "default")');
         }
     }
@@ -137,7 +164,7 @@ test('every onQueue() call in app/ names a queue that Horizon works', function (
 
             if (preg_match_all('/onQueue\(\s*[\'"]([^\'"]+)[\'"]\s*\)/', $line, $matches)) {
                 foreach ($matches[1] as $queue) {
-                    if (! in_array($queue, $worked, true)) {
+                    if (! in_array($queue, $worked, true) && ! isDormantExternalBackupQueue($queue)) {
                         $offenders[] = $file->getRelativePathname() . ':' . ($number + 1) . ' -> ' . $queue;
                     }
                 }

@@ -68,6 +68,12 @@ test('F02 scheduled first observation claims a durable pending occurrence and qu
     app()->call([$start, 'handle']);
 
     $run = ExternalBackupCheckRun::firstOrFail();
+    if ($run->reason === null) {
+        throw new RuntimeException('F02 test diagnostic (synthetic): status=' . $run->status
+            . ' deadline=' . $run->getRawOriginal('deadline_at_utc')
+            . ' observed=' . (string) $run->getRawOriginal('last_observed_at_utc')
+            . ' now=' . CarbonImmutable::now('UTC')->format('Y-m-d H:i:s'));
+    }
     expect($run->status)->toBe('pending');
     expect($run->reason)->toBe('unstable');
     expect($run->device_id)->toBe($this->device->id);
