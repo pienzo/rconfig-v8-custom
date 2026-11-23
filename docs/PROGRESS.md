@@ -7,6 +7,13 @@
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
 **Current gate:** operator-reported personal synthetic VM STEP 55–63 passed: clean `custom` synchronized to `977c3152`, source-built image verified, bootstrap Compose 16/16 and host safety gates passed, *only* `bootstrap --check` run, persistent `staging_storage` volume created and audited; MariaDB/Redis remain healthy/empty, marker absent. No migrations/admin rotation/app/Horizon/scheduler/F02. Next: review ADR-0005 and audit selected migrations, then develop separate fail-closed mutating driver + CI under #40; do NOT run Core integrated installer.
 
+## 2026-11-23 — Code gate: read-only bootstrap state inspector (#40, PR #51)
+
+- **PR #50** (ADR-0005 and operator STEP 55–63 checkpoint) merged into `custom` at `9b6d7ac141fbc8b40fc8da71071004a029fd58c8`. No VM changes.
+- **PR #51 code-only inspector:** `StagingBootstrapStateService` and `php artisan staging:bootstrap-state --phase=fresh|migrated|sealed`. `fresh` checks empty SQL schema and Redis DB0/DB1; `migrated` checks full migration filename ledger and exact Core seeded admin/mail; `sealed` checks the replacement admin credential plus neutralized SMTP, accepting only SQL NULL/empty mail password and rejecting any nonempty credential. Gated to the exact synthetic bootstrap Docker environment; **no --apply, migration or marker writes**.
+- **CI fixes on feature branch:** unsupported Redis facade mock `shouldNotReceive()` corrected to `shouldReceive()->never()`; synthetic sealed-state test pinpointed empty SMTP password representation and added a negative test for any nonempty residual password. PR #51 head before controlled branch integration: `3d02d638bc2c16544f19e46df708f9ec87deff1d`; CI run `45177548352` **5/5 successful**, PHP **1,678 passed, 5 skipped (7,733 assertions)**. After merging design PR #50 into the feature branch, rerun CI on the new head before any integration into `custom`.
+- **Remaining gate:** no mutating bootstrap driver, crash-safe attempt guard, backup/restore rehearsal, verified VM egress or application/worker role. Operator's synthetic VM remains at code commit `977c3152`, check-only runtime completed; no migrations, admin seal, HTTP/Horizon/scheduler or F02.
+
 ## 2026-11-23 — STEP 55–63 source image and first isolated bootstrap --check (operator-reported)
 
 - **STEP 55:** clean `gptadmin` checkout `custom` fast-forwarded `5ec3ba73` → `977c3152cb20b4c66ec2e98c68a352689c2dbbd3` (PR #49 merged). GitHub `custom` was independently checked at the same SHA; `main` remains `121cff1b243794af260f6c5850553b5f1b0af881`.
