@@ -62,17 +62,21 @@ class FileOperations
         $this->_commandObj = Command::where('command', $this->_command)->first();
         $this->checkIfCommandHasAlternateName();
         $fullpath = $this->createFile($this->_commandFileName);
-        $filecontents = $this->_eolOperation($showCmdOutput);
-        $this->_insertFileContents($filecontents, $fullpath);
+        $filecontents = (string) $this->_eolOperation($showCmdOutput);
+        $written = $this->_insertFileContents($filecontents, $fullpath);
+        clearstatcache(true, $fullpath);
+        $fileSize = is_file($fullpath) ? @filesize($fullpath) : false;
 
-        $downloadStatus = true;
+        // A previously existing non-empty path is not evidence that this write
+        // succeeded. Require the complete current payload and a fresh size.
+        $downloadStatus = $written !== false && $written > 0
+            && $written === strlen($filecontents) && $fileSize === $written;
 
-        if (! file_exists($fullpath) || filesize($fullpath) == 0) {
+        if (! $downloadStatus) {
             $logmsg = $this->_deviceName . ' - Could not save the file for command: ' . $this->_command . '. Or the configuration was blank.';
             activityLogIt(__CLASS__, __FUNCTION__, 'error', $logmsg, 'connection', $this->_deviceName, $this->_deviceid, 'device');
-            $downloadStatus = false;
         }
-        $fileSize = filesize($fullpath);
+        $fileSize = $fileSize === false ? 0 : $fileSize;
 
         return ['filepath' => $fullpath, 'filename' => basename($fullpath), 'download_status' => $downloadStatus, 'filesize' => $fileSize];
     }
@@ -110,15 +114,20 @@ class FileOperations
         rconfig_make_directory($directory, $this->directoryMode());
     }
 
-    private function _insertFileContents($lines, $fullpath)
+    private function _insertFileContents(string $lines, string $fullpath): int|false
     {
-        // Configs are left read only, so open a write window first. Errors are
-        // suppressed in case the ops is not permitted on this filesystem.
         @chmod($fullpath, $this->writableFileMode());
-        file_put_contents($fullpath, $lines);
-        // Back to read only, with no access for "other". Device configs contain
-        // secrets and must not be readable by unprivileged local accounts.
-        @chmod($fullpath, $this->fileMode());
+        try {
+            return $this->writeFileContents($fullpath, $lines);
+        } finally {
+            // Close the existing write window even when a write fails.
+            @chmod($fullpath, $this->fileMode());
+        }
+    }
+
+    protected function writeFileContents(string $path, string $contents): int|false
+    {
+        return @file_put_contents($path, $contents);
     }
 
     /**

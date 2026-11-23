@@ -78,7 +78,7 @@ class SaveConfigsToDiskAndDb
 
         $saved = $this->model->save();
 
-        if ($saved && ! empty($savedFileInfo)) {
+        if ($saved && ! empty($savedFileInfo) && $this->model->download_status === 1) {
             $this->runVersionCompare();
 
             return ['success' => true, 'commandName' => $this->commandName];
