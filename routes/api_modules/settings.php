@@ -3,6 +3,10 @@
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('settings')->group(function () {
+    Route::get('/notification-templates', 'BackupNotificationTemplateController@index');
+    Route::post('/notification-templates/preview', 'BackupNotificationTemplateController@preview');
+    Route::put('/notification-templates/{channel}/{event}', 'BackupNotificationTemplateController@save');
+    Route::delete('/notification-templates/{channel}/{event}', 'BackupNotificationTemplateController@reset');
     Route::resource('/settings', 'SettingBannerController')->only(['show']);
     Route::resource('/banner', 'SettingBannerController')->only(['show', 'update']);
     Route::resource('/timezone', 'SettingTimezoneController')->only(['show', 'update']);
