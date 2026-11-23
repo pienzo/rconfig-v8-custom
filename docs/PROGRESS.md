@@ -7,6 +7,12 @@
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
 **Current gate:** operator-reported personal synthetic VM STEP 55–63 passed: clean `custom` synchronized to `977c3152`, source-built image verified, bootstrap Compose 16/16 and host safety gates passed, *only* `bootstrap --check` run, persistent `staging_storage` volume created and audited; MariaDB/Redis remain healthy/empty, marker absent. No migrations/admin rotation/app/Horizon/scheduler/F02. Next: review ADR-0005 and audit selected migrations, then develop separate fail-closed mutating driver + CI under #40; do NOT run Core integrated installer.
 
+## 2026-11-23 — Proposed atomic bootstrap attempt guard (#52, parent #40)
+
+- **New feature branch (code only):** `app/Services/Staging/StagingBootstrapAttemptGuard.php` provides a `claim($storage)` primitive that rejects noncanonical/symlinked/unwritable storage paths, pre-existing attempts and completion markers. A single `mkdir` with requested mode `0700` atomically claims `storage/.staging-bootstrap-attempt`; repeated claims refuse and **never remove** interrupted-attempt evidence. It deliberately **does not create** `.staging-bootstrap-complete`.
+- **Synthetic PHPUnit/Pest tests:** first/second claim, existing incomplete attempt, file collision, normal or dangling-symlink completion marker, invalid/symlinked paths, mode 0700, no accidental install-marker writes. Hosted CI evidence is required before merge; there is no Compose wiring or CLI `--apply` handler in this PR.
+- **Limitations:** filesystem atomic `mkdir` is not verified power-loss durability, a distributed SQL/Redis lock, a guarantee that the supplied path is the correct named Docker volume, or evidence of working recovery. The future privileged *synthetic-only* driver must independently enforce fixed persistent volume path, container identity, host recovery checkpoint, DB/Redis mapping and freshness, egress policy and fail-loud migrations. No staging VM changes requested.
+
 ## 2026-11-23 — Code gate: read-only bootstrap state inspector (#40, PR #51)
 
 - **PR #50** (ADR-0005 and operator STEP 55–63 checkpoint) merged into `custom` at `9b6d7ac141fbc8b40fc8da71071004a029fd58c8`. No VM changes.
