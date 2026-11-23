@@ -45,21 +45,21 @@ final class ExternalBackupManualProbeController extends Controller
         $fingerprint = $this->fingerprint($externalBackupRule);
         $previous = null;
 
-        if (! empty($input['checkpoint'])) {
+        if (isset($input['checkpoint']) && $input['checkpoint'] !== '') {
             try {
                 $previous = json_decode(Crypt::decryptString($input['checkpoint']), true, 512, JSON_THROW_ON_ERROR);
             } catch (DecryptException|JsonException) {
                 throw ValidationException::withMessages(['checkpoint' => 'Invalid verification checkpoint.']);
             }
 
-            if (! is_array($previous) || ($previous['v'] ?? null) !== 1
+            if (is_array($previous) === false || ($previous['v'] ?? null) !== 1
                 || ($previous['rule_id'] ?? null) !== $externalBackupRule->id
-                || ! is_string($previous['fingerprint'] ?? null)
-                || ! hash_equals($fingerprint, $previous['fingerprint'])
-                || ! is_int($previous['observed_at'] ?? null)
-                || ! is_int($previous['scheduled_at'] ?? null)
-                || ! is_int($previous['deadline_at'] ?? null)
-                || ! is_array($previous['scan'] ?? null)
+                || is_string($previous['fingerprint'] ?? null) === false
+                || hash_equals($fingerprint, $previous['fingerprint']) === false
+                || is_int($previous['observed_at'] ?? null) === false
+                || is_int($previous['scheduled_at'] ?? null) === false
+                || is_int($previous['deadline_at'] ?? null) === false
+                || is_array($previous['scan'] ?? null) === false
                 || $previous['observed_at'] < $previous['scheduled_at']
                 || $previous['observed_at'] >= $previous['deadline_at']
                 || $now < $previous['observed_at']
