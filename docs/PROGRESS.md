@@ -5,7 +5,7 @@
 **Checkpoint:** 2026-11-23  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** F01 diff PR #98, F02 directory identity fix PR #109, F02 queued runner PR #94 and F02 guarded receipt worker PR #110 are MERGED on `custom` (`a1ae3fbbc793c74159e31e6a9a23905eae51f83a`). F02 runtime/queue/receipt flags remain OFF by default. PR candidate #111 exercises the real native verifier-to-worker/SQL path in throwaway CI, not an approved upload-finalization contract. Still pending: F02 trusted handoff, controlled task activation, real result-notification dispatcher, source-built Docker E2E, and authorized release gates. `main` stays upstream-clean; no VM/production deployment.
+**Current gate:** F01 diff PR #98, F02 directory identity fix PR #109, F02 queued runner PR #94 and F02 guarded receipt worker PR #110 are MERGED on `custom` (`a1ae3fbbc793c74159e31e6a9a23905eae51f83a`). F02 runtime/queue/receipt flags remain OFF by default. Issue #111 tests the real native verifier-to-worker/SQL path in throwaway CI, not an approved upload-finalization contract. Still pending: F02 trusted handoff, controlled task activation, real result-notification dispatcher, source-built Docker E2E, and authorized release gates. `main` stays upstream-clean; no VM/production deployment.
 
 
 ## 2026-11-23 — F02 real-native worker integration CI candidate (issue #111)
