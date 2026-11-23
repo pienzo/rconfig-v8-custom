@@ -1,0 +1,223 @@
+name: Full Core MariaDB 10.11 and Redis AOF recovery (disposable)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/staging-core-aof-recovery.yml'
+      - 'tests/staging/integration/core-aof-restore.php'
+      - 'tests/staging/integration/core-aof-recovery.py'
+      - 'app/Services/Staging/**'
+      - 'database/migrations/**'
+  workflow_dispatch:
+
+# Hosted throwaway runner, synthetic credentials only, no GitHub write scope,
+# no organization secrets, no vm-gpt/SSH/deployment or enterprise access.
+permissions:
+  contents: read
+
+jobs:
+  full-core-aof-recovery:
+    name: Real Core SQL and Redis AOF restore after SIGKILL
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      CI: 'true'
+      STAGING_CORE_RESTORE_CI: disposable-v1
+      APP_DIR_PATH: ${{ github.workspace }}
+      APP_ENV: testing
+      APP_DEBUG: 'false'
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_DATABASE: rconfig_ci_core_restore_source
+      DB_USERNAME: root
+      DB_PASSWORD: ''
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: '6387'
+      REDIS_DB: '0'
+      REDIS_CACHE_DB: '1'
+      QUEUE_CONNECTION: sync
+      CACHE_DRIVER: array
+      SESSION_DRIVER: array
+      MAIL_MAILER: log
+      RCONFIG_F02_QUEUE_ENABLED: 'false'
+
+    services:
+      sql_source:
+        image: mariadb:10.11
+        env:
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: '1'
+          MARIADB_DATABASE: rconfig_ci_core_restore_source
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mariadb-admin ping -h 127.0.0.1 -u root"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=8
+
+      sql_restored:
+        image: mariadb:10.11
+        env:
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: '1'
+          MARIADB_DATABASE: rconfig_ci_core_restore_target
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="mariadb-admin ping -h 127.0.0.1 -u root"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=8
+
+    steps:
+      - name: Checkout source-only branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up Core PHP 8.4
+        uses: shivammathur/setup-php@7c071dfe9dc99bdf297fa79cb49ea005b9fcadbc
+        with:
+          php-version: '8.4'
+          extensions: ftp, gd, ldap, sockets, pdo_mysql
+          coverage: none
+
+      - name: Prepare ephemeral Laravel .env.testing
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .env.example .env.testing
+          touch database/database.sqlite
+
+      - name: Install locked PHP dependencies
+        uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda
+
+      - name: Generate synthetic CI APP_KEY once
+        run: php artisan key:generate --force --no-interaction
+
+      - name: Verify restore harness syntax
+        run: |
+          php -l tests/staging/integration/core-aof-restore.php
+          python3 -m py_compile tests/staging/integration/core-aof-recovery.py
+
+      - name: Install SQL client for private quiesced SQL dump/import
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mariadb-client redis-tools
+
+      - name: Prepare private CI directories and AOF-enabled Redis source
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$(mktemp -d /tmp/rconfig-core-restore-XXXXXXXXXX)"
+          chmod 0700 "$root"
+          mkdir -m 0750 "$root/source-storage"
+          mkdir -m 0700 "$root/redis-source-data"
+          echo "STAGING_CORE_RESTORE_ROOT=$root" >> "$GITHUB_ENV"
+          echo "RUNNER_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "RUNNER_GID=$(id -g)" >> "$GITHUB_ENV"
+          docker run --detach --name rconfig-ci-core-aof-source \
+            --user "$(id -u):$(id -g)" \
+            --publish 127.0.0.1:6387:6379 \
+            --mount "type=bind,source=$root/redis-source-data,target=/data" \
+            redis:7-alpine redis-server --dir /data --appendonly yes \
+              --appendfsync always --save ""
+          for _ in $(seq 1 50); do
+            if redis-cli -h 127.0.0.1 -p 6387 PING | grep -qx PONG; then
+              exit 0
+            fi
+            sleep 0.2
+          done
+          echo 'Disposable source Redis AOF not ready' >&2
+          exit 1
+
+      - name: Run actual Core migrations, seal seeded admin and publish one-shot marker
+        run: php tests/staging/integration/core-aof-restore.php install
+
+      - name: Seed anonymous AOF/storage and protect staging-like private .env
+        shell: bash
+        run: |
+          sudo env GITHUB_ACTIONS=true RUNNER_OS=Linux CI=true \
+            STAGING_CORE_RESTORE_CI=disposable-v1 \
+            STAGING_CORE_RESTORE_ROOT="$STAGING_CORE_RESTORE_ROOT" \
+            APP_TEST_ENV="$GITHUB_WORKSPACE/.env.testing" \
+            RUNNER_UID="$RUNNER_UID" RUNNER_GID="$RUNNER_GID" \
+            python3 tests/staging/integration/core-aof-recovery.py prepare
+
+      - name: Stop Redis writers, snapshot Core SQL/AOF/storage/config and run negatives
+        shell: bash
+        run: |
+          sudo env GITHUB_ACTIONS=true RUNNER_OS=Linux CI=true \
+            STAGING_CORE_RESTORE_CI=disposable-v1 \
+            STAGING_CORE_RESTORE_ROOT="$STAGING_CORE_RESTORE_ROOT" \
+            RUNNER_UID="$RUNNER_UID" RUNNER_GID="$RUNNER_GID" \
+            python3 tests/staging/integration/core-aof-recovery.py backup
+
+      - name: SIGKILL only synthetic post-snapshot writer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/staging/integration/core-aof-recovery.py damage \
+            > "$STAGING_CORE_RESTORE_ROOT/writer.log" 2>&1 &
+          pid=$!
+          trap 'kill -KILL "$pid" 2>/dev/null || true' EXIT
+          observed=0
+          for _ in $(seq 1 120); do
+            if [ -f "$STAGING_CORE_RESTORE_ROOT/writer.ready" ]; then
+              observed=1
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              break
+            fi
+            sleep 0.25
+          done
+          if [ "$observed" -ne 1 ]; then
+            echo 'Synthetic writer checkpoint not reached' >&2
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            exit 1
+          fi
+          kill -KILL "$pid"
+          set +e
+          wait "$pid" 2>/dev/null
+          status=$?
+          set -e
+          trap - EXIT
+          test "$status" -eq 137 || {
+            echo 'Expected synthetic writer SIGKILL status 137' >&2
+            exit 1
+          }
+          echo 'Synthetic post-backup source writer killed (137)'
+
+      - name: Restore full Core SQL, AOF and protected files to separate resources
+        shell: bash
+        run: |
+          sudo env GITHUB_ACTIONS=true RUNNER_OS=Linux CI=true \
+            STAGING_CORE_RESTORE_CI=disposable-v1 \
+            STAGING_CORE_RESTORE_ROOT="$STAGING_CORE_RESTORE_ROOT" \
+            RUNNER_UID="$RUNNER_UID" RUNNER_GID="$RUNNER_GID" \
+            python3 tests/staging/integration/core-aof-recovery.py recover
+
+      - name: Independently verify restored Core ledger, admin seal and AOF
+        env:
+          DB_PORT: '3307'
+          DB_DATABASE: rconfig_ci_core_restore_target
+          REDIS_PORT: '6388'
+        run: php tests/staging/integration/core-aof-restore.php verify
+
+      - name: Independently verify full restore manifest and protected APP_KEY
+        shell: bash
+        run: |
+          sudo env GITHUB_ACTIONS=true RUNNER_OS=Linux CI=true \
+            STAGING_CORE_RESTORE_CI=disposable-v1 \
+            STAGING_CORE_RESTORE_ROOT="$STAGING_CORE_RESTORE_ROOT" \
+            RUNNER_UID="$RUNNER_UID" RUNNER_GID="$RUNNER_GID" \
+            python3 tests/staging/integration/core-aof-recovery.py verify
+
+      - name: Remove only fixed disposable Redis test containers
+        if: always()
+        shell: bash
+        run: |
+          docker rm -f rconfig-ci-core-aof-source rconfig-ci-core-aof-target >/dev/null 2>&1 || true
+          echo 'Hosted-only disposable AOF test containers cleaned up'
