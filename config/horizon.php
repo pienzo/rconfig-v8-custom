@@ -21,6 +21,20 @@ $f02Supervisors = env('RCONFIG_F02_QUEUE_ENABLED', false) === true
     ]
     : [];
 
+$notificationSupervisors = env('RCONFIG_CUSTOM_BACKUP_NOTIFICATIONS_ENABLED', false) === true
+    ? [
+        'HorizonBackupNotifications' => [
+            'connection' => 'redis_backup_notifications',
+            'queue' => ['BackupNotifications'],
+            'balance' => 'simple',
+            'minProcesses' => 1,
+            'maxProcesses' => 2,
+            'tries' => 1,
+            'timeout' => 60,
+        ],
+    ]
+    : [];
+
 return [
 
     /*
@@ -227,6 +241,7 @@ return [
                 'timeout' => 86400, // 1 day
             ],
             ...$f02Supervisors,
+            ...$notificationSupervisors,
         ],
 
         'local' => [
@@ -256,6 +271,7 @@ return [
                 'timeout' => 86400, // 1 day
             ],
             ...$f02Supervisors,
+            ...$notificationSupervisors,
         ],
     ],
 ];
