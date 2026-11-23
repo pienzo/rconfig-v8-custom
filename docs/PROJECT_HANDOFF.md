@@ -4,6 +4,14 @@
 **Purpose:** durable handoff between ChatGPT conversations. **Operational checkpoint:** [PROGRESS.md](PROGRESS.md). **Source audit:** [UPSTREAM_AUDIT.md](UPSTREAM_AUDIT.md). **Original requirements:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 in the ChatGPT project (not committed).
 **Evidence rule:** GitHub commits, PRs, issue records, and CI are authoritative for repository changes; only approved staging results can establish deployment or end-to-end behavior. Never infer completed work merely from a plan.
 
+## 2026-11-23 update — Draft legacy `.env` log-only transition (Issue #60)
+
+PR #62 **merged** to `custom` at `62b55d8a64506c6e10b8e1559348585a0e8c301d`, all **six** CI workflows green. New generated `.env` now has `MAIL_MAILER=log`; protected host, bootstrap-container and dormant app/Horizon/scheduler checks reject missing, duplicate, SMTP and (container) environment overrides. The personal `vm-gpt` remains on its **legacy** protected file/image, so the new checks are **not yet ready to be run on it**.
+
+A separate **feature branch candidate**, `feature/staging-mail-log-legacy-transition`, contains an opt-in Python 3 tool `docker/staging/enable-log-mailer.py --check|--apply`. It strictly recognizes only the prior exact synthetic config, matches existing protected secrets, and in an explicitly invoked apply preserves the original `.env` as a private no-clobber hard-link backup, then atomically inserts the mailer line while retaining APP_KEY, DB/Redis credentials and file permissions. It refuses drift, symlinks, insecure modes and incomplete/replayed transitions; no network, DB/Redis, installer or container action. Disposable hosted root-fixture tests and CI are required before merging. **The helper's `--apply` has NOT been executed on the VM.** Its private rollback file contains secrets and must never be printed or committed.
+
+Issue #60 cannot close until a successful reviewed operator check/transition and independent postflight, but no urgency justifies skipping #57/#40 recovery, egress and full first-install tests. `main` remains upstream-clean. See [PROGRESS.md](PROGRESS.md) for the source SHA/CI evidence.
+
 ## 2026-11-23 update — Issue #60 synthetic log-only mailer contract (NOT deployed)
 
 Feature branch `feature/staging-mail-log-contract` proposes adding exactly one `MAIL_MAILER=log` entry to the one-shot synthetic config generator and requiring it in the read-only host/bootstrap and dormant app/Horizon/scheduler preflights, plus refusal of process-level mailer overrides. It adds fixture-only tests for missing/duplicate/SMTP line and override. **PR/CI result must be checked before claiming this branch merged.** Core's framework mailer fallback is SMTP even when the initial DB settings are later switched to `log`; enforcing the framework setting avoids this mismatch.
