@@ -3,11 +3,15 @@
 namespace App\Console;
 
 use App\Jobs\CheckForUpdateJob;
+use App\Jobs\ExternalBackupExpirePendingJob;
+use App\Jobs\ExternalBackupStartObservationJob;
 use App\Jobs\RunSecurityChecksJob;
 use App\Jobs\TaskDownloadRun;
+use App\Models\ExternalBackupRule;
 use App\Models\MonitoredScheduledTaskLogItems;
 use App\Models\Task;
 use App\Traits\LogsTaskActivity;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 use Illuminate\Support\Facades\Log;
@@ -59,10 +63,35 @@ class Kernel extends ConsoleKernel
                     continue;
                 }
 
+                // F02 has its own isolated queue and no native SSH/download job.
+                if ($task->task_command === 'rconfig:check-external-backup') {
+                    if (config('external-backups.runtime_enabled', false) && config('external-backups.queue_enabled', false)) {
+                        $rule = ExternalBackupRule::query()
+                            ->where('task_id', $task->id)
+                            ->where('enabled', true)
+                            ->first();
+
+                        if ($rule !== null) {
+                            $scheduledAt = CarbonImmutable::now('UTC')->startOfMinute()->format('Y-m-d H:i:s');
+                            $schedule->job(new ExternalBackupStartObservationJob($rule->id, $scheduledAt), 'ExternalBackupChecks', 'redis_external_backups')
+                                ->name('f02-external-backup-' . $rule->id)
+                                ->cron(implode(' ', $task->task_cron));
+                        }
+                    }
+
+                    continue;
+                }
+
                 // Use the scheduler to add the task at its desired frequency
                 $executionStartTime = microtime(true);
                 $this->download_task($executionStartTime, $task);
             }
+        }
+
+        if (config('external-backups.runtime_enabled', false) && config('external-backups.queue_enabled', false)) {
+            $schedule->job(new ExternalBackupExpirePendingJob, 'ExternalBackupChecks', 'redis_external_backups')
+                ->name('f02-expire-pending')
+                ->everyMinute();
         }
 
         $schedule->command(RunHealthChecksCommand::class)->everyFiveMinutes();
@@ -80,7 +109,7 @@ class Kernel extends ConsoleKernel
      */
     private function scheduleSecurityReview(): void
     {
-        if (config('rConfig.is_demo') || ! config('security-checks.schedule_enabled', true)) {
+        if (config('rConfig.is_demo') || config('security-checks.schedule_enabled', true) === false) {
             return;
         }
 
@@ -96,7 +125,7 @@ class Kernel extends ConsoleKernel
      */
     private function download_task($executionStartTime, $task)
     {
-        if (! in_array($task->task_command, TaskDownloadRun::ALLOWED_TASK_COMMANDS, true)) {
+        if (in_array($task->task_command, TaskDownloadRun::ALLOWED_TASK_COMMANDS, true) === false) {
             Log::warning('Scheduler skipped a task with an unsupported task command.', [
                 'task_id' => $task->id,
                 'task_command' => $task->task_command,

@@ -55,7 +55,10 @@ final class ExternalBackupOccurrenceClaimService
                 throw new DomainException('External backup deadline is outside the supported window.');
             }
 
+            // Populate the pending state in memory as well as in SQL.
+            // Eloquent create() does not hydrate the table's default value.
             return ExternalBackupCheckRun::create([
+                'status' => 'pending',
                 'rule_id' => $rule->id,
                 'device_id' => $rule->device_id,
                 'scheduled_at_utc' => $instant,

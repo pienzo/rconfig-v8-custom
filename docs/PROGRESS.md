@@ -1,10 +1,10 @@
 # rConfig V8 Custom — Progress
 
-## 2026-11-23 — F01 Core Config Compare bugfix candidate (#97)
+## 2026-11-23 — F01 existing Core diff bugfix candidate (#97 / PR #98)
 
-- Audit: rConfig Core already supports selecting two backed-up config versions, fetching their contents and displaying a Monaco diff. No duplicated diff engine.
-- Small GUI fix eliminates a randomized timer that could display Monaco before both HTTP file reads finish; errors remain visible instead of using partial/undefined content. Export button now downloads both compared source texts rather than referencing undefined `model.fileName`; editor/models are disposed on unmount.
-- Vitest with controlled delayed HTTP requests verifies load gating, errors and invalid IDs. No backend/VM changes, CI pending. Final user-facing validation is part of staging sign-off.
+- Verified Core already has a Monaco side-by-side compare between any two stored config versions; no diff duplication required.
+- This PR removes a randomized loader timer, waits for both selected configurations and their file contents to finish loading, reports errors for missing input and fixes exporting compared source texts (was invoking undefined `model.fileName` on a diff editor). Models and editor are disposed at unmount.
+- Vitest covers delayed right file, fetch failure and invalid config IDs. PR and CI ongoing, no production/VM changes.
 
 
 **Cross-chat handoff and full roadmap:** [PROJECT_HANDOFF.md](PROJECT_HANDOFF.md) (verified history, all phases, blockers, next steps). See [issue #23](https://github.com/pienzo/rconfig-v8-custom/issues/23) for documentation tracking.
@@ -12,9 +12,15 @@
 **Checkpoint:** 2026-11-23  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** F02 code merged into `custom` through PR #84 (`9ad86a814f0eec1c16006530cf5df64708975ffa`); preview, inactive rule editor, two-pass manual probe implemented with CI PASS, but no verified file receipt, durable worker or scheduling. VM untouched by these changes; `main` clean at upstream baseline `121cff1b243794af260f6c5850553b5f1b0af881`.
+**Current gate:** F02 native verifier #88, F02 history #86, Telegram transport #92, F04 editor #90 merged to `custom`. F02 queued runner PR #94 remains unmerged and OFF by default; no verified receipt or SUCCESS, no completed release image or VM deployment. `main` kept upstream-clean.
 
-## 2026-11-23 — F04 email/Telegram template editor candidate (#89)
+## 2026-11-23 — F02 isolated queued PENDING/FAILED runner candidate (#93, PR #94)
+
+- Separate F02 jobs for scheduled idempotent claim, two-step metadata observations and pending-run deadline expiration; only an explicitly enabled rule and unpaused Core Task can schedule, with both global flags `RCONFIG_F02_RUNTIME_ENABLED` and `RCONFIG_F02_QUEUE_ENABLED` **false by default**. Native `TaskDownloadRun` whitelist remains untouched.
+- Results persist as `pending` or `failed` via the existing transactional ledger. Stable candidates may be inspected via the native SHA256 helper but do **not** generate verified receipts or SUCCESS yet. The GUI editor cannot activate F02 rules. No VM, production or sensitive device backup access. PR/CI under review.
+- Requires verified unique receipt and safe-file handoff contract, F02 activation UI, and staging end-to-end tests before a deployable complete monitor is claimed.
+
+## 2026-11-23 — F04 template editor (PR #90 merged, CI 9/9)
 
 - On feature branch: admin-only Settings panel and API with four global backup success/failure templates (email and Telegram), title/body editing, synthetic preview, reset defaults and updated-by audit. Allowlisted nonexecutable tokens; Telegram output HTML-escaped. CI/PR pending.
 - No actual delivery provider connected in this slice; Core email notifications still use their existing layout. No credentials, VM or external API calls.
