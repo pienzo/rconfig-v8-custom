@@ -47,7 +47,7 @@ final class ExternalBackupNotificationMessage
             'device.name' => $this->safeText($device?->device_name),
             'backup.status' => strtoupper((string) $run->status),
             'backup.source' => 'external-file',
-            'backup.filename' => $this->safeText($run->matched_filename),
+            'backup.filename' => $this->safeFilename($run->matched_filename),
             'backup.timestamp' => $instant . ' UTC',
             'backup.error' => $event === 'backup.failed' ? 'External backup check failed' : null,
             'task.name' => $this->safeText($taskName),
@@ -55,6 +55,17 @@ final class ExternalBackupNotificationMessage
             'event.id' => 'external-file:' . $run->id,
             'event.timestamp' => $instant . ' UTC',
         ]);
+    }
+
+    private function safeFilename(mixed $value): ?string
+    {
+        if (! is_string($value) || in_array($value, ['', '.', '..'], true)
+            || str_contains($value, '/') || str_contains($value, '\\')
+            || preg_match('/[\x00-\x1F\x7F]/', $value) !== 0) {
+            return null;
+        }
+
+        return $this->safeText($value);
     }
 
     private function safeText(mixed $value): ?string
