@@ -13,6 +13,7 @@ import LogsPanel from "@/pages/Settings/Panels/LogsPanel.vue";
 import UpgradePanel from "@/pages/Settings/Panels/UpgradePanel.vue";
 import UpdatePanel from "@/pages/Settings/Panels/UpdatePanel.vue";
 import RestApiPanel from "@/pages/Settings/Panels/RestApiPanel.vue";
+import BackupNotificationTemplatesPanel from "@/pages/Settings/Panels/BackupNotificationTemplatesPanel.vue";
 import { useRoute } from "vue-router"; // Import the useRoute from Vue Router
 
 export function useSettings() {
@@ -28,6 +29,7 @@ export function useSettings() {
     "/settings/import-export": ImportExportPanel,
     "/settings/security": SecurityReviewPanel,
     "/settings/restapi": RestApiPanel,
+    "/settings/notification-templates": BackupNotificationTemplatesPanel,
     "/settings/about": AboutPanel,
     "/settings/logs": LogsPanel,
     "/settings/scheduled-tasks": ScheduledTasksTable,

@@ -24,6 +24,7 @@ import {
   Users,
   ArrowDownUp,
   Webhook,
+  Bell,
 } from "lucide-vue-next";
 
 const props = defineProps({
@@ -113,6 +114,11 @@ const sections = computed(() => [
         title: "REST API",
         href: "/settings/restapi",
         icon: Webhook,
+      },
+      {
+        title: "Notification Templates",
+        href: "/settings/notification-templates",
+        icon: Bell,
       },
     ],
   },
