@@ -12,6 +12,7 @@ const busy = ref(false);
 const error = ref("");
 const message = ref("");
 const current = computed(() => templates.value.find((item) => item.channel + ":" + item.event_type === key.value));
+const tokenHelp = computed(() => variables.value.map((item) => `{{${item}}}`).join("  "));
 
 function selectTemplate() {
     title.value = current.value?.title || "";
@@ -107,7 +108,7 @@ onMounted(load);
             <textarea v-model="body" rows="7" maxlength="8192" class="mt-1 block w-full rounded border bg-background p-2 font-mono text-sm" />
         </label>
         <p class="rounded border p-3 text-xs break-all font-mono">
-            Variabili: {{ variables.map((item) => "{{" + item + "}}").join("  ") }}
+            Variabili: {{ tokenHelp }}
         </p>
         <div class="flex flex-wrap gap-2">
             <button type="button" :disabled="busy || !current" class="rounded bg-blue-600 px-3 py-2 text-white disabled:opacity-50" @click="save">Salva</button>
