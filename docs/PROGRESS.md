@@ -7,7 +7,13 @@
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
 **Current gate:** F02 code merged into `custom` through PR #84 (`9ad86a814f0eec1c16006530cf5df64708975ffa`); preview, inactive rule editor, two-pass manual probe implemented with CI PASS, but no verified file receipt, durable worker or scheduling. VM untouched by these changes; `main` clean at upstream baseline `121cff1b243794af260f6c5850553b5f1b0af881`.
 
-## 2026-11-23 — F02 persistent run history UI/API candidate (#85)
+## 2026-11-23 — F02 native read-only file digest verifier candidate (#87)
+
+- Native Linux `openat2` helper added with exact scanner metadata requirements, symlink/mount escape refusal, bounded SHA-256 streaming, before/after file-handle and pathname identity checks. Dockerfile compiles the helper from GPL source in an isolated build stage; PHP adapter is an internal service, not HTTP, queue or scheduler.
+- Hosted CI runs synthetic adversarial C/Python and PHP fixture tests. **Not** a validated backup-success or receipt path: the hash never reaches HTTP/notifications and is not inserted into the DB. The trusted intake-root ancestor contract, writer-finalization semantics, real kernel/seccomp/profile, and inode reuse remain staging review items. PR and CI pending; VM untouched.
+- [PR #86](https://github.com/pienzo/rconfig-v8-custom/pull/86) merged at `aeba80ef55ecb019bb668f5302c67763695408ad`, 5/5 CI, with history UI/API for persisted F02 check runs.
+
+## 2026-11-23 — F02 persistent run history UI/API (PR #86 merged, CI 5/5)
 
 - New feature branch: authenticated, paginated per-rule `external_backup_check_runs` history endpoint and GUI panel under Tasks. Displays persisted `pending`/`failed` (or a future verified success with receipt), timestamps, reason and matched basename. Does not expose backup contents or receipt tokens; a success without receipt is shown as inconsistent.
 - Synthetic API tests cover empty history, per-rule isolation, descending order, pagination cap and missing rule. No migrations, scheduler activation, VM changes or artificially created SUCCESS results. Pending CI and PR review.

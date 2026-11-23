@@ -8,6 +8,15 @@ RUN npm ci --include=dev
 COPY . .
 RUN npm run build && test -s public/build/manifest.json
 
+# Non-privileged, reproducibly built F02 read-only Linux helper.
+FROM debian:bookworm-slim AS f02-digest-builder
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY tools/f02/linux/f02_safe_digest.c /tmp/f02_safe_digest.c
+RUN mkdir -p /opt/rconfig-f02 \
+    && cc -std=c11 -O2 -Wall -Wextra -Werror /tmp/f02_safe_digest.c \
+        -lcrypto -o /opt/rconfig-f02/f02_safe_digest
+
 FROM php:8.4.28-apache-bookworm
 
 # Set user ID for www-data to 1000
@@ -30,6 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     netcat-openbsd \
     libsnmp-dev \
+    libssl3 \
     snmp \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install gd zip pdo_mysql pcntl snmp ldap gmp intl \
@@ -65,6 +75,11 @@ RUN for template in default.yml ios-ssh-enable.yml ios-ssh-noenable.yml ios-teln
         fi; \
     done
 COPY --from=frontend /app/public/build/ ./public/build/
+
+# Installed but inert until the F02 scheduled runner is explicitly wired and enabled.
+# This binary only returns private descriptor/hash evidence; never SUCCESS.
+COPY --from=f02-digest-builder --chown=root:root --chmod=0755 \
+    /opt/rconfig-f02/f02_safe_digest /usr/local/libexec/rconfig-f02-safe-digest
 
 RUN mkdir -p bootstrap/cache \
     && COMPOSER_ALLOW_SUPERUSER=1 composer check-platform-reqs --no-dev \
