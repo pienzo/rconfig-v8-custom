@@ -14,7 +14,6 @@ final class StagingSealDefaultAdminCommand extends Command
     protected $signature = 'staging:seal-default-admin
                             {--check : Validate the exact initial seed without writes}
                             {--apply : Replace default admin password and neutralize SMTP settings once}';
-
     protected $description = 'Synthetic staging only: seal the exact seeded Core admin after explicit migrations';
 
     public function handle(SealDefaultAdminService $sealer): int
