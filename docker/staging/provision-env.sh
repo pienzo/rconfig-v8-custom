@@ -44,7 +44,10 @@ for source in "$db_source" "$redis_source"; do
 done
 
 db_password=$(cat "$db_source") || fail 'cannot read MariaDB app secret'
-[ "$(printf '%s\n' "$db_password" | grep -Ec '^[[:xdigit:]]{64}$')" -eq 1 ] || fail 'invalid MariaDB app secret'
+[ "${#db_password}" -eq 64 ] || fail 'invalid MariaDB app secret length'
+case "$db_password" in
+    *[!0123456789abcdefABCDEF]*) fail 'invalid MariaDB app secret content' ;;
+esac
 redis_password=$(awk '
     $1 == "requirepass" {
         n++
@@ -56,7 +59,10 @@ redis_password=$(awk '
         print value
     }
 ' "$redis_source") || fail 'invalid Redis config requirepass'
-[ "$(printf '%s\n' "$redis_password" | grep -Ec '^[[:xdigit:]]{64}$')" -eq 1 ] || fail 'invalid Redis password'
+[ "${#redis_password}" -eq 64 ] || fail 'invalid Redis password length'
+case "$redis_password" in
+    *[!0123456789abcdefABCDEF]*) fail 'invalid Redis password content' ;;
+esac
 
 if [ "$action" = --check ]; then
     [ ! -e "$target" ] && [ ! -L "$target" ] || fail 'runtime .env already exists (no overwrite)'
@@ -71,7 +77,8 @@ printf 'APP_KEY=base64:%s\n' "$app_key" | grep -Eq '^APP_KEY=base64:[A-Za-z0-9+/
 
 umask 077
 temp=$(mktemp "$STAGING_CONFIG_DIR/.env.tmp.XXXXXXXX") || fail 'cannot create private config temp file'
-trap 'rm -f -- "$temp"' EXIT HUP INT TERM
+trap 'rm -f -- "$temp"' EXIT
+trap 'exit 1' HUP INT TERM
 
 # Fixed synthetic-only settings: no actual devices, SMTP, SFTP or external
 # messaging. Bootstrap must independently validate DB/Redis connectivity.
