@@ -238,8 +238,12 @@ def main(phase, root):
         for name in FILES:
             candidate = root / ("tampered-" + str(FILES.index(name)))
             shutil.copytree(snapshot, candidate, copy_function=shutil.copy2)
-            with (candidate / name).open("ab") as file:
+            candidate_file = candidate / name
+            original_mode = mode(candidate_file)
+            candidate_file.chmod(0o600)
+            with candidate_file.open("ab") as file:
                 file.write(b"tamper")
+            candidate_file.chmod(original_mode)
             expected_refusal(lambda c=candidate: snapshot_verified(c),
                              "modified " + name)
             shutil.rmtree(candidate)
