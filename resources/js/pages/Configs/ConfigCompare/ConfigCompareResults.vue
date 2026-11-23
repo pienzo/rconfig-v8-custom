@@ -8,7 +8,7 @@ const props = defineProps({
   rightSelectedId: Array
 });
 
-const { isLoadingComponent, configResultsLeft, configResultsRight, getConfigLeft, getConfigRight, getConfigFileContent } = useCompareResults(props);
+const { isLoadingComponent, comparisonError, configResultsLeft, configResultsRight } = useCompareResults(props);
 </script>
 
 <template>
@@ -19,8 +19,10 @@ const { isLoadingComponent, configResultsLeft, configResultsRight, getConfigLeft
 		<Loading :text="'Running comparison'" />
 	</div>
 
+	<div v-if="!isLoadingComponent && comparisonError" role="alert" class="m-6 rounded border p-4 text-sm text-red-500">{{ comparisonError }}</div>
+
 	<CompareDiffEditorComponent
-		v-if="!isLoadingComponent"
+		v-if="!isLoadingComponent && !comparisonError"
 		:config-results-right="configResultsRight"
 		:config-results-left="configResultsLeft"
 		:left-selected-id="leftSelectedId"
