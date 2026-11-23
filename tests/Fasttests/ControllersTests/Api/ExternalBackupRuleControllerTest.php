@@ -99,7 +99,7 @@ test('F02 native endpoints cannot edit delete unpause or dispatch a dormant exte
 
     $this->postJson('/api/tasks/run-manual-task', ['id' => $taskId])->assertStatus(409);
     $this->getJson('/api/tasks/toggle-pause-task/' . $taskId)->assertStatus(409);
-    $this->patchJson('/api/tasks/' . $taskId, ['task_name' => 'native-edit'])->assertStatus(409);
+    $this->patchJson('/api/tasks/' . $taskId, ['task_name' => 'native-edit'])->assertUnprocessable();
     $this->deleteJson('/api/tasks/' . $taskId)->assertStatus(409);
 
     expect(Task::findOrFail($taskId)->is_paused)->toBe(1);

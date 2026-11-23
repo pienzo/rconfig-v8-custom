@@ -120,7 +120,6 @@ class TaskController extends ApiBaseController
             return response()->json(['message' => 'F02 execution is not available yet.'], 409);
         }
 
-
         $model = $this->model->find($id);
         $model->is_paused = ! $model->is_paused;
         $model->save();
