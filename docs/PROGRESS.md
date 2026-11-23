@@ -8,6 +8,12 @@
 **Current gate:** F02 native verifier #88, F02 history #86, Telegram transport #92, F04 editor #90 merged to `custom`. F02 queued runner PR #94 remains unmerged and OFF by default; no verified receipt or SUCCESS, no completed release image or VM deployment. `main` kept upstream-clean.
 
 
+## 2026-11-23 — F02 atime regression fix candidate (issue #108 / PR #109)
+
+- During F01 PR #98 CI, F02 queued runner expected an `unstable` observation but recorded `access`, consistent with the directory scanner refusing an incidental directory `atime` update during enumeration. Added identity comparison based on stable `dev/ino/mode/nlink/uid/gid/size/mtime/ctime`, ignoring atime and duplicate numeric lstat fields. Unit tests verify atime-only updates are allowed while identity/owner/ctime changes still fail.
+- No change to symlink, file descriptor or receipt acceptance; F02 runtime still OFF by default. Pending full CI and review; no VM operations.
+
+
 ## 2026-11-23 — F02 guarded receipt and SUCCESS transaction candidate (#105)
 
 - A new service models the *transactional* file-receipt and SUCCESS state change, following two eligible observations and before the occurrence deadline. Retrying the same success is idempotent; a per-device HMAC file token plus existing unique DB constraints disallows a second scheduled occurrence from consuming the same physical file.
