@@ -3,17 +3,17 @@ import * as monaco from 'monaco-editor';
 import useCodeEditor from '@/composables/codeEditorFunctions';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Icon } from '@iconify/vue';
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 
 const props = defineProps({
-  leftSelectedId: Number,
-  rightSelectedId: Number,
+  leftSelectedId: Array,
+  rightSelectedId: Array,
   configResultsLeft: Object,
   configResultsRight: Object
 });
 
 const toggleStateMultiple = ref([]); //'dark', 'lineNumbers', 'hideUnchanged', 'minimap', 'stickyscroll'
-const { checkDarkModeIsSet, checkHideUnchangedIsSet, checkLineNumbersIsSet, checkMiniMapIsSet, checkStickyScrollIsSet, copied, copyItem, copyPath, darkmode, download, initDiffEditor, lineNumbers, meditorValue, minimap, search, toggleEditorDarkMode, toggleEditorLineNumbers, toggleEditorMinimap, toggleHideUnchanged, toggleStickyScroll } = useCodeEditor(monaco);
+const { checkDarkModeIsSet, checkHideUnchangedIsSet, checkLineNumbersIsSet, checkMiniMapIsSet, checkStickyScrollIsSet, copyItem, downloadCompare, initDiffEditor, toggleEditorDarkMode, toggleEditorLineNumbers, toggleHideUnchanged, toggleEditorMinimap, toggleHideUnchanged: unusedHideUnchanged, toggleStickyScroll } = useCodeEditor(monaco);
 
 onMounted(() => {
   initializeToggleStates();
@@ -28,11 +28,28 @@ function initializeToggleStates() {
   //   if (checkStickyScrollIsSet()) toggleStateMultiple.value.push('stickyscroll');
 }
 
-function initCodeEditor() {
-  var originalModel = monaco.editor.createModel(props.configResultsLeft.filecontent, 'text/plain');
-  var modifiedModel = monaco.editor.createModel(props.configResultsRight.filecontent, 'text/plain');
+let diffEditor = null;
+let originalModel = null;
+let modifiedModel = null;
 
-  let diffEditor = initDiffEditor('code-editor__code-pre', 'rconfig');
+function downloadComparedSources() {
+  const leftText = props.configResultsLeft?.filecontent ?? '';
+  const rightText = props.configResultsRight?.filecontent ?? '';
+  const exportText = '=== ORIGINAL CONFIGURATION ===\n' + leftText + '\n\n=== MODIFIED CONFIGURATION ===\n' + rightText;
+  downloadCompare(exportText, `rconfig-compare-${props.leftSelectedId?.[0] ?? 'left'}-${props.rightSelectedId?.[0] ?? 'right'}.txt`, 'compare');
+}
+
+onUnmounted(() => {
+  diffEditor?.dispose();
+  originalModel?.dispose();
+  modifiedModel?.dispose();
+});
+
+function initCodeEditor() {
+  originalModel = monaco.editor.createModel(props.configResultsLeft.filecontent, 'text/plain');
+  modifiedModel = monaco.editor.createModel(props.configResultsRight.filecontent, 'text/plain');
+
+  diffEditor = initDiffEditor('code-editor__code-pre', 'rconfig');
 
   if (diffEditor) {
     diffEditor.setModel({
@@ -61,8 +78,8 @@ function initCodeEditor() {
 				<Button
 					variant="ghost"
 					class="ml-1"
-					title="download"
-					@click="download(model.fileName)"
+					title="Export compared configuration sources"
+					@click="downloadComparedSources"
 				>
 					<Icon icon="mingcute:download-fill"></Icon>
 				</Button>
