@@ -2,16 +2,16 @@
 
 namespace App\Console;
 
+use App\Jobs\CheckForUpdateJob;
 use App\Jobs\ExternalBackupExpirePendingJob;
 use App\Jobs\ExternalBackupStartObservationJob;
-use App\Models\ExternalBackupRule;
-use Carbon\CarbonImmutable;
-use App\Jobs\CheckForUpdateJob;
 use App\Jobs\RunSecurityChecksJob;
 use App\Jobs\TaskDownloadRun;
+use App\Models\ExternalBackupRule;
 use App\Models\MonitoredScheduledTaskLogItems;
 use App\Models\Task;
 use App\Traits\LogsTaskActivity;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 use Illuminate\Support\Facades\Log;
