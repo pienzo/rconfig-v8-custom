@@ -108,3 +108,27 @@ test('F03 WhatsApp connection errors are sanitized', function () {
     expect(fn () => app(WhatsAppCloudTemplateTransport::class)->sendApprovedTemplate('backup.failed'))
         ->toThrow(RuntimeException::class, 'connection failed');
 });
+
+test('automatic WhatsApp preflight requires policy approval and captures the validated request', function () {
+    config()->set('custom-backup-notifications.enabled', true);
+    config()->set('rconfig-whatsapp.enabled', true);
+    config()->set('rconfig-whatsapp.policy_approved', false);
+    config()->set('app.key', 'synthetic-key-for-test');
+    Http::fake(['graph.facebook.com/*' => Http::response(['messages' => [['id' => 'wamid.SYNTHETIC']]], 200)]);
+    $transport = app(WhatsAppCloudTemplateTransport::class);
+    expect(fn () => $transport->prepareAutomatic('backup.failed', ['Demo']))->toThrow(RuntimeException::class);
+    config()->set('rconfig-whatsapp.policy_approved', true);
+    $prepared = $transport->prepareAutomatic('backup.failed', ['Demo']);
+    expect($prepared['destination'])->toMatch('/\\A[a-f0-9]{64}\\z/');
+    Http::assertNothingSent();
+
+    config()->set('rconfig-whatsapp.recipient', '393339876543');
+    expect($transport->prepareAutomatic('backup.failed', ['Demo'])['destination'])->not->toBe($prepared['destination']);
+    $prepared['send']();
+    Http::assertSentCount(1);
+    Http::assertSent(fn ($request) => $request['to'] === '393331234567' && $request['type'] === 'template');
+
+    config()->set('rconfig-whatsapp.policy_approved', false);
+    expect(fn () => $prepared['send']())->toThrow(RuntimeException::class);
+    Http::assertSentCount(1);
+});
