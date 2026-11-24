@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #156 three simultaneous roles accepted 7/7; #157 role recreation candidate. All feature activation/deployment gates OFF; `main` and VM unchanged. Trusted uploader, actual providers, operational policy and release remain open.
+**Current gate:** #158 role recreation accepted 8/8; #159 controlled infrastructure restart candidate. All feature activation/deployment gates OFF; `main` and VM unchanged. Trusted uploader, actual providers, operational policy and release remain open.
 
+
+## 2026-11-24 — Role recreation accepted; infrastructure restart candidate
+
+- #158 merged at `e7aaf9305a74cb0672f976ee889014c7d38a4c4a`, head `eec93768`, 8/8 CI (45396330819 / 45396330878). Job 138452990059 proved new role IDs, old Horizon leases expired, new real heartbeat, original sealed admin and saved local draft/cache/storage fixtures retained. #157 closed.
+- #159 candidate preserves existing three role jobs and adds isolated controlled MariaDB/Redis shutdown and restart without container recreation or volume deletion. Requires orderly exit, changed start timestamps, healthy infra, unchanged volume names and IDs, internal network, Redis auth/AOF state, old heartbeat and expired leases before role launch, fresh heartbeat after launch and matched Redis DB0/DB1/storage plus SQL draft and sealed-admin persistence. No abrupt crash or live outage test, no real provider, no VM/deployment. CI pending; rollback is revert test-only PR.
 
 ## 2026-11-24 — Three roles accepted; recreation candidate
 
