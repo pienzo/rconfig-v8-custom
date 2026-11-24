@@ -119,7 +119,11 @@ do {
             && array_sum($supervisor->processes) > 0;
     }
     sort($names);
-    $freshHeartbeat = is_int($heartbeat) && $heartbeat >= $started && $heartbeat <= time();
+    // Predis returns numeric Redis values as strings; Laravel RedisStore
+    // deliberately preserves numeric values rather than unserializing them.
+    $heartbeatTimestamp = is_int($heartbeat) || (is_string($heartbeat) && ctype_digit($heartbeat))
+        ? (int) $heartbeat : 0;
+    $freshHeartbeat = $heartbeatTimestamp >= $started && $heartbeatTimestamp <= time();
 
     if ($workersReady && $names === $expected && $freshHeartbeat) {
         combinedLedgerEmpty();
