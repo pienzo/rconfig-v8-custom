@@ -29,7 +29,11 @@ compose() {
 }
 
 cleanup() {
-    if [[ "$mode" == --combined ]]; then combined_roles_cleanup; fi
+    local status=$?
+    if [[ "$mode" == --combined ]]; then
+        if (( status != 0 )); then combined_roles_diagnostics || true; fi
+        combined_roles_cleanup
+    fi
     docker rm -f -v "$probe" "$app" "$bootstrap" "$preflight" >/dev/null 2>&1 || true
     docker volume rm "$volume" >/dev/null 2>&1 || true
     compose down --volumes --remove-orphans >/dev/null 2>&1 || true

@@ -6,6 +6,38 @@ combined_roles_cleanup() {
     rm -f -- "$RUNNER_TEMP/$project-roles-baseline.log" "$RUNNER_TEMP/$project-roles-live.log"
 }
 
+# Diagnostics are deliberately allowlisted, never raw environment or logs.
+combined_roles_diagnostics() {
+    local role container_id
+    for role in app horizon scheduler; do
+        container_id="$project-$role"
+        printf 'ROLE_DIAGNOSTIC %s ' "$role"
+        docker inspect --format 'status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' "$container_id" 2>/dev/null || true
+        docker top "$container_id" -eo pid,euid,egid,comm,args 2>/dev/null | awk '
+            $1 ~ /^[0-9]+$/ {
+                if ($4 ~ /^php([0-9.]+)?$/) {
+                    php++
+                    if ($2 != 1000 || $3 != 33) bad++
+                    if ($0 ~ /[[:space:]]horizon([[:space:]]|$)/) master++
+                    if ($0 ~ /[[:space:]]horizon:supervisor([[:space:]]|$)/) supervisors++
+                    if ($0 ~ /[[:space:]]horizon:work([[:space:]]|$)/) workers++
+                    if ($0 ~ /[[:space:]]schedule:work([[:space:]]|$)/) scheduler++
+                }
+            }
+            END { printf "PROCESS_COUNTS php=%d wrong_uid_gid=%d master=%d supervisors=%d workers=%d scheduler=%d\\n", php,bad,master,supervisors,workers,scheduler }' || true
+        docker logs --tail 200 "$container_id" 2>&1 | awk '
+            /Horizon started successfully/ { started++ }
+            /health:schedule-check-heartbeat/ { heartbeat++ }
+            /health:check/ { health++ }
+            /staging role refused:/ { refused++ }
+            /Permission denied|Read-only file system/ { permission++ }
+            /NOAUTH|WRONGPASS|Authentication required/ { auth++ }
+            /Connection refused|Connection timed out/ { connection++ }
+            /Fatal error|Uncaught|Exception|ERROR/ { errors++ }
+            END { printf "LOG_COUNTS horizon_started=%d heartbeat_mentions=%d health_mentions=%d refused=%d permissions=%d auth=%d connection=%d errors=%d\\n",started,heartbeat,health,refused,permission,auth,connection,errors }' || true
+    done
+}
+
 combined_roles_verify_layout() {
     local role container_id image_id
     image_id="$(docker image inspect --format '{{.Id}}' "$image")"

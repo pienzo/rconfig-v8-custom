@@ -5,12 +5,15 @@
  * Never run this probe on a persistent VM; it neither dispatches nor runs jobs.
  */
 
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Env;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Laravel\Horizon\Contracts\MasterSupervisorRepository;
 use Laravel\Horizon\Contracts\SupervisorRepository;
+use Spatie\Health\Checks\Checks\ScheduleCheck;
+use Spatie\Health\Facades\Health;
 
 function combinedCheck(bool $ok, string $label): void
 {
@@ -72,7 +75,15 @@ foreach ([
 
 $masters = app(MasterSupervisorRepository::class);
 $supervisors = app(SupervisorRepository::class);
-$heartbeatKey = 'health:checks:schedule:latestHeartbeatAt';
+// Observe the exact store and key used by the installed Spatie command.
+$scheduleCheck = Health::registeredChecks()->first(
+    static fn ($check): bool => $check instanceof ScheduleCheck
+);
+combinedCheck($scheduleCheck instanceof ScheduleCheck, 'native schedule health check registered');
+$heartbeatKey = $scheduleCheck->getCacheKey();
+combinedCheck($heartbeatKey === 'health:checks:schedule:latestHeartbeatAt'
+    && $scheduleCheck->getCacheStoreName() === 'redis', 'native heartbeat store and key');
+$heartbeatStore = Cache::store($scheduleCheck->getCacheStoreName());
 
 function combinedLedgerEmpty(): void
 {
@@ -85,7 +96,12 @@ function combinedLedgerEmpty(): void
 combinedLedgerEmpty();
 if ($phase === 'baseline') {
     combinedCheck($masters->all() === [] && $supervisors->all() === [], 'no pre-existing Horizon processes');
-    combinedCheck(Cache::get($heartbeatKey) === null, 'no pre-existing scheduler heartbeat');
+    combinedCheck($heartbeatStore->get($heartbeatKey) === null, 'no pre-existing scheduler heartbeat');
+    $heartbeatEvents = array_filter(app(Schedule::class)->events(), static function ($event): bool {
+        return str_contains((string) ($event->command ?? ''), 'health:schedule-check-heartbeat');
+    });
+    combinedCheck(count($heartbeatEvents) === 1
+        && array_values($heartbeatEvents)[0]->expression === '*/5 * * * *', 'native five-minute heartbeat scheduled exactly once');
     echo "STAGING_COMBINED_ROLE_BASELINE_OK (SYNTHETIC_ONLY)\n";
 
     exit(0);
@@ -100,20 +116,27 @@ combinedCheck($started > 0 && $started <= time() && time() - $started < 420, 're
 // either marker. A five-minute cadence requires a bounded observation window.
 $deadline = hrtime(true) + 360_000_000_000;
 $expected = ['HorizonOne', 'HorizonTwo'];
+$lastDiagnostic = '';
+$lastReport = 0;
+$reportedHorizon = false;
+$reportedHeartbeat = false;
 do {
     $activeMasters = array_values($masters->all());
     $activeSupervisors = array_values($supervisors->all());
-    $heartbeat = Cache::get($heartbeatKey);
+    $heartbeat = $heartbeatStore->get($heartbeatKey);
     $master = count($activeMasters) === 1 ? $activeMasters[0] : null;
     $names = [];
-    $workersReady = $master !== null && $master->status === 'running'
+    $masterReady = $master !== null && $master->status === 'running'
         && $master->environment === 'production' && (int) $master->pid > 0;
+    $workersReady = $masterReady;
+    $workerCount = 0;
 
     foreach ($activeSupervisors as $supervisor) {
         $prefix = $master !== null ? $master->name . ':' : '';
         $matchesMaster = $prefix !== '' && str_starts_with($supervisor->name, $prefix)
             && $supervisor->master === $master->name;
         $names[] = $matchesMaster ? substr($supervisor->name, strlen($prefix)) : '';
+        $workerCount += is_array($supervisor->processes) ? (int) array_sum($supervisor->processes) : 0;
         $workersReady = $workersReady && $matchesMaster && $supervisor->status === 'running'
             && (int) $supervisor->pid > 0 && is_array($supervisor->processes)
             && array_sum($supervisor->processes) > 0;
@@ -125,7 +148,28 @@ do {
         ? (int) $heartbeat : 0;
     $freshHeartbeat = $heartbeatTimestamp >= $started && $heartbeatTimestamp <= time();
 
-    if ($workersReady && $names === $expected && $freshHeartbeat) {
+    $horizonReady = $workersReady && $names === $expected;
+    // Only fixed labels, counts and booleans: never dump Redis payloads or names.
+    $diagnostic = sprintf(
+        'COMBINED_OBSERVATION masters=%d master_ready=%d supervisors=%d expected_names=%d workers=%d horizon_ready=%d heartbeat_type=%s heartbeat_fresh=%d',
+        count($activeMasters), (int) $masterReady, count($activeSupervisors), (int) ($names === $expected),
+        $workerCount, (int) $horizonReady, gettype($heartbeat), (int) $freshHeartbeat
+    );
+    if ($diagnostic !== $lastDiagnostic || time() - $lastReport >= 30) {
+        echo $diagnostic . PHP_EOL;
+        $lastDiagnostic = $diagnostic;
+        $lastReport = time();
+    }
+    if ($horizonReady && $reportedHorizon === false) {
+        echo "STAGING_COMBINED_HORIZON_OBSERVED (SYNTHETIC_ONLY)\n";
+        $reportedHorizon = true;
+    }
+    if ($freshHeartbeat && $reportedHeartbeat === false) {
+        echo "STAGING_COMBINED_HEARTBEAT_OBSERVED (SYNTHETIC_ONLY)\n";
+        $reportedHeartbeat = true;
+    }
+
+    if ($horizonReady && $freshHeartbeat) {
         combinedLedgerEmpty();
         echo "STAGING_COMBINED_HORIZON_WORKERS_OK (SYNTHETIC_ONLY)\n";
         echo "STAGING_COMBINED_SCHEDULER_HEARTBEAT_OK (SYNTHETIC_ONLY)\n";
@@ -136,4 +180,4 @@ do {
     sleep(2);
 } while (hrtime(true) < $deadline);
 
-combinedCheck(false, 'timed out observing both native supervisors and a fresh scheduled heartbeat');
+combinedCheck(false, 'timeout: ' . $lastDiagnostic);
