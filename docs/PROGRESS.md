@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #174 publisher crash boundaries accepted 6/6; #175 private pending isolation candidate. Operational gates OFF; `main` and VM unchanged. Durable recovery, ordinary device compatibility, multi-device receipts and staging remain open.
+**Current gate:** #176 private pending isolation accepted 6/6; #177 persisted claim restart classification candidate. Operational gates OFF; `main` and VM unchanged. Durable recovery, ordinary device compatibility, multi-device receipts and staging remain open.
 
+
+## 2026-11-24 — Private pending accepted; persisted claim candidate
+
+- #176 merged at `01cc2abb25fd89d50bd77c45df44e162f217cbf2`, head `6642c3eb`, 6/6 CI (45435512020 / 45435511642). Job 138592098962 emitted both pre-claim private reader checks, post-crash refusal and crash reconciliation; job 138592101405 retained actual scheduled receipt. #175 closed.
+- #177 candidate persists bounded device/nonce/basename/size/SHA256/copied inode evidence in root-only one-use claim; fresh read-only interpreter classifies pending, published evidence only or ambiguous (missing/conflicting/substituted inode). No automatic promotion or SUCCESS. Synthetic test only, no transactional ledger or power-loss guarantee. CI pending; rollback revert test-only PR.
 
 ## 2026-11-24 — Publisher crash boundaries accepted; private pending candidate
 

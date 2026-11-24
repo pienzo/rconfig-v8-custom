@@ -319,6 +319,15 @@ def locked_manifest_accept(grant, used, checkpoint=None):
             require(int(time.time()) < grant["deadline"], "completion grant expired or not due")
             fd = os.open(used, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
             try:
+                # Bind the consumed occurrence to the already verified,
+                # private copied inode. Rename changes ctime, not mtime.
+                st = (PRIVATE / ".pending").lstat()
+                record = {"version": 1, "device": int(DEVICE), "nonce": grant["nonce"],
+                          "filename": value["filename"], "size": value["size"],
+                          "sha256": value["sha256"], "dev": st.st_dev,
+                          "ino": st.st_ino, "mtime_ns": st.st_mtime_ns}
+                data = json.dumps(record, sort_keys=True, separators=(",", ":")).encode()
+                require(os.write(fd, data) == len(data), "complete persisted claim")
                 os.fsync(fd)
             finally:
                 os.close(fd)
@@ -446,6 +455,87 @@ for name in expected:
     require(result.returncode == 0, "reader view or private directory access")
 
 
+
+def claim_inspection(nonce):
+    # Read-only fresh-process reconciliation. Never trust quarantine again
+    # and never publish, delete, consume another grant or declare SUCCESS.
+    require(os.environ.get("F02_SFTP_MANIFEST_CRASH") == "1"
+            and os.environ.get("F02_SFTP_MANIFEST") == "1"
+            and os.environ.get("F02_SFTP_LIVE_LOCK") == "1"
+            and not SECOND and DEVICE == "123" and PUBLISHED == ROOT / "published",
+            "inspection fixture contract")
+    require(re.fullmatch(r"[0-9a-f]{32}", nonce) is not None, "inspection nonce")
+    directory = ROOT / "completion-claims"
+    st = directory.lstat()
+    require(stat.S_ISDIR(st.st_mode) and st.st_uid == 0 and st.st_gid == 0
+            and stat.S_IMODE(st.st_mode) == 0o700, "claim directory boundary")
+
+    def bounded_read(path, limit, gid, mode):
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            before = os.fstat(fd)
+            require(stat.S_ISREG(before.st_mode) and before.st_uid == 0
+                    and before.st_gid == gid and stat.S_IMODE(before.st_mode) == mode
+                    and before.st_nlink == 1 and 0 < before.st_size <= limit,
+                    "inspection file boundary")
+            data = bytearray()
+            while True:
+                part = os.read(fd, min(65536, limit + 1 - len(data)))
+                if not part:
+                    break
+                data.extend(part)
+                require(len(data) <= limit, "inspection read bound")
+            require(len(data) == before.st_size and identity(os.fstat(fd)) == identity(before)
+                    and identity(path.lstat()) == identity(before), "inspection file changed")
+            return before, bytes(data)
+        finally:
+            os.close(fd)
+
+    with (JAIL / "session.lock").open("rb") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            _, raw = bounded_read(directory / nonce, 4096, 0, 0o600)
+            record = json.loads(raw.decode("utf-8"), object_pairs_hook=strict_object)
+            require(type(record) is dict and set(record) == {
+                "version", "device", "nonce", "filename", "size", "sha256",
+                "dev", "ino", "mtime_ns"
+            }, "inspection record schema")
+            require(all(type(record[k]) is int for k in ("version", "device", "size", "dev", "ino", "mtime_ns"))
+                    and record["version"] == 1 and record["device"] == int(DEVICE)
+                    and record["nonce"] == nonce and record["filename"] == "backup.cfg"
+                    and 0 < record["size"] <= MAX_BYTES and record["dev"] >= 0
+                    and record["ino"] > 0 and record["mtime_ns"] > 0
+                    and type(record["sha256"]) is str
+                    and re.fullmatch(r"[0-9a-f]{64}", record["sha256"]) is not None,
+                    "inspection record fields")
+            pending = PRIVATE / ".pending"
+            final = FINAL / "backup.cfg"
+            private_entries = list(PRIVATE.iterdir())
+            final_entries = list(FINAL.iterdir())
+            if private_entries == [pending] and not final_entries:
+                candidate, state = pending, "pending_reconciliation"
+            elif final_entries == [final] and not private_entries:
+                candidate, state = final, "published_evidence_only"
+            else:
+                return "ambiguous"
+            st, data = bounded_read(candidate, MAX_BYTES, READER_GID, 0o440)
+            require((st.st_dev, st.st_ino, st.st_mtime_ns, st.st_size, hashlib.sha256(data).hexdigest())
+                    == (record["dev"], record["ino"], record["mtime_ns"], record["size"], record["sha256"]),
+                    "inspection descriptor mismatch")
+            return state
+        except (OSError, RuntimeError, ValueError, UnicodeError, RecursionError):
+            return "ambiguous"
+
+
+def inspect_fresh(nonce, expected_state):
+    # New interpreter, only nonce and fixed fixture paths; no in-memory grant.
+    env = dict(os.environ, F02_SFTP_JOURNAL_INSPECT=nonce)
+    result = subprocess.run([sys.executable, "-I", __file__], env=env,
+                            capture_output=True, text=True, timeout=15)
+    require(result.returncode == 0 and result.stdout.strip() == expected_state,
+            "fresh process claim classification " + expected_state)
+
+
 def manifest_crash_probe():
     # One disposable listener, two independently granted synthetic occurrences.
     # The parent models explicit operator reconciliation, never auto-retry.
@@ -523,6 +613,8 @@ def manifest_crash_probe():
         assert_replay_refused(grant, used)
 
         if boundary == "claimed_before_rename":
+            inspect_fresh(grant["nonce"], "pending_reconciliation")
+            print("F02_SFTP_PERSISTED_CLAIM_PENDING_OK (SYNTHETIC_ONLY)")
             require(not final.exists() and not list(FINAL.iterdir())
                     and list(PRIVATE.iterdir()) == [pending],
                     "pre-rename crash left no final basename")
@@ -548,11 +640,38 @@ def manifest_crash_probe():
             require(not list(FINAL.iterdir()) and not list(PRIVATE.iterdir())
                     and used.exists(), "operator discard retains spent claim")
             assert_replay_refused(grant, used)
+            inspect_fresh(grant["nonce"], "ambiguous")
+            print("F02_SFTP_PERSISTED_CLAIM_MISSING_AMBIGUOUS_OK (SYNTHETIC_ONLY)")
             print("F02_SFTP_CLAIM_CRASH_OPERATOR_DISCARD_OK (SYNTHETIC_ONLY)")
         else:
             require(not list(PRIVATE.iterdir()) and list(FINAL.iterdir()) == [final],
                     "post-rename crash retained final")
             before = identity(final.lstat())
+            inspect_fresh(grant["nonce"], "published_evidence_only")
+            # Negative: same bytes in a second path are not a valid state.
+            # Root-only synthetic fixture, no mutation of the final inode.
+            pending.write_bytes(expected)
+            pending.chmod(0o440)
+            inspect_fresh(grant["nonce"], "ambiguous")
+            pending.unlink()
+            # An independent inode with the same bytes must also be refused.
+            substitute = PRIVATE / "substitute"
+            substitute.write_bytes(expected)
+            os.chown(substitute, 0, READER_GID)
+            substitute.chmod(0o440)
+            os.rename(final, pending)
+            os.rename(substitute, final)
+            # Both paths present is ambiguous. Remove the original from the
+            # inspected locations temporarily without losing its inode.
+            os.rename(pending, ROOT / "saved-original")
+            inspect_fresh(grant["nonce"], "ambiguous")
+            final.unlink()
+            os.rename(ROOT / "saved-original", final)
+            # Rename changes ctime; capture restored identity for replay check.
+            before = identity(final.lstat())
+            inspect_fresh(grant["nonce"], "published_evidence_only")
+            print("F02_SFTP_PERSISTED_CLAIM_PUBLISHED_OK (SYNTHETIC_ONLY)")
+            print("F02_SFTP_PERSISTED_CLAIM_CONFLICT_REFUSED_OK (SYNTHETIC_ONLY)")
             verify_published()
             assert_replay_refused(grant, used)
             require(identity(final.lstat()) == before and final.read_bytes() == expected,
@@ -580,6 +699,9 @@ def main():
     private_stat = PRIVATE.lstat()
     require(private_stat.st_gid == 0 and stat.S_IMODE(private_stat.st_mode) == 0o700
             and private_stat.st_dev == FINAL.lstat().st_dev, "private publisher boundary")
+    if "F02_SFTP_JOURNAL_INSPECT" in os.environ:
+        print(claim_inspection(os.environ["F02_SFTP_JOURNAL_INSPECT"]))
+        return
     if os.environ.get("F02_SFTP_MANIFEST_PROBE") == "1":
         if os.environ.get("F02_SFTP_MANIFEST_CRASH") == "1":
             manifest_crash_probe()
