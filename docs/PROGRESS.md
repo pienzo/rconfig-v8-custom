@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #130 combined CI and real MySQL notification claim/crash passed; #132 Docker source build and offline smoke passed. #133 disposable Docker bootstrap + HTTP authentication candidate. All feature flags remain OFF; actual Apache/Horizon/scheduler, browser E2E, trusted upload, provider and release gates remain open. `main` and VM unchanged.
+**Current gate:** #134 Docker real bootstrap + HTTP auth passed 6/6; #136 upstream publication guard passed 5/5. #137 F02 selected scheduler event through actual Horizon/Redis/native receipt candidate. All deployment and notification gates OFF; trusted upload handoff, Apache/browser staging, actual providers, retention/recovery and upstream/release approval remain open. `main` and VM unchanged.
 
+
+## 2026-11-24 — Docker HTTP and release guard accepted
+
+- #134 merged at `5bc28f2b99c41b0c2594be82457a37fe5170078a`, corrected 6/6; real disposable MariaDB/Redis bootstrap, administrator seal, HTTP login, dashboard and protected API checks passed. #136 merged at `1edadccf2616acfc85106cbd078f9803b8ff1a54`, 5/5; 1,813 PHP tests passed, 8 skipped, 8,412 assertions. No upstream registry publication from guarded custom source. Clean main remains upstream unchanged.
+- #137 adds a hosted-only selected real F02 scheduler event through Horizon (production supervisor configuration, testing app), dedicated Redis DBs, native helper and a synthetic closed-file rename. Verify one receipt and replay, no notification sends. Pending CI; not full scheduler daemon or approved uploader evidence.
 
 ## 2026-11-24 — Combined CI and Docker image accepted
 
