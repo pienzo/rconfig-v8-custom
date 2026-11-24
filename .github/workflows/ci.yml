@@ -264,3 +264,7 @@ jobs:
             -lcrypto -o "$RUNNER_TEMP/rconfig-f02-safe-digest"
           F02_NATIVE_E2E_BINARY="$RUNNER_TEMP/rconfig-f02-safe-digest" \
             php artisan test --compact tests/Fasttests/ExternalBackups/ExternalBackupRealNativeWorkerIntegrationTest.php
+
+      - name: Test F03 real MySQL concurrent delivery claims and crash (hosted only)
+        # Independent processes; local synthetic effect, no provider calls.
+        run: F03_SYNTHETIC_DELIVERY_CLAIM=1 php tools/f03/delivery_claim.php
