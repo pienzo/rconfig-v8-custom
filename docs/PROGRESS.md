@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #168 concurrent device isolation accepted 6/6; #169 interrupted SFTP recovery candidate. Operational gates OFF; `main` and VM unchanged. Trusted completion protocol, multi-device receipts, staging and release remain open.
+**Current gate:** #170 interrupted SFTP recovery accepted 6/6; #171 optional managed-sender completion manifest candidate. Operational gates OFF; `main` and VM unchanged. Ordinary device compatibility, durable completion claims, multi-device receipts, staging and release remain open.
 
+
+## 2026-11-24 — Interrupted SFTP accepted; completion manifest candidate
+
+- #170 merged at `d9f6431ce72e20135510b81735e329bc5efed178`, head `2170c57a`, 6/6 CI (45414235852 / 45414235877). Job 138515968735 confirmed partial and complete-looking interrupted write refusal, lock release, reconnect and valid recovery; job 138515971965 retained actual SFTP scheduler receipt. #169 closed.
+- #171 candidate: optional managed sender SFTP uploads actual backup and explicit strict bounded JSON sidecar last by rename; protected synthetic device/occurrence challenge and window, descriptor size/hash validation before atomic publication, root-only one-use claim before rename. Negative missing/malformed/duplicate/wrong device/nonce/basename/size/hash/expired and replay. No mandatory device changes, no runtime or VM changes. Claim is fail-closed experimental, not transactional recovery or operational trust. Existing checks retained. CI pending; rollback revert test-only PR.
 
 ## 2026-11-24 — Multi-device exclusion accepted; interrupted SFTP candidate
 

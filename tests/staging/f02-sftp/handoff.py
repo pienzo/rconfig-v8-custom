@@ -3,6 +3,8 @@ import fcntl
 import hashlib
 import json
 import os
+import re
+import secrets
 from pathlib import Path
 import select
 import stat
@@ -33,7 +35,7 @@ def identity(st):
             st.st_mtime_ns, st.st_ctime_ns)
 
 
-def publish(name, completion_confirmed=False):
+def publish(name, completion_confirmed=False, expected_digest=None, claim=None):
     # Fixed synthetic directory and names; no external path or shell input.
     require(name in {"backup.cfg", "symlink.cfg", "hardlink.cfg", "empty.cfg"}, "name")
     if name == "backup.cfg":
@@ -74,9 +76,10 @@ def publish(name, completion_confirmed=False):
                 # Synthetic oracle only: verify known fixture bytes BEFORE
                 # publication, never treat this as a real device manifest.
                 if name == "backup.cfg":
-                    expected = EXPECTED.read_bytes()
-                    require(total == len(expected)
-                            and digest.digest() == hashlib.sha256(expected).digest(),
+                    if expected_digest is None:
+                        expected = EXPECTED.read_bytes()
+                        expected_digest = (len(expected), hashlib.sha256(expected).hexdigest())
+                    require((total, digest.hexdigest()) == expected_digest,
                             "synthetic content incomplete or mismatched")
                 os.fchown(out, 0, READER_GID)
                 os.fchmod(out, 0o440)
@@ -84,6 +87,8 @@ def publish(name, completion_confirmed=False):
             finally:
                 os.close(out)
             require(not (FINAL / name).exists(), "fresh final path")
+            if claim is not None:
+                claim()
             # The final directory is exclusively writable by the trusted
             # publisher; this test has exactly one publisher and no reader yet.
             os.rename(temp, name, src_dir_fd=dst_dir, dst_dir_fd=dst_dir)
@@ -209,6 +214,179 @@ def aborted_probe():
     print("F02_SFTP_ABORT_LOCK_RELEASE_OK (SYNTHETIC_ONLY)")
 
 
+
+def strict_object(pairs):
+    result = {}
+    for key, value in pairs:
+        require(key not in result, "duplicate manifest key")
+        result[key] = value
+    return result
+
+
+def read_manifest():
+    directory = os.open(SOURCE, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        try:
+            fd = os.open("backup.ready.json", os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW,
+                         dir_fd=directory)
+        except FileNotFoundError:
+            raise RuntimeError("F02 handoff failed: missing completion manifest") from None
+        try:
+            before = os.fstat(fd)
+            require(stat.S_ISREG(before.st_mode) and before.st_uid == SOURCE_UID
+                    and before.st_nlink == 1 and 0 < before.st_size <= 4096,
+                    "manifest type/ownership/size")
+            data = bytearray()
+            while True:
+                part = os.read(fd, 4097 - len(data))
+                if not part:
+                    break
+                data.extend(part)
+                require(len(data) <= 4096, "manifest bound")
+            require(len(data) == before.st_size and identity(os.fstat(fd)) == identity(before)
+                    and identity(os.stat("backup.ready.json", dir_fd=directory, follow_symlinks=False))
+                    == identity(before), "manifest identity")
+        finally:
+            os.close(fd)
+    finally:
+        os.close(directory)
+    try:
+        parsed = json.loads(data.decode("utf-8"), object_pairs_hook=strict_object)
+    except (UnicodeError, ValueError, RecursionError):
+        raise RuntimeError("F02 handoff failed: malformed manifest") from None
+    require(type(parsed) is dict and set(parsed) == {
+        "version", "device", "nonce", "filename", "size", "sha256"
+    }, "manifest schema")
+    require(type(parsed["version"]) is int and parsed["version"] == 1
+            and type(parsed["device"]) is int and type(parsed["size"]) is int
+            and 0 < parsed["size"] <= MAX_BYTES
+            and type(parsed["nonce"]) is str and re.fullmatch(r"[0-9a-f]{32}", parsed["nonce"]) is not None
+            and type(parsed["filename"]) is str and type(parsed["sha256"]) is str
+            and re.fullmatch(r"[0-9a-f]{64}", parsed["sha256"]) is not None, "manifest fields")
+    return parsed
+
+
+def locked_manifest_accept(grant, used):
+    # Fixed synthetic grant from the trusted controller, NOT from the
+    # manifest. The SFTP sender is authenticated but is trusted to declare
+    # completion only under an explicitly selected managed-sender contract.
+    require(not used.exists(), "completion already claimed")
+    with (JAIL / "session.lock").open("rb") as lock:
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                require(time.monotonic() < deadline, "manifest session lock")
+                time.sleep(0.1)
+        require(not used.exists(), "completion already claimed")
+        now = int(time.time())
+        require(grant["start"] <= now < grant["deadline"], "completion grant expired or not due")
+        value = read_manifest()
+        require(value["device"] == int(DEVICE) == grant["device"], "manifest device")
+        require(value["nonce"] == grant["nonce"], "manifest nonce")
+        require(value["filename"] == "backup.cfg", "manifest basename")
+
+        def claim():
+            # Consume before rename; a crash here fails closed and would
+            # need operator reconciliation. NOT a transactional ledger.
+            require(int(time.time()) < grant["deadline"], "completion grant expired or not due")
+            fd = os.open(used, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            parent = os.open(used.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                os.fsync(parent)
+            finally:
+                os.close(parent)
+
+        publish("backup.cfg", completion_confirmed=True,
+                expected_digest=(value["size"], value["sha256"]), claim=claim)
+
+
+def manifest_batch(commands):
+    args = ["sftp", "-q", "-b", "-", "-P", "2222", "-i", "/sandbox/keys/client",
+            "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes",
+            "-o", "UserKnownHostsFile=/sandbox/keys/known_hosts", "-o", "GlobalKnownHostsFile=/dev/null",
+            "-o", "ConnectTimeout=3", "f02upload@127.0.0.1"]
+    result = subprocess.run(args, input=commands, text=True, capture_output=True, timeout=15)
+    require(result.returncode == 0, "manifest synthetic SFTP batch")
+
+
+def send_manifest(raw):
+    (ROOT / "sender-manifest.json").write_bytes(raw)
+    # OpenSSH POSIX rename extension replaces previous test sidecars atomically.
+    manifest_batch("put /sandbox/sender-manifest.json /incoming/manifest.part\n"
+                   "rename /incoming/manifest.part /incoming/backup.ready.json\n")
+
+
+def manifest_probe():
+    require(os.environ.get("F02_SFTP_MANIFEST") == "1"
+            and os.environ.get("F02_SFTP_LIVE_LOCK") == "1"
+            and not SECOND and DEVICE == "123" and PUBLISHED == ROOT / "published",
+            "manifest fixture contract")
+    grant = {"device": 123, "nonce": secrets.token_hex(16), "start": int(time.time()) - 1,
+             "deadline": int(time.time()) + 90}
+    used_dir = ROOT / "completion-claims"
+    used_dir.mkdir(mode=0o700)
+    used = used_dir / grant["nonce"]
+    # Test sender knows the bytes and challenge, but the publisher reads only
+    # the uploaded manifest and protected controller grant for admission.
+    expected = EXPECTED.read_bytes()
+    valid = {"version": 1, "device": 123, "nonce": grant["nonce"], "filename": "backup.cfg",
+             "size": len(expected), "sha256": hashlib.sha256(expected).hexdigest()}
+
+    def refusal(label, selected_grant=grant):
+        try:
+            locked_manifest_accept(selected_grant, used)
+        except RuntimeError as error:
+            require(str(error) == "F02 handoff failed: " + label, "exact manifest refusal")
+        else:
+            raise RuntimeError("F02 invalid manifest accepted")
+        require(not used.exists() and not list(FINAL.iterdir()), "manifest refusal left output or claim")
+
+    manifest_batch("put /sandbox/complete /incoming/upload.part\n"
+                   "rename /incoming/upload.part /incoming/backup.cfg\n")
+    refusal("missing completion manifest")
+    send_manifest(b"{")
+    refusal("malformed manifest")
+    send_manifest(b'{"version":1,"version":1}')
+    refusal("duplicate manifest key")
+    for field, value, reason in (
+        ("device", 124, "manifest device"),
+        ("nonce", "0" * 32, "manifest nonce"),
+        ("filename", "../backup.cfg", "manifest basename"),
+        ("size", len(expected) + 1, "synthetic content incomplete or mismatched"),
+        ("sha256", "0" * 64, "synthetic content incomplete or mismatched"),
+    ):
+        send_manifest(json.dumps(dict(valid, **{field: value})).encode())
+        refusal(reason)
+    send_manifest(json.dumps(valid).encode())
+    refusal("completion grant expired or not due", dict(grant, start=0, deadline=1))
+    print("F02_SFTP_MANIFEST_INVALID_REFUSED_OK (SYNTHETIC_ONLY)")
+    locked_manifest_accept(grant, used)
+    require(used.is_file() and used.stat().st_uid == 0
+            and stat.S_IMODE(used.stat().st_mode) == 0o600, "protected completion claim")
+    verify_published()
+    before = identity((FINAL / "backup.cfg").lstat())
+    # The same manifest delivered again cannot claim another publication.
+    send_manifest(json.dumps(valid).encode())
+    try:
+        locked_manifest_accept(grant, used)
+    except RuntimeError as error:
+        require(str(error) == "F02 handoff failed: completion already claimed", "exact replay refusal")
+    else:
+        raise RuntimeError("F02 completion replay accepted")
+    require(identity((FINAL / "backup.cfg").lstat()) == before
+            and (FINAL / "backup.cfg").read_bytes() == expected
+            and list(FINAL.iterdir()) == [FINAL / "backup.cfg"], "manifest replay changed publication")
+    print("F02_SFTP_MANIFEST_REPLAY_REFUSED_OK (SYNTHETIC_ONLY)")
+    print("F02_SFTP_MANIFEST_PUBLICATION_OK (SYNTHETIC_ONLY)")
+
+
 def main():
     require(os.geteuid() == 0 and os.environ.get("F02_SFTP_DISPOSABLE") == "1"
             and os.environ.get("GITHUB_ACTIONS") == "true", "synthetic identity")
@@ -223,6 +401,9 @@ def main():
         st = parent.lstat()
         require(stat.S_ISDIR(st.st_mode) and st.st_uid == 0 and st.st_mode & 0o022 == 0,
                 "protected ancestor")
+    if os.environ.get("F02_SFTP_MANIFEST_PROBE") == "1":
+        manifest_probe()
+        return
     if os.environ.get("F02_SFTP_ABORT_PROBE") == "1":
         aborted_probe()
         return
@@ -234,6 +415,10 @@ def main():
         else:
             raise RuntimeError("F02 handoff accepted unsafe candidate")
     publish("backup.cfg", completion_confirmed=os.environ.get("F02_SFTP_BATCH_CONFIRMED") == "1")
+    verify_published()
+
+
+def verify_published():
     require([p.name for p in FINAL.iterdir()] == ["backup.cfg"], "one published file")
     final = FINAL / "backup.cfg"
     st = final.lstat()

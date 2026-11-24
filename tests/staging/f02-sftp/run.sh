@@ -10,6 +10,9 @@ umask 077
 live="${F02_SFTP_LIVE_LOCK:-0}"
 multi="${F02_SFTP_MULTI_DEVICE:-0}"
 abort="${F02_SFTP_INTERRUPTED:-0}"
+manifest="${F02_SFTP_MANIFEST:-0}"
+case "$manifest" in 0|1) ;; *) exit 2 ;; esac
+if test "$manifest" = 1; then test "$live" = 1; test "$multi" = 0; test "$abort" = 0; fi
 case "$abort" in 0|1) ;; *) exit 2 ;; esac
 if test "$abort" = 1; then test "$live" = 1; test "$multi" = 0; fi
 case "$multi" in 0|1) ;; *) exit 2 ;; esac
@@ -179,6 +182,16 @@ test "$ready" = 1
 stage=partial-upload
 printf '%s\n' 'SYNTHETIC-PARTIAL' > /sandbox/partial
 printf '%s\n' 'SYNTHETIC-F02-FINAL-CONTENT' > /sandbox/complete
+if test "$manifest" = 1; then
+    stage=explicit-completion-manifest
+    F02_SFTP_MANIFEST_PROBE=1 python3 /usr/local/bin/f02-handoff.py
+    kill -0 "$listener"
+    runuser -u f02read -- test -r "$published/$device/backup.cfg"
+    runuser -u f02read -- test ! -w "$published/$device/backup.cfg"
+    runuser -u f02upload -- test ! -x "$published"
+    printf '%s\n' 'F02_SFTP_MANIFEST_LIVE_LISTENER_OK (SYNTHETIC_ONLY)'
+    exit 0
+fi
 if test "$abort" = 1; then
     stage=interrupted-transfer
     F02_SFTP_ABORT_PROBE=1 python3 /usr/local/bin/f02-handoff.py
