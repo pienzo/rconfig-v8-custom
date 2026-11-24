@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Laravel\Horizon\Contracts\MasterSupervisorRepository;
 use Laravel\Horizon\Contracts\SupervisorRepository;
+use Laravel\Horizon\ProvisioningPlan;
 use Spatie\Health\Checks\Checks\ScheduleCheck;
 use Spatie\Health\Facades\Health;
 
@@ -93,6 +94,28 @@ function combinedLedgerEmpty(): void
     combinedCheck(DB::table('settings')->where('id', 1)->value('mail_driver') === 'log', 'stored mail remains log-only');
 }
 
+// Core inherits the package's default supervisor via mergeConfigFrom().
+// Horizon 5.50.1 merges those defaults into each environment. Pin the
+// exact three native queue assignments; never accept an unknown supervisor.
+$expectedQueues = [
+    'HorizonOne' => 'PolicyCompliance,rConfigDefault',
+    'HorizonTwo' => 'TaskDownloadQueue,TaskSnippetQueue,ManualDownloadQueue',
+    'supervisor-1' => 'default',
+];
+$expected = array_keys($expectedQueues);
+sort($expected);
+$plan = ProvisioningPlan::get('synthetic-observer');
+$planned = [];
+foreach ($plan->parsed['production'] ?? [] as $name => $options) {
+    if ($options->maxProcesses > 0) {
+        combinedCheck($options->connection === 'redis', 'native plan Redis connection');
+        $planned[$name] = $options->queue;
+    }
+}
+ksort($planned);
+ksort($expectedQueues);
+combinedCheck($planned === $expectedQueues, 'exact native provisioning plan and queues');
+
 combinedLedgerEmpty();
 if ($phase === 'baseline') {
     combinedCheck($masters->all() === [] && $supervisors->all() === [], 'no pre-existing Horizon processes');
@@ -115,7 +138,6 @@ combinedCheck($started > 0 && $started <= time() && time() - $started < 420, 're
 // Read the real Redis repositories and scheduled heartbeat; do not manufacture
 // either marker. A five-minute cadence requires a bounded observation window.
 $deadline = hrtime(true) + 360_000_000_000;
-$expected = ['HorizonOne', 'HorizonTwo'];
 $lastDiagnostic = '';
 $lastReport = 0;
 $reportedHorizon = false;
@@ -135,9 +157,13 @@ do {
         $prefix = $master !== null ? $master->name . ':' : '';
         $matchesMaster = $prefix !== '' && str_starts_with($supervisor->name, $prefix)
             && $supervisor->master === $master->name;
-        $names[] = $matchesMaster ? substr($supervisor->name, strlen($prefix)) : '';
+        $name = $matchesMaster ? substr($supervisor->name, strlen($prefix)) : '';
+        $names[] = $name;
+        $queueMatches = isset($expectedQueues[$name])
+            && ($supervisor->options['connection'] ?? null) === 'redis'
+            && ($supervisor->options['queue'] ?? null) === $expectedQueues[$name];
         $workerCount += is_array($supervisor->processes) ? (int) array_sum($supervisor->processes) : 0;
-        $workersReady = $workersReady && $matchesMaster && $supervisor->status === 'running'
+        $workersReady = $workersReady && $matchesMaster && $queueMatches && $supervisor->status === 'running'
             && (int) $supervisor->pid > 0 && is_array($supervisor->processes)
             && array_sum($supervisor->processes) > 0;
     }

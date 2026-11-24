@@ -24,7 +24,7 @@ combined_roles_diagnostics() {
                     if ($0 ~ /[[:space:]]schedule:work([[:space:]]|$)/) scheduler++
                 }
             }
-            END { printf "PROCESS_COUNTS php=%d wrong_uid_gid=%d master=%d supervisors=%d workers=%d scheduler=%d\\n", php,bad,master,supervisors,workers,scheduler }' || true
+            END { printf "PROCESS_COUNTS php=%d wrong_uid_gid=%d master=%d supervisors=%d workers=%d scheduler=%d\n", php,bad,master,supervisors,workers,scheduler }' || true
         docker logs --tail 200 "$container_id" 2>&1 | awk '
             /Horizon started successfully/ { started++ }
             /health:schedule-check-heartbeat/ { heartbeat++ }
@@ -34,7 +34,7 @@ combined_roles_diagnostics() {
             /NOAUTH|WRONGPASS|Authentication required/ { auth++ }
             /Connection refused|Connection timed out/ { connection++ }
             /Fatal error|Uncaught|Exception|ERROR/ { errors++ }
-            END { printf "LOG_COUNTS horizon_started=%d heartbeat_mentions=%d health_mentions=%d refused=%d permissions=%d auth=%d connection=%d errors=%d\\n",started,heartbeat,health,refused,permission,auth,connection,errors }' || true
+            END { printf "LOG_COUNTS horizon_started=%d heartbeat_mentions=%d health_mentions=%d refused=%d permissions=%d auth=%d connection=%d errors=%d\n",started,heartbeat,health,refused,permission,auth,connection,errors }' || true
     done
 }
 
