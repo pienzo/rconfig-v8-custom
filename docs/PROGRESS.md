@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #172 optional completion manifest accepted 6/6; #173 publisher crash boundary candidate. Operational gates OFF; `main` and VM unchanged. Durable recovery, ordinary device compatibility, multi-device receipts, staging and release remain open.
+**Current gate:** #174 publisher crash boundaries accepted 6/6; #175 private pending isolation candidate. Operational gates OFF; `main` and VM unchanged. Durable recovery, ordinary device compatibility, multi-device receipts and staging remain open.
 
+
+## 2026-11-24 — Publisher crash boundaries accepted; private pending candidate
+
+- #174 merged at `d14c41cf458bbb4ed6e2e30efd6fb10ca7afd543`, head `8ea2ef71`, 6/6 CI (45433009740 / 45433010146). Job 138583155078 emitted both process crash boundaries, explicit discard, retained claims, native descriptor and live listener; job 138583154535 retained scheduled receipt. #173 closed. No power-loss proof.
+- #175 candidate places pending artifacts in root:root 0700 nonnumeric sibling directories on the same mount, including export, with cross-directory atomic rename and both directory fsyncs. Actual scanner source confirms direct numeric-child scan and dot names match broad glob/regex. OS reader negative tests before claim and after SIGKILL, positive final read and native descriptor; not live PHP crash scan. Existing tests retained. No runtime/VM changes; CI pending. Rollback revert test-only PR.
 
 ## 2026-11-24 — Completion manifest accepted; publisher crash candidate
 

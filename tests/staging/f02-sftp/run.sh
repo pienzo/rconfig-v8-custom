@@ -47,6 +47,8 @@ useradd -M -u 2002 -g "$reader_gid" -d /nonexistent -s /usr/sbin/nologin f02read
 install -d -o root -g root -m 0755 /sandbox /sandbox/quarantine
 install -d -o f02upload -g f02upload -m 0700 /sandbox/quarantine/incoming
 install -d -o root -g f02read -m 0750 "$published" "$published/$device"
+# Same publication mount, but never inside the numeric reader directory.
+install -d -o root -g root -m 0700 "$published/.publisher-private-$device"
 install -d -o root -g root -m 0700 /sandbox/keys
 # AuthorizedKeysFile and its ancestors must be readable by sshd during the
 # unprivileged key lookup; only the PUBLIC client key goes in this directory.
@@ -137,6 +139,7 @@ if test "$multi" = 1; then
     chmod 0444 /sandbox/quarantine-b/etc/passwd /sandbox/quarantine-b/etc/group
     test "$(stat -c '%d:%i' /sandbox/quarantine/session.lock)" != "$(stat -c '%d:%i' /sandbox/quarantine-b/session.lock)"
     install -d -o root -g f02read -m 0750 "$published/124"
+    install -d -o root -g root -m 0700 "$published/.publisher-private-124"
     ssh-keygen -q -t ed25519 -N '' -f /sandbox/keys/client-b
     install -o root -g root -m 0644 /sandbox/keys/client-b.pub /sandbox/authorized/f02uploadb
     sed -i 's/^AllowUsers f02upload$/AllowUsers f02upload f02uploadb/' /sandbox/sshd.conf
