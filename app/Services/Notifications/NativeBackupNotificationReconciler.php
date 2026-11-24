@@ -74,7 +74,9 @@ final class NativeBackupNotificationReconciler
                 continue;
             }
 
-            $ids = $this->candidates($channel, $cutoff)->orderBy('outcomes.id')->limit(100)->pluck('outcomes.id');
+            $ids = app(BackupNotificationReconciliationBatch::class)->next(
+                $this->candidates($channel, $cutoff), 'native-config', $channel, 'outcomes.id'
+            );
             foreach ($ids as $id) {
                 NativeBackupNotificationJob::dispatch((int) $id, $channel);
             }
