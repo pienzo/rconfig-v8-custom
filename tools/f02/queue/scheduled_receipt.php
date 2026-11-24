@@ -15,6 +15,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Symfony\Component\Process\Process;
 
+function scheduledReceiptFailure(Throwable $exception): void
+{
+    $message = $exception->getMessage();
+    $label = $exception instanceof RuntimeException && str_starts_with($message, 'F02 scheduled receipt probe failed: ')
+        ? $message : 'F02 scheduled receipt probe failed: ' . get_class($exception);
+    file_put_contents('php://stderr', $label . PHP_EOL);
+}
+
 function scheduledReceiptCheck(bool $ok, string $stage): void
 {
     if (! $ok) {
@@ -33,12 +41,21 @@ if (getenv('GITHUB_ACTIONS') !== 'true' || getenv('APP_ENV') !== 'testing'
     exit(2);
 }
 
+// Laravel's CLI renderer can return zero for uncaught exceptions outside
+// Artisan. Install our fail-closed handler again after framework bootstrap.
+$failClosed = static function (Throwable $exception): never {
+    scheduledReceiptFailure($exception);
+    exit(1);
+};
+set_exception_handler($failClosed);
+
 $root = dirname(__DIR__, 3);
 require $root . '/vendor/autoload.php';
 $app = require $root . '/bootstrap/app.php';
 $app->loadEnvironmentFrom('.env.testing');
 $kernel = $app->make(Kernel::class);
 $kernel->bootstrap();
+set_exception_handler($failClosed);
 
 $inbox = config('external-backups.intake_root');
 $helper = config('external-backups.safe_digest_binary');
@@ -56,11 +73,15 @@ scheduledReceiptCheck(is_string($inbox) && is_dir($inbox) && ! is_link($inbox)
     && is_string($helper) && is_executable($helper), 'private fixture and native helper');
 
 if ($sftp) {
-    scheduledReceiptCheck(getenv('RUNNER_ENVIRONMENT') === 'github-hosted'
-        && dirname($inbox) === '/opt' && posix_geteuid() !== 0
-        && fileowner($inbox) === 0 && filegroup($inbox) === posix_getegid()
-        && is_writable($inbox) === false && fileowner('/opt') === 0
-        && (fileperms('/opt') & 0022) === 0, 'protected synthetic publication root');
+    scheduledReceiptCheck(getenv('RUNNER_ENVIRONMENT') === 'github-hosted', 'hosted SFTP runner');
+    scheduledReceiptCheck(dirname($inbox) === '/var/lib' && posix_geteuid() !== 0, 'SFTP reader identity and location');
+    foreach (['/', '/var', '/var/lib', $inbox] as $ancestor) {
+        scheduledReceiptCheck(is_dir($ancestor) && is_link($ancestor) === false
+            && realpath($ancestor) === $ancestor && fileowner($ancestor) === 0
+            && (fileperms($ancestor) & 0022) === 0
+            && is_writable($ancestor) === false, 'protected publication ancestor ' . ($ancestor === $inbox ? 'inbox' : $ancestor));
+    }
+    scheduledReceiptCheck(filegroup($inbox) === posix_getegid(), 'publication reader group');
 }
 
 foreach (['external-backups.runtime_enabled', 'external-backups.queue_enabled', 'external-backups.receipt_acceptance_enabled', 'external-backups.finalization_approved'] as $flag) {
@@ -205,9 +226,7 @@ try {
     echo "F02 REAL_SCHEDULE_EVENT_HORIZON_NATIVE_RECEIPT_OK (SYNTHETIC_ONLY)\n";
 } catch (Throwable $exception) {
     $failed = true;
-    $message = $exception->getMessage();
-    $label = str_starts_with($message, 'F02 scheduled receipt probe failed: ') ? $message : get_class($exception);
-    fwrite(STDERR, 'F02 scheduled receipt probe failed: ' . $label . "\n");
+    scheduledReceiptFailure($exception);
 } finally {
     if ($master !== null && $master->isRunning()) {
         $master->signal(SIGINT);

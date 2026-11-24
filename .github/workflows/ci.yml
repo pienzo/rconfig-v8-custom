@@ -276,7 +276,7 @@ jobs:
           set -euo pipefail
           inbox="$(mktemp -d "$RUNNER_TEMP/rconfig-f02-horizon.XXXXXXXX")"
           chmod 700 "$inbox"
-          trap 'rmdir "$inbox"' EXIT
+          trap 'rmdir "$inbox"; rm -f "$RUNNER_TEMP/f02-scheduled-receipt.log"' EXIT
           F02_SYNTHETIC_HORIZON=1 REDIS_DB=13 REDIS_CACHE_DB=14 \
             QUEUE_CONNECTION=redis CACHE_DRIVER=redis CACHE_STORE=redis MAIL_MAILER=log \
             RCONFIG_F02_RUNTIME_ENABLED=true RCONFIG_F02_QUEUE_ENABLED=true \
@@ -286,7 +286,8 @@ jobs:
             RCONFIG_F02_NATIVE_DIGEST_BINARY="$RUNNER_TEMP/rconfig-f02-safe-digest" \
             RCONFIG_CUSTOM_BACKUP_NOTIFICATIONS_ENABLED=false RCONFIG_NATIVE_BACKUP_NOTIFICATIONS_ENABLED=false \
             RCONFIG_TELEGRAM_ENABLED=false RCONFIG_BACKUP_EMAIL_ENABLED=false RCONFIG_WHATSAPP_ENABLED=false \
-            php tools/f02/queue/scheduled_receipt.php
+            php tools/f02/queue/scheduled_receipt.php | tee "$RUNNER_TEMP/f02-scheduled-receipt.log"
+          grep -Fxq 'F02 REAL_SCHEDULE_EVENT_HORIZON_NATIVE_RECEIPT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-scheduled-receipt.log"
 
       - name: Test actual SFTP file through scheduled Horizon receipt (hosted only)
         shell: bash
@@ -294,12 +295,21 @@ jobs:
           set -euo pipefail
           test "$RUNNER_ENVIRONMENT" = github-hosted
           context="$(mktemp -d "$RUNNER_TEMP/f02-sftp-context.XXXXXXXX")"
-          inbox="$(sudo mktemp -d /opt/rconfig-f02-horizon.XXXXXXXX)"
+          # Check the actual host ancestry rather than assuming /opt is protected.
+          for parent in / /var /var/lib; do
+            test "$(realpath "$parent")" = "$parent"
+            test "$(stat -c '%u' "$parent")" = 0
+            perms="$(stat -c '%a' "$parent")"
+            (( (8#$perms & 0022) == 0 ))
+            test ! -w "$parent"
+          done
+          inbox="$(sudo mktemp -d /var/lib/rconfig-f02-horizon.XXXXXXXX)"
           cleanup() {
             rm -f -- "$context/Dockerfile" "$context/run.sh" "$context/handoff.py" "$context/f02_safe_digest.c"
             rmdir -- "$context"
-            sudo find "$inbox" -mindepth 1 -maxdepth 2 -delete
+            sudo find "$inbox" -xdev -mindepth 1 -maxdepth 2 -delete
             sudo rmdir -- "$inbox"
+            rm -f -- "$RUNNER_TEMP/f02-sftp-receipt.log" "$RUNNER_TEMP/f02-sftp-negative.log"
           }
           trap cleanup EXIT
           sudo chown "0:$(id -g)" "$inbox"
@@ -307,7 +317,8 @@ jobs:
           cp tests/staging/f02-sftp/{Dockerfile,run.sh,handoff.py} "$context/"
           cp tools/f02/linux/f02_safe_digest.c "$context/"
           docker build -t rconfig-f02-sftp-ci "$context"
-          F02_SYNTHETIC_SFTP_RECEIPT=1 F02_SYNTHETIC_HORIZON=1 REDIS_DB=11 REDIS_CACHE_DB=12 \
+          run_sftp_probe() {
+            F02_SYNTHETIC_SFTP_RECEIPT=1 F02_SYNTHETIC_HORIZON=1 REDIS_DB=11 REDIS_CACHE_DB=12 \
             HORIZON_PREFIX=f02_sftp_ci: CACHE_PREFIX=f02_sftp_ci \
             QUEUE_CONNECTION=redis CACHE_DRIVER=redis CACHE_STORE=redis MAIL_MAILER=log \
             RCONFIG_F02_RUNTIME_ENABLED=true RCONFIG_F02_QUEUE_ENABLED=true \
@@ -318,6 +329,20 @@ jobs:
             RCONFIG_CUSTOM_BACKUP_NOTIFICATIONS_ENABLED=false RCONFIG_NATIVE_BACKUP_NOTIFICATIONS_ENABLED=false \
             RCONFIG_TELEGRAM_ENABLED=false RCONFIG_BACKUP_EMAIL_ENABLED=false RCONFIG_WHATSAPP_ENABLED=false \
             php tools/f02/queue/scheduled_receipt.php
+          }
+          # Deliberately violate the protected root mode after framework boot.
+          # Require the precise refusal AND exit 1; never count a rendered error as success.
+          sudo chmod 0755 "$inbox"
+          status=0
+          run_sftp_probe > "$RUNNER_TEMP/f02-sftp-negative.log" 2>&1 || status=$?
+          test "$status" -eq 1
+          grep -Fxq 'F02 scheduled receipt probe failed: private fixture and native helper' "$RUNNER_TEMP/f02-sftp-negative.log"
+          printf '%s\n' 'F02_SFTP_PREFLIGHT_FAIL_CLOSED_OK (SYNTHETIC_ONLY)'
+          sudo chmod 0750 "$inbox"
+          run_sftp_probe | tee "$RUNNER_TEMP/f02-sftp-receipt.log"
+          grep -Fxq 'F02_SFTP_PUBLISHED_INODE_READY (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-receipt.log"
+          grep -Fxq 'F02_REAL_SFTP_SCHEDULE_HORIZON_RECEIPT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-receipt.log"
+          grep -Fxq 'F02 REAL_SCHEDULE_EVENT_HORIZON_NATIVE_RECEIPT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-receipt.log"
 
       - name: Test F03 actual implicit TLS SMTP and mandatory AUTH (hosted only)
         # Local loopback fixture, ephemeral test CA, no relay or real provider.
