@@ -11,6 +11,7 @@ use App\Services\Staging\StagingBootstrapCoordinator;
 use App\Services\Staging\StagingBootstrapRuntimeGate;
 use App\Services\Staging\StagingBootstrapStateService;
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\ConnectException;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Process\Process;
@@ -22,22 +23,7 @@ function dockerHttpCheck(bool $ok, string $label): void
     }
 }
 
-$root = '/var/www/html/rconfig';
-dockerHttpCheck(getenv('RCONFIG_DOCKER_HTTP_CI') === 'disposable-v1'
-    && getenv('IS_DOCKER') === 'true'
-    && posix_geteuid() === 1000 && posix_getegid() === 33
-    && getenv('DB_HOST') === 'db' && getenv('DB_DATABASE') === 'rconfig_ci_http'
-    && getenv('DB_USERNAME') === 'rconfig_ci_http' && getenv('REDIS_HOST') === 'redis'
-    && getenv('MAIL_MAILER') === 'log' && getcwd() === $root, 'disposable container identity');
-
-require $root . '/vendor/autoload.php';
-$app = require $root . '/bootstrap/app.php';
-$app->make(Kernel::class)->bootstrap();
-
-$password = bin2hex(random_bytes(32));
-$key = config('app.key');
-$storage = storage_path();
-$gate = new class($storage, $password, $key) implements StagingBootstrapRuntimeGate
+final class SyntheticDockerHttpRuntimeGate implements StagingBootstrapRuntimeGate
 {
     public function __construct(
         private readonly string $storage,
@@ -95,7 +81,24 @@ $gate = new class($storage, $password, $key) implements StagingBootstrapRuntimeG
         return $this->permitted() && $this->attemptClaimed()
             && ! file_exists($marker) && ! is_link($marker);
     }
-};
+}
+
+$root = '/var/www/html/rconfig';
+dockerHttpCheck(getenv('RCONFIG_DOCKER_HTTP_CI') === 'disposable-v1'
+    && getenv('IS_DOCKER') === 'true'
+    && posix_geteuid() === 1000 && posix_getegid() === 33
+    && getenv('DB_HOST') === 'db' && getenv('DB_DATABASE') === 'rconfig_ci_http'
+    && getenv('DB_USERNAME') === 'rconfig_ci_http' && getenv('REDIS_HOST') === 'redis'
+    && getenv('MAIL_MAILER') === 'log' && getcwd() === $root, 'disposable container identity');
+
+require $root . '/vendor/autoload.php';
+$app = require $root . '/bootstrap/app.php';
+$app->make(Kernel::class)->bootstrap();
+
+$password = bin2hex(random_bytes(32));
+$key = config('app.key');
+$storage = storage_path();
+$gate = new SyntheticDockerHttpRuntimeGate($storage, $password, $key);
 
 $state = new StagingBootstrapStateService;
 $stages = new LaravelStagingBootstrapStages($state, new SealDefaultAdminService, $gate);
@@ -128,7 +131,7 @@ try {
         try {
             $login = $client->get('/login');
             break;
-        } catch (\GuzzleHttp\Exception\ConnectException) {
+        } catch (ConnectException) {
             usleep(250000);
         }
     }
