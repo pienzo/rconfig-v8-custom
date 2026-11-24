@@ -10,6 +10,9 @@ const saving = ref(false);
 const errorMessage = ref("");
 const infoMessage = ref("");
 const editingId = ref(null);
+const canManageActivation = ref(false);
+const activationAvailable = ref(false);
+const activationBusy = ref(null);
 const currentPage = ref(1);
 const lastPage = ref(1);
 const previewRuleId = ref(null);
@@ -120,6 +123,8 @@ async function load(page = 1) {
     try {
         const response = await axios.get("/api/tasks/external-backup-rules", { params: { page, per_page: 20 } });
         rows.value = response.data.data;
+        canManageActivation.value = response.data.can_manage_activation === true;
+        activationAvailable.value = response.data.activation_available === true;
         currentPage.value = response.data.current_page;
         lastPage.value = response.data.last_page;
     } catch {
@@ -179,7 +184,7 @@ async function save() {
             await axios.post("/api/tasks/external-backup-rules", payload);
         }
         reset();
-        infoMessage.value = "Rule saved. Execution remains disabled until the F02 checker is connected.";
+        infoMessage.value = "Rule saved. New rules are inactive until explicitly activated.";
         await load();
     } catch (error) {
         const details = error.response?.data?.errors;
@@ -188,6 +193,23 @@ async function save() {
             : (error.response?.data?.message || "Cannot save this rule.");
     } finally {
         saving.value = false;
+    }
+}
+
+async function changeActivation(rule) {
+    const enabled = !rule.enabled;
+    if (enabled && !window.confirm("Attivare i controlli pianificati per questa regola?")) return;
+    activationBusy.value = rule.id;
+    errorMessage.value = "";
+    infoMessage.value = "";
+    try {
+        await axios.patch(`/api/tasks/external-backup-rules/${rule.id}/activation`, { enabled });
+        await load(currentPage.value);
+        infoMessage.value = enabled ? "Regola attivata per le prossime pianificazioni." : "Regola sospesa.";
+    } catch (error) {
+        errorMessage.value = error.response?.data?.message || "Impossibile modificare lo stato della regola.";
+    } finally {
+        activationBusy.value = null;
     }
 }
 
@@ -211,8 +233,7 @@ onMounted(() => load());
     <section class="rounded-md border border-gray-300 p-4 text-left dark:border-gray-700" aria-label="External backup rules">
         <h3 class="text-lg font-semibold">External filesystem backup checks</h3>
         <p class="mb-3 text-sm text-muted-foreground">
-            Configure a device backup filename and schedule. These rules are saved inactive until the F02 job is ready;
-            no remote command or file check will run yet.
+            Configure a device backup filename and schedule. New rules remain inactive until an administrator explicitly activates them.
         </p>
         <div class="grid gap-3 md:grid-cols-2">
             <label class="block text-sm">Rule name
@@ -223,7 +244,7 @@ onMounted(() => load());
                 <div v-if="editingId" class="mt-2 text-sm">{{ selectedDevice?.device_name }} (fixed for this rule)</div>
                 <DeviceMultiSelect v-else v-model="selectedDevice" single-select />
             </div>
-            <label class="block text-sm">Schedule (5-field cron, stored only)
+            <label class="block text-sm">Schedule (5-field cron)
                 <input v-model="form.task_cron_text" class="mt-1 block w-full rounded border p-2 font-mono bg-background" placeholder="0 2 * * *" />
             </label>
             <label class="block text-sm">Pattern mode
@@ -260,10 +281,14 @@ onMounted(() => load());
                 <div>
                     <strong>{{ row.task?.task_name }}</strong> — {{ row.device?.device_name }}
                     <div class="font-mono break-all">{{ row.pattern_mode }}: {{ row.filename_pattern }}</div>
-                    <span class="text-amber-600 dark:text-amber-400">INACTIVE · no file verification</span>
+                    <span :class="row.enabled ? 'text-green-600' : 'text-amber-600 dark:text-amber-400'">{{ row.enabled ? "ENABLED" : "INACTIVE" }}</span>
                 </div>
                 <div class="flex gap-2">
-                    <button type="button" class="rounded border px-2 py-1" @click="edit(row)">Edit</button>
+                    <button v-if="canManageActivation" type="button" class="rounded border px-2 py-1 disabled:opacity-50"
+                        :disabled="activationBusy !== null || (!row.enabled && !activationAvailable)" @click="changeActivation(row)">
+                        {{ row.enabled ? "Sospendi" : "Attiva" }}
+                    </button>
+                    <button type="button" class="rounded border px-2 py-1" :disabled="row.enabled" @click="edit(row)">Edit</button>
                     <button type="button" class="rounded border px-2 py-1" @click="previewFiles(row)">Preview files</button>
                     <button type="button" class="rounded border px-2 py-1" @click="toggleHistory(row)">
                         {{ historyRuleId === row.id ? "Chiudi storico" : "Storico" }}
@@ -272,7 +297,7 @@ onMounted(() => load());
                         :disabled="probeLoadingId === row.id" @click="verifyNow(row)">
                         {{ probeLoadingId === row.id ? "Verifica..." : (probeState[row.id]?.checkpoint ? "Ricontrolla stabilità" : "Verifica ora") }}
                     </button>
-                    <button type="button" class="rounded border px-2 py-1 text-red-500" @click="remove(row)">Delete</button>
+                    <button type="button" class="rounded border px-2 py-1 text-red-500" :disabled="row.enabled" @click="remove(row)">Delete</button>
                 </div>
                 <div v-if="probeState[row.id]" class="w-full rounded bg-muted p-2 text-xs" aria-live="polite">
                     <p class="font-semibold">Valutazione preliminare: {{ probeState[row.id].status }}</p>

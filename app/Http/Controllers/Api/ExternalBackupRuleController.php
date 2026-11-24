@@ -7,6 +7,8 @@ use App\Models\ExternalBackupRule;
 use App\Models\Task;
 use App\Rules\TaskCronIsCorrectFormat;
 use App\Services\ExternalBackups\ExternalBackupFilenameMatcher;
+use App\Services\ExternalBackups\ExternalBackupRuleActivation;
+use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -29,7 +31,10 @@ final class ExternalBackupRuleController extends Controller
             ->orderByDesc('id')
             ->paginate(min(max((int) $request->integer('per_page', 20), 1), 100));
 
-        return response()->json($items);
+        return response()->json($items->toArray() + [
+            'can_manage_activation' => $request->user()?->isAdmin() === true,
+            'activation_available' => app(ExternalBackupRuleActivation::class)->available(),
+        ]);
     }
 
     public function store(Request $request, ExternalBackupFilenameMatcher $matcher): JsonResponse
@@ -87,6 +92,19 @@ final class ExternalBackupRuleController extends Controller
 
             return $rule;
         });
+
+        return response()->json(['data' => $rule->load(['task:id,task_name,task_cron,is_paused', 'device:id,device_name'])]);
+    }
+
+    public function activation(Request $request, ExternalBackupRule $externalBackupRule, ExternalBackupRuleActivation $activation): JsonResponse
+    {
+        $data = $request->validate(['enabled' => ['required', 'boolean']]);
+
+        try {
+            $rule = $activation->change($externalBackupRule->id, (bool) $data['enabled']);
+        } catch (DomainException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 409);
+        }
 
         return response()->json(['data' => $rule->load(['task:id,task_name,task_cron,is_paused', 'device:id,device_name'])]);
     }

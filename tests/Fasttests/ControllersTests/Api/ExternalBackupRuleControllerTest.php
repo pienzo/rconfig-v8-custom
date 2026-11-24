@@ -5,6 +5,9 @@ use App\Models\ExternalBackupCheckRun;
 use App\Models\ExternalBackupRule;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\ExternalBackups\ExternalBackupOccurrenceClaimService;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Queue;
 
 beforeEach(function () {
     $this->beginTransaction();
@@ -124,4 +127,78 @@ test('an F02 rule with run history cannot be updated or deleted', function () {
     unset($patch['device_id']);
     $this->patchJson('/api/tasks/external-backup-rules/' . $rule->id, $patch)->assertStatus(409);
     $this->deleteJson('/api/tasks/external-backup-rules/' . $rule->id)->assertStatus(409);
+});
+
+function f02ApproveSyntheticActivation(): void
+{
+    config()->set('rConfig.is_demo', false);
+    config()->set('external-backups.finalization_approved', true);
+    config()->set('external-backups.runtime_enabled', true);
+    config()->set('external-backups.queue_enabled', true);
+    config()->set('external-backups.receipt_acceptance_enabled', true);
+    config()->set('external-backups.intake_root', '/synthetic/inbox');
+    config()->set('external-backups.safe_digest_binary', '/synthetic/native-helper');
+    config()->set('external-backups.receipt_hmac_key', 'base64:' . base64_encode(str_repeat('x', 32)));
+    config()->set('external-backups.max_digest_bytes', 104857600);
+}
+
+test('activation is admin only and requires explicit server approval', function () {
+    Queue::fake();
+    $created = $this->postJson('/api/tasks/external-backup-rules', f02RulePayload($this->device->id))->assertCreated();
+    $rule = ExternalBackupRule::findOrFail($created->json('data.id'));
+    $url = '/api/tasks/external-backup-rules/' . $rule->id . '/activation';
+
+    f02ApproveSyntheticActivation();
+    $this->actingAs(User::factory()->create(['role' => 'User']));
+    $this->patchJson($url, ['enabled' => true])->assertForbidden();
+
+    $this->actingAs(User::factory()->create(['role' => 'Admin']));
+    config()->set('external-backups.finalization_approved', false);
+    $this->patchJson($url, ['enabled' => true])->assertStatus(409);
+    config()->set('external-backups.finalization_approved', true);
+    config()->set('external-backups.receipt_hmac_key', '');
+    $this->patchJson($url, ['enabled' => true])->assertStatus(409);
+
+    expect($rule->fresh()->enabled)->toBeFalse();
+    expect((bool) $rule->task->fresh()->is_paused)->toBeTrue();
+    Queue::assertNothingPushed();
+});
+
+test('administrator activates and pauses atomically without dispatching checks', function () {
+    Queue::fake();
+    $this->actingAs(User::factory()->create(['role' => 'Admin']));
+    $created = $this->postJson('/api/tasks/external-backup-rules', f02RulePayload($this->device->id))->assertCreated();
+    $rule = ExternalBackupRule::findOrFail($created->json('data.id'));
+    $url = '/api/tasks/external-backup-rules/' . $rule->id . '/activation';
+    f02ApproveSyntheticActivation();
+
+    $this->patchJson($url, ['enabled' => true])->assertOk()->assertJsonPath('data.enabled', true);
+    $rule->refresh();
+    expect((bool) $rule->task->fresh()->is_paused)->toBeFalse();
+    $activation = CarbonImmutable::parse($rule->getRawOriginal('activated_at_utc'), 'UTC');
+    expect(fn () => app(ExternalBackupOccurrenceClaimService::class)->claim($rule->id, $activation->subMinute()))
+        ->toThrow(DomainException::class);
+    expect($rule->runs()->count())->toBe(0);
+
+    $this->patchJson($url, ['enabled' => true])->assertOk();
+    expect($rule->fresh()->getRawOriginal('activated_at_utc'))->toBe($activation->format('Y-m-d H:i:s'));
+
+    config()->set('external-backups.finalization_approved', false);
+    $this->patchJson($url, ['enabled' => false])->assertOk()->assertJsonPath('data.enabled', false);
+    expect((bool) $rule->task->fresh()->is_paused)->toBeTrue();
+    Queue::assertNothingPushed();
+});
+
+test('pause refuses to abandon pending occurrences and preserves both states', function () {
+    $this->actingAs(User::factory()->create(['role' => 'Admin']));
+    $created = $this->postJson('/api/tasks/external-backup-rules', f02RulePayload($this->device->id))->assertCreated();
+    $rule = ExternalBackupRule::findOrFail($created->json('data.id'));
+    $url = '/api/tasks/external-backup-rules/' . $rule->id . '/activation';
+    f02ApproveSyntheticActivation();
+    $this->patchJson($url, ['enabled' => true])->assertOk();
+    $instant = CarbonImmutable::parse($rule->fresh()->getRawOriginal('activated_at_utc'), 'UTC');
+    app(ExternalBackupOccurrenceClaimService::class)->claim($rule->id, $instant);
+    $this->patchJson($url, ['enabled' => false])->assertStatus(409);
+    expect($rule->fresh()->enabled)->toBeTrue();
+    expect((bool) $rule->task->fresh()->is_paused)->toBeFalse();
 });

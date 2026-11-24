@@ -7,6 +7,7 @@ use App\Services\ExternalBackups\ExternalBackupDirectoryScanner;
 use App\Services\ExternalBackups\ExternalBackupOccurrenceClaimService;
 use App\Services\ExternalBackups\ExternalBackupRunStateService;
 use Carbon\CarbonImmutable;
+use DomainException;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -51,7 +52,11 @@ final class ExternalBackupStartObservationJob implements ShouldQueue
         }
 
         $now = CarbonImmutable::now('UTC')->startOfSecond();
-        $run = $claimer->claim($this->ruleId, $scheduled);
+        try {
+            $run = $claimer->claim($this->ruleId, $scheduled);
+        } catch (DomainException) {
+            return;
+        }
         if ($run->status !== 'pending' || $run->last_observed_at_utc !== null) {
             return;
         }
