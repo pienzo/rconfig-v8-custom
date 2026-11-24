@@ -16,7 +16,8 @@ if test "${F02_SFTP_EXPORT:-}" = 1; then
     reader_gid="${F02_SFTP_READER_GID:?}"
     case "$device" in ''|*[!0-9]*|0*) exit 2 ;; esac
     case "$reader_gid" in ''|*[!0-9]*|0*) exit 2 ;; esac
-    test "$reader_gid" -ge 1000 && test "$reader_gid" -ne 2001
+    test "$reader_gid" -ge 1000
+    test "$reader_gid" -ne 2001
     test -d "$published" && test ! -L "$published"
     test "$(stat -c '%u:%g:%a' "$published")" = "0:$reader_gid:750"
     test -z "$(ls -A "$published")"

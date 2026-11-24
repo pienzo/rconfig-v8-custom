@@ -83,6 +83,8 @@ $folder = null;
 $file = null;
 $master = null;
 $failed = false;
+$publishedIdentity = null;
+$deliveryCount = $sftp ? DB::table('custom_backup_notification_deliveries')->count() : 0;
 
 try {
     $device = Device::factory()->create();
@@ -141,6 +143,8 @@ try {
             && fileowner($file) === 0 && filegroup($file) === posix_getegid()
             && (fileperms($file) & 0777) === 0440 && is_readable($file)
             && is_writable($file) === false, 'published file read-only for worker');
+        $publishedIdentity = lstat($file);
+        scheduledReceiptCheck(is_array($publishedIdentity) && $publishedIdentity['nlink'] === 1, 'single published inode');
         echo "F02_SFTP_PUBLISHED_INODE_READY (SYNTHETIC_ONLY)\n";
     } else {
         scheduledReceiptCheck(mkdir($folder, 0700), 'synthetic device directory');
@@ -188,14 +192,22 @@ try {
         && $run->fresh()->status === 'success', 'no duplicated receipt or occurrence');
 
     if ($sftp) {
+        clearstatcache(true, $file);
+        $current = lstat($file);
+        scheduledReceiptCheck(is_array($current) && is_array($publishedIdentity), 'published inode still present');
+        foreach (['dev', 'ino', 'mode', 'uid', 'gid', 'nlink', 'size', 'mtime', 'ctime'] as $key) {
+            scheduledReceiptCheck($current[$key] === $publishedIdentity[$key], 'published inode unchanged');
+        }
         scheduledReceiptCheck($run->matched_filename === 'backup.cfg'
-            && DB::table('custom_backup_notification_deliveries')->count() === 0, 'SFTP receipt and no notification');
+            && DB::table('custom_backup_notification_deliveries')->count() === $deliveryCount, 'SFTP receipt and no new notification');
         echo "F02_REAL_SFTP_SCHEDULE_HORIZON_RECEIPT_OK (SYNTHETIC_ONLY)\n";
     }
     echo "F02 REAL_SCHEDULE_EVENT_HORIZON_NATIVE_RECEIPT_OK (SYNTHETIC_ONLY)\n";
 } catch (Throwable $exception) {
     $failed = true;
-    fwrite(STDERR, 'F02 scheduled receipt probe failed: ' . get_class($exception) . "\n");
+    $message = $exception->getMessage();
+    $label = str_starts_with($message, 'F02 scheduled receipt probe failed: ') ? $message : get_class($exception);
+    fwrite(STDERR, 'F02 scheduled receipt probe failed: ' . $label . "\n");
 } finally {
     if ($master !== null && $master->isRunning()) {
         $master->signal(SIGINT);
