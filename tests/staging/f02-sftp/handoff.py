@@ -796,8 +796,13 @@ def main():
             and DEVICE.isascii() and DEVICE.isdecimal() and int(DEVICE) > 0
             and str(int(DEVICE)) == DEVICE and READER_GID >= 1000
             and READER_GID != 2001, "fixed synthetic export contract")
-    require(not SECOND or (DEVICE == "124" and PUBLISHED == ROOT / "published"
-                           and READER_GID == 2002 and os.environ.get("F02_SFTP_MULTI_DEVICE") == "1"),
+    require(not SECOND or (os.environ.get("F02_SFTP_MULTI_DEVICE") == "1"
+                           and DEVICE == os.environ.get("F02_SFTP_DEVICE_B")
+                           and DEVICE != os.environ.get("F02_SFTP_PRIMARY_DEVICE")
+                           and ((PUBLISHED == ROOT / "published" and DEVICE == "124" and READER_GID == 2002)
+                                or (PUBLISHED == Path("/handoff-export")
+                                    and os.environ.get("F02_SFTP_MULTI_EXPORT") == "1"
+                                    and READER_GID != 2003))),
             "second synthetic device contract")
     for parent in [Path("/"), ROOT, JAIL, PUBLISHED, FINAL, PRIVATE]:
         st = parent.lstat()

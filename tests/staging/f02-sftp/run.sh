@@ -24,9 +24,16 @@ if test "$abort" = 1; then test "$live" = 1; test "$multi" = 0; fi
 case "$multi" in 0|1) ;; *) exit 2 ;; esac
 if test "$multi" = 1; then test "$live" = 1; fi
 case "$live" in 0|1) ;; *) exit 2 ;; esac
-if test "$live" = 1; then test "${F02_SFTP_EXPORT:-0}" = 0; fi
+export_multi="${F02_SFTP_MULTI_EXPORT:-0}"
+case "$export_multi" in 0|1) ;; *) exit 2 ;; esac
+if test "$export_multi" = 1; then
+    test "${F02_SFTP_EXPORT:-0}" = 1 && test "$live" = 1 && test "$multi" = 1
+elif test "$live" = 1; then
+    test "${F02_SFTP_EXPORT:-0}" = 0
+fi
 published=/sandbox/published
 device=123
+device_b=124
 reader_gid=2002
 if test "${F02_SFTP_EXPORT:-}" = 1; then
     published=/handoff-export
@@ -36,10 +43,17 @@ if test "${F02_SFTP_EXPORT:-}" = 1; then
     case "$reader_gid" in ''|*[!0-9]*|0*) exit 2 ;; esac
     test "$reader_gid" -ge 1000
     test "$reader_gid" -ne 2001
+    if test "$export_multi" = 1; then
+        device_b="${F02_SFTP_DEVICE_B:?}"
+        case "$device_b" in ''|*[!0-9]*|0*) exit 2 ;; esac
+        test "$device" != "$device_b"
+        test "$reader_gid" -ne 2003
+    fi
     test -d "$published" && test ! -L "$published"
     test "$(stat -c '%u:%g:%a' "$published")" = "0:$reader_gid:750"
     test -z "$(ls -A "$published")"
 fi
+export F02_SFTP_PRIMARY_DEVICE="$device" F02_SFTP_DEVICE_B="$device_b"
 export F02_SFTP_PUBLISHED="$published" F02_SFTP_DEVICE="$device" F02_SFTP_READER_GID="$reader_gid"
 groupadd -g 2001 f02upload
 upload_shell=/usr/sbin/nologin
@@ -141,8 +155,8 @@ if test "$multi" = 1; then
     getent group f02uploadb > /sandbox/quarantine-b/etc/group
     chmod 0444 /sandbox/quarantine-b/etc/passwd /sandbox/quarantine-b/etc/group
     test "$(stat -c '%d:%i' /sandbox/quarantine/session.lock)" != "$(stat -c '%d:%i' /sandbox/quarantine-b/session.lock)"
-    install -d -o root -g f02read -m 0750 "$published/124"
-    install -d -o root -g root -m 0700 "$published/.publisher-private-124"
+    install -d -o root -g f02read -m 0750 "$published/$device_b"
+    install -d -o root -g root -m 0700 "$published/.publisher-private-$device_b"
     ssh-keygen -q -t ed25519 -N '' -f /sandbox/keys/client-b
     install -o root -g root -m 0644 /sandbox/keys/client-b.pub /sandbox/authorized/f02uploadb
     sed -i 's/^AllowUsers f02upload$/AllowUsers f02upload f02uploadb/' /sandbox/sshd.conf
@@ -323,7 +337,7 @@ if test "$multi" = 1; then
     pgrep -u 2001 -x flock >/dev/null
     cmp -s /sandbox/complete /sandbox/quarantine/incoming/backup.cfg
     cmp -s /sandbox/complete-b /sandbox/quarantine-b/incoming/backup.cfg
-    test -z "$(ls -A "$published/124")"
+    test -z "$(ls -A "$published/$device_b")"
     printf '%s\n' 'F02_SFTP_MULTI_DEVICE_INDEPENDENT_TRANSFER_OK (SYNTHETIC_ONLY)'
     stage=independent-device-publication
     exec 6</sandbox/quarantine-b/session.lock
@@ -335,8 +349,8 @@ if test "$multi" = 1; then
         printf x > alias.cfg
         ln alias.cfg hardlink.cfg
     '
-    F02_SFTP_BATCH_CONFIRMED=1 F02_SFTP_SECOND_DEVICE=1 F02_SFTP_DEVICE=124 python3 /usr/local/bin/f02-handoff.py
-    before_b="$(stat -c '%d:%i:%s:%y:%z' "$published/124/backup.cfg")"
+    F02_SFTP_BATCH_CONFIRMED=1 F02_SFTP_SECOND_DEVICE=1 F02_SFTP_DEVICE="$device_b" python3 /usr/local/bin/f02-handoff.py
+    before_b="$(stat -c '%d:%i:%s:%y:%z' "$published/$device_b/backup.cfg")"
     flock -u 6
     exec 6<&-
     kill -0 "$second"
@@ -359,15 +373,15 @@ if test "$live" = 1; then
     printf '%s\n' 'F02_SFTP_LIVE_LISTENER_IMMUTABLE_HANDOFF_OK (SYNTHETIC_ONLY)'
     if test "$multi" = 1; then
         stage=multi-device-final-isolation
-        cmp -s /sandbox/complete-b "$published/124/backup.cfg"
-        test "$(stat -c '%d:%i:%s:%y:%z' "$published/124/backup.cfg")" = "$before_b"
-        test "$(stat -c '%d:%i' "$published/$device/backup.cfg")" != "$(stat -c '%d:%i' "$published/124/backup.cfg")"
+        cmp -s /sandbox/complete-b "$published/$device_b/backup.cfg"
+        test "$(stat -c '%d:%i:%s:%y:%z' "$published/$device_b/backup.cfg")" = "$before_b"
+        test "$(stat -c '%d:%i' "$published/$device/backup.cfg")" != "$(stat -c '%d:%i' "$published/$device_b/backup.cfg")"
         runuser -u f02upload -- test ! -x /sandbox/quarantine-b/incoming
         runuser -u f02uploadb -- test ! -x /sandbox/quarantine/incoming
         runuser -u f02uploadb -- test ! -x "$published"
-        runuser -u f02read -- test -r "$published/124/backup.cfg"
-        runuser -u f02read -- test ! -w "$published/124/backup.cfg"
-        runuser -u f02read -- test ! -w "$published/124"
+        runuser -u f02read -- test -r "$published/$device_b/backup.cfg"
+        runuser -u f02read -- test ! -w "$published/$device_b/backup.cfg"
+        runuser -u f02read -- test ! -w "$published/$device_b"
         runuser -u f02read -- test ! -x /sandbox/quarantine-b/incoming
         printf '%s\n' 'F02_SFTP_MULTI_DEVICE_ISOLATED_PUBLICATION_OK (SYNTHETIC_ONLY)'
     fi
