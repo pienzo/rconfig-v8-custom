@@ -5,8 +5,14 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #127 and #128 merged 5/5; functional implementation F01–F04 on custom. Combined CI and real MySQL synthetic notification claim/crash probe candidate #129. All operational activation gates remain OFF; trusted finalized upload, full Docker/browser staging, real provider authorization/tests, retention/recovery, upstream integration trial and release approval remain open. `main` and VM unchanged.
+**Current gate:** #130 combined CI and real MySQL notification claim/crash passed; #132 Docker source build and offline smoke passed. #133 disposable Docker bootstrap + HTTP authentication candidate. All feature flags remain OFF; actual Apache/Horizon/scheduler, browser E2E, trusted upload, provider and release gates remain open. `main` and VM unchanged.
 
+
+## 2026-11-24 — Combined CI and Docker image accepted
+
+- #130 merged at `aaafb933db301329d30ed36529e29796691ffec2`, 5/5; 1,812 PHP tests, 8,399 assertions, 8 skipped, real MySQL concurrent claim and SIGKILL synthetic-effect marker passed.
+- #132 merged at `db9fb59aba183f7f2e6025ec29d3b3630b352ff1`, 6/6; Docker source build and offline unprivileged helper/asset/default checks passed. No published image.
+- #133 candidate: dedicated internal network and disposable MariaDB/Redis, real production-image migrations via existing bootstrap coordinator, administrator seal, loopback PHP HTTP login and custom API reads. CI-only driver; no default Core entrypoint, Apache, scheduler, Horizon, browser execution or real provider. Pending CI.
 
 ## 2026-11-24 — WhatsApp dispatch and draft editor merged; combined collaudo
 
