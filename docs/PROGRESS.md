@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #160 controlled infrastructure restart accepted 9/9; #161 isolated real SFTP handoff candidate. All runtime gates OFF; `main` and VM unchanged. Actual uploader trust, scheduler integration with SFTP, operational policies, providers and release approval remain open.
+**Current gate:** #162 isolated real SFTP accepted 6/6; #163 actual SFTP-to-scheduled-receipt candidate. All operational runtime gates OFF; `main` and VM unchanged. Live uploader trust and authorized staging remain open.
 
+
+## 2026-11-24 — Real SFTP accepted; scheduled receipt candidate
+
+- #162 merged at `1dd636e0d899eb3594d075751b1a2c3356546c07`, head `2e60524f`, 6/6 CI (45401235329 / 45401235464). Actual SFTP/quarantine/native descriptor markers confirmed, #161 closed. Quiesced transport evidence only.
+- #163 candidate reuses isolated SFTP publisher with numeric fixture DB device ID and root-owned group-readable export under /opt on disposable hosted runner. Host PHP/Horizon read the actual published file without mutation; separate DB11/12 Redis and prefixes, same scheduler event, receipt and replay, no notifications. Existing synthetic local-file test preserved. Test controller has hosted sudo/Docker only, not operational uploader trust. No production/VM changes; CI pending.
 
 ## 2026-11-24 — Infrastructure restart accepted; real SFTP handoff candidate
 

@@ -8,7 +8,10 @@ import subprocess
 
 ROOT = Path("/sandbox")
 SOURCE = ROOT / "quarantine/incoming"
-FINAL = ROOT / "published/123"
+PUBLISHED = Path(os.environ["F02_SFTP_PUBLISHED"])
+DEVICE = os.environ["F02_SFTP_DEVICE"]
+READER_GID = int(os.environ["F02_SFTP_READER_GID"])
+FINAL = PUBLISHED / DEVICE
 MAX_BYTES = 1024 * 1024
 
 
@@ -56,7 +59,7 @@ def publish(name):
                 require(total == before.st_size and identity(os.fstat(fd)) == identity(before)
                         and identity(os.stat(name, dir_fd=src_dir, follow_symlinks=False))
                         == identity(before), "stable source")
-                os.fchown(out, 0, 2002)
+                os.fchown(out, 0, READER_GID)
                 os.fchmod(out, 0o440)
                 os.fsync(out)
             finally:
@@ -79,7 +82,11 @@ def publish(name):
 def main():
     require(os.geteuid() == 0 and os.environ.get("F02_SFTP_DISPOSABLE") == "1"
             and os.environ.get("GITHUB_ACTIONS") == "true", "synthetic identity")
-    for parent in [Path("/"), ROOT, ROOT / "quarantine", ROOT / "published", FINAL]:
+    require(PUBLISHED in {ROOT / "published", Path("/handoff-export")}
+            and DEVICE.isascii() and DEVICE.isdecimal() and int(DEVICE) > 0
+            and str(int(DEVICE)) == DEVICE and READER_GID >= 1000
+            and READER_GID != 2001, "fixed synthetic export contract")
+    for parent in [Path("/"), ROOT, ROOT / "quarantine", PUBLISHED, FINAL]:
         st = parent.lstat()
         require(stat.S_ISDIR(st.st_mode) and st.st_uid == 0 and st.st_mode & 0o022 == 0,
                 "protected ancestor")
@@ -94,11 +101,11 @@ def main():
     require([p.name for p in FINAL.iterdir()] == ["backup.cfg"], "one published file")
     final = FINAL / "backup.cfg"
     st = final.lstat()
-    require(st.st_uid == 0 and st.st_gid == 2002 and stat.S_IMODE(st.st_mode) == 0o440
+    require(st.st_uid == 0 and st.st_gid == READER_GID and stat.S_IMODE(st.st_mode) == 0o440
             and st.st_nlink == 1, "read-only final ownership")
     require(final.read_bytes() == (ROOT / "complete").read_bytes(), "synthetic transfer content")
     cmd = ["runuser", "-u", "f02read", "--", "/usr/local/bin/f02-safe-digest",
-           str(ROOT / "published"), "123", final.name, str(st.st_dev), str(st.st_ino),
+           str(PUBLISHED), DEVICE, final.name, str(st.st_dev), str(st.st_ino),
            str(st.st_size), str(int(st.st_mtime)), str(int(st.st_ctime)), "1", str(MAX_BYTES)]
     proc = subprocess.run(cmd, check=True, timeout=12, capture_output=True, text=True)
     evidence = json.loads(proc.stdout)

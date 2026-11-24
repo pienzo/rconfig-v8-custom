@@ -22,11 +22,14 @@ function scheduledReceiptCheck(bool $ok, string $stage): void
     }
 }
 
+$sftp = getenv('F02_SYNTHETIC_SFTP_RECEIPT') === '1';
+$redisDb = $sftp ? '11' : '13';
+$cacheDb = $sftp ? '12' : '14';
 if (getenv('GITHUB_ACTIONS') !== 'true' || getenv('APP_ENV') !== 'testing'
     || getenv('F02_SYNTHETIC_HORIZON') !== '1'
     || getenv('DB_HOST') !== '127.0.0.1' || getenv('DB_DATABASE') !== 'v8core_test'
-    || getenv('REDIS_HOST') !== '127.0.0.1' || getenv('REDIS_DB') !== '13'
-    || getenv('REDIS_CACHE_DB') !== '14') {
+    || getenv('REDIS_HOST') !== '127.0.0.1' || getenv('REDIS_DB') !== $redisDb
+    || getenv('REDIS_CACHE_DB') !== $cacheDb) {
     exit(2);
 }
 
@@ -44,13 +47,21 @@ scheduledReceiptCheck($app->environment('testing')
     && config('database.connections.mysql.host') === '127.0.0.1'
     && DB::connection()->getDatabaseName() === 'v8core_test'
     && config('database.redis.default.host') === '127.0.0.1'
-    && (int) config('database.redis.default.database') === 13
-    && (int) config('database.redis.cache.database') === 14
+    && (string) config('database.redis.default.database') === $redisDb
+    && (string) config('database.redis.cache.database') === $cacheDb
     && config('mail.default') === 'log', 'disposable configuration');
 scheduledReceiptCheck(is_string($inbox) && is_dir($inbox) && ! is_link($inbox)
     && realpath($inbox) === $inbox && str_starts_with(basename($inbox), 'rconfig-f02-horizon.')
-    && (fileperms($inbox) & 0777) === 0700
+    && (fileperms($inbox) & 0777) === ($sftp ? 0750 : 0700)
     && is_string($helper) && is_executable($helper), 'private fixture and native helper');
+
+if ($sftp) {
+    scheduledReceiptCheck(getenv('RUNNER_ENVIRONMENT') === 'github-hosted'
+        && dirname($inbox) === '/opt' && posix_geteuid() !== 0
+        && fileowner($inbox) === 0 && filegroup($inbox) === posix_getegid()
+        && is_writable($inbox) === false && fileowner('/opt') === 0
+        && (fileperms('/opt') & 0022) === 0, 'protected synthetic publication root');
+}
 
 foreach (['external-backups.runtime_enabled', 'external-backups.queue_enabled', 'external-backups.receipt_acceptance_enabled', 'external-backups.finalization_approved'] as $flag) {
     scheduledReceiptCheck(config($flag) === true, 'synthetic F02 gate');
@@ -91,7 +102,7 @@ try {
         'task_id' => $task->id,
         'device_id' => $device->id,
         'pattern_mode' => 'glob',
-        'filename_pattern' => 'synthetic_*.cfg',
+        'filename_pattern' => $sftp ? 'backup.cfg' : 'synthetic_*.cfg',
         'minimum_bytes' => 1,
         'quiet_seconds' => 2,
         'deadline_seconds' => 180,
@@ -100,11 +111,44 @@ try {
     ]);
 
     $folder = $inbox . '/' . $device->id;
-    scheduledReceiptCheck(mkdir($folder, 0700), 'synthetic device directory');
-    $file = $folder . '/synthetic_final.cfg';
-    $bytes = "synthetic finalized backup\n";
-    scheduledReceiptCheck(file_put_contents($folder . '/upload.tmp', $bytes) === strlen($bytes)
-        && rename($folder . '/upload.tmp', $file), 'synthetic closed-file publish');
+    if ($sftp) {
+        // Same published inode crosses the mount; PHP cannot rewrite it.
+        $file = $folder . '/backup.cfg';
+        $transport = new Process([
+            'docker', 'run', '--rm', '--init', '--network', 'none',
+            '--security-opt', 'no-new-privileges',
+            '--env', 'GITHUB_ACTIONS=true', '--env', 'F02_SFTP_DISPOSABLE=1',
+            '--env', 'F02_SFTP_EXPORT=1',
+            '--env', 'F02_SFTP_DEVICE=' . $device->id,
+            '--env', 'F02_SFTP_READER_GID=' . posix_getegid(),
+            '--mount', 'type=bind,source=' . $inbox . ',target=/handoff-export',
+            'rconfig-f02-sftp-ci',
+        ], $root, null, null, 60);
+        $transport->mustRun();
+        $output = $transport->getOutput();
+        foreach ([
+            'F02_REAL_SFTP_QUARANTINE_OK (SYNTHETIC_ONLY)',
+            'F02_SFTP_NATIVE_DESCRIPTOR_OK (NO_BACKUP_SUCCESS)',
+            'F02_SFTP_ISOLATED_HANDOFF_OK (DESCRIPTOR_ONLY_NOT_BACKUP_SUCCESS)',
+        ] as $marker) {
+            scheduledReceiptCheck(in_array($marker, explode("\n", $output), true), 'actual SFTP fixture marker');
+        }
+        clearstatcache();
+        scheduledReceiptCheck(is_dir($folder) && is_link($folder) === false
+            && fileowner($folder) === 0 && filegroup($folder) === posix_getegid()
+            && (fileperms($folder) & 0777) === 0750 && is_writable($folder) === false
+            && is_file($file) && is_link($file) === false
+            && fileowner($file) === 0 && filegroup($file) === posix_getegid()
+            && (fileperms($file) & 0777) === 0440 && is_readable($file)
+            && is_writable($file) === false, 'published file read-only for worker');
+        echo "F02_SFTP_PUBLISHED_INODE_READY (SYNTHETIC_ONLY)\n";
+    } else {
+        scheduledReceiptCheck(mkdir($folder, 0700), 'synthetic device directory');
+        $file = $folder . '/synthetic_final.cfg';
+        $bytes = "synthetic finalized backup\n";
+        scheduledReceiptCheck(file_put_contents($folder . '/upload.tmp', $bytes) === strlen($bytes)
+            && rename($folder . '/upload.tmp', $file), 'synthetic closed-file publish');
+    }
 
     // Resolve the real Kernel schedule, but execute ONLY the named F02 event.
     // Do not run unrelated native maintenance/download schedules.
@@ -143,6 +187,11 @@ try {
         && ExternalBackupFileReceipt::where('check_run_id', $run->id)->count() === 1
         && $run->fresh()->status === 'success', 'no duplicated receipt or occurrence');
 
+    if ($sftp) {
+        scheduledReceiptCheck($run->matched_filename === 'backup.cfg'
+            && DB::table('custom_backup_notification_deliveries')->count() === 0, 'SFTP receipt and no notification');
+        echo "F02_REAL_SFTP_SCHEDULE_HORIZON_RECEIPT_OK (SYNTHETIC_ONLY)\n";
+    }
     echo "F02 REAL_SCHEDULE_EVENT_HORIZON_NATIVE_RECEIPT_OK (SYNTHETIC_ONLY)\n";
 } catch (Throwable $exception) {
     $failed = true;
@@ -174,10 +223,10 @@ try {
     if ($device !== null) {
         $device->delete();
     }
-    if ($file !== null && is_file($file)) {
+    if ($sftp === false && $file !== null && is_file($file)) {
         unlink($file);
     }
-    if ($folder !== null && is_dir($folder)) {
+    if ($sftp === false && $folder !== null && is_dir($folder)) {
         if (is_file($folder . '/upload.tmp')) {
             unlink($folder . '/upload.tmp');
         }

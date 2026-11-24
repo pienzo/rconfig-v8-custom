@@ -288,6 +288,37 @@ jobs:
             RCONFIG_TELEGRAM_ENABLED=false RCONFIG_BACKUP_EMAIL_ENABLED=false RCONFIG_WHATSAPP_ENABLED=false \
             php tools/f02/queue/scheduled_receipt.php
 
+      - name: Test actual SFTP file through scheduled Horizon receipt (hosted only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          context="$(mktemp -d "$RUNNER_TEMP/f02-sftp-context.XXXXXXXX")"
+          inbox="$(sudo mktemp -d /opt/rconfig-f02-horizon.XXXXXXXX)"
+          cleanup() {
+            rm -f -- "$context/Dockerfile" "$context/run.sh" "$context/handoff.py" "$context/f02_safe_digest.c"
+            rmdir -- "$context"
+            sudo find "$inbox" -mindepth 1 -maxdepth 2 -delete
+            sudo rmdir -- "$inbox"
+          }
+          trap cleanup EXIT
+          sudo chown "0:$(id -g)" "$inbox"
+          sudo chmod 0750 "$inbox"
+          cp tests/staging/f02-sftp/{Dockerfile,run.sh,handoff.py} "$context/"
+          cp tools/f02/linux/f02_safe_digest.c "$context/"
+          docker build -t rconfig-f02-sftp-ci "$context"
+          F02_SYNTHETIC_SFTP_RECEIPT=1 F02_SYNTHETIC_HORIZON=1 REDIS_DB=11 REDIS_CACHE_DB=12 \
+            HORIZON_PREFIX=f02_sftp_ci: CACHE_PREFIX=f02_sftp_ci \
+            QUEUE_CONNECTION=redis CACHE_DRIVER=redis CACHE_STORE=redis MAIL_MAILER=log \
+            RCONFIG_F02_RUNTIME_ENABLED=true RCONFIG_F02_QUEUE_ENABLED=true \
+            RCONFIG_F02_RECEIPT_ACCEPTANCE_ENABLED=true RCONFIG_F02_FINALIZATION_APPROVED=true \
+            RCONFIG_F02_RECEIPT_HMAC_KEY="base64:$(openssl rand -base64 32)" \
+            RCONFIG_EXTERNAL_BACKUP_INTAKE_ROOT="$inbox" \
+            RCONFIG_F02_NATIVE_DIGEST_BINARY="$RUNNER_TEMP/rconfig-f02-safe-digest" \
+            RCONFIG_CUSTOM_BACKUP_NOTIFICATIONS_ENABLED=false RCONFIG_NATIVE_BACKUP_NOTIFICATIONS_ENABLED=false \
+            RCONFIG_TELEGRAM_ENABLED=false RCONFIG_BACKUP_EMAIL_ENABLED=false RCONFIG_WHATSAPP_ENABLED=false \
+            php tools/f02/queue/scheduled_receipt.php
+
       - name: Test F03 actual implicit TLS SMTP and mandatory AUTH (hosted only)
         # Local loopback fixture, ephemeral test CA, no relay or real provider.
         run: F03_SYNTHETIC_SMTP_TLS=1 python3 tools/f03/smtp_tls_probe.py
