@@ -114,5 +114,7 @@ docker run --rm -i --name "$probe" --network "container:$app" \
 grep -Fxq "STAGING_APACHE_AUTHENTICATED_HTTP_OK (SYNTHETIC_ONLY)" "$RUNNER_TEMP/$project-http.log"
 rm -f "$RUNNER_TEMP/$project-http.log"
 test "$(docker inspect --format '{{.State.Running}}' "$app")" = true
-docker top "$app" -eo comm | grep -qx apache2
+# Docker needs a PID column to identify container processes. Consume all rows
+# so pipefail cannot mistake a successful early match for SIGPIPE.
+docker top "$app" -eo pid,comm | awk '$1 ~ /^[0-9]+$/ && $2 == "apache2" { found = 1 } END { exit !found }'
 printf '%s\n' 'STAGING_ACTUAL_APACHE_ROLE_OK (SYNTHETIC_ONLY)'

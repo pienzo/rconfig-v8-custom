@@ -47,8 +47,8 @@ foreach ([
     'RCONFIG_WHATSAPP_ENABLED', 'RCONFIG_WHATSAPP_POLICY_APPROVED',
     'RCONFIG_EXTERNAL_BACKUP_INTAKE_ROOT',
 ] as $key) {
-    apacheCheck(getenv($key) === false && ! array_key_exists($key, $_ENV)
-        && ! array_key_exists($key, $_SERVER), 'ambient override ' . $key);
+    apacheCheck(getenv($key) === false && array_key_exists($key, $_ENV) === false
+        && array_key_exists($key, $_SERVER) === false, 'ambient override ' . $key);
 }
 
 require $root . '/vendor/autoload.php';
@@ -60,7 +60,7 @@ set_exception_handler(static function (Throwable $error): never {
     file_put_contents('php://stderr', 'Staging Apache unexpected exception: ' . get_class($error) . PHP_EOL);
     exit(1);
 });
-apacheCheck(! $app->configurationIsCached() && $app->environmentFile() === '.env', 'protected dotenv selected');
+apacheCheck($app->configurationIsCached() === false && $app->environmentFile() === '.env', 'protected dotenv selected');
 apacheCheck(getenv('DB_PASSWORD') === false && getenv('APP_KEY') === false, 'dotenv did not populate process overrides');
 
 apacheCheck(config('app.env') === 'production' && config('app.debug') === false
