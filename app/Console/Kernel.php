@@ -11,6 +11,7 @@ use App\Models\ExternalBackupRule;
 use App\Models\MonitoredScheduledTaskLogItems;
 use App\Models\Task;
 use App\Services\Notifications\ExternalBackupNotificationReconciler;
+use App\Services\Notifications\NativeBackupNotificationReconciler;
 use App\Traits\LogsTaskActivity;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
@@ -99,6 +100,9 @@ class Kernel extends ConsoleKernel
             $schedule->call(static function (): void {
                 app(ExternalBackupNotificationReconciler::class)->enqueue();
             })->name('f03-reconcile-external-backup-notifications')->everyMinute()->withoutOverlapping(2);
+            $schedule->call(static function (): void {
+                app(NativeBackupNotificationReconciler::class)->enqueue();
+            })->name('f03-reconcile-native-backup-notifications')->everyMinute()->withoutOverlapping(2);
         }
 
         $schedule->command(RunHealthChecksCommand::class)->everyFiveMinutes();
