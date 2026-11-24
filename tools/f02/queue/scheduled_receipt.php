@@ -363,6 +363,17 @@ try {
             scheduledReceiptCheck(in_array($marker, explode("\n", $notification->getOutput()), true), 'mixed notification marker');
             echo $marker . PHP_EOL;
         }
+        $telegram = new Process([PHP_BINARY, $root . '/tools/f03/mixed_outcome_telegram.php',
+            (string) $success->id, (string) $pending->id], $root, ['F03_SYNTHETIC_MIXED_TELEGRAM' => '1'], null, 45);
+        $telegram->run();
+        scheduledReceiptCheck($telegram->isSuccessful(), 'mixed Telegram child exit');
+        foreach (['F03_TELEGRAM_SCHEDULE_QUEUE_OK (SYNTHETIC_ONLY)',
+            'F04_TELEGRAM_STORED_TEMPLATE_PAYLOAD_OK (SYNTHETIC_ONLY)',
+            'F03_TELEGRAM_ACCEPTED_UNCERTAIN_REPLAY_OK (SYNTHETIC_ONLY)'] as $marker) {
+            scheduledReceiptCheck(in_array($marker, explode("\n", $telegram->getOutput()), true), 'mixed Telegram marker');
+            echo $marker . PHP_EOL;
+        }
+        scheduledReceiptCheck(DB::table('custom_backup_notification_deliveries')->count() === $deliveryCount + 4, 'exactly four synthetic deliveries across two channels');
         scheduledReceiptCheck($success->fresh()->getRawOriginal() === $successSnapshot
             && $receipt->fresh()->getRawOriginal() === $receiptSnapshot
             && $pending->fresh()->getRawOriginal() === $receiptIds[2][0], 'notifications leave terminal evidence unchanged');

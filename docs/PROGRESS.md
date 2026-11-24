@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #184 mixed F02 outcomes accepted 5/5 applicable CI; #185 actual F03 email integration candidate. Operational gates OFF; `main` and VM unchanged. Operational handoff, staging and provider approval remain open.
+**Current gate:** #186 F02/F03 loopback TLS email accepted 5/5 applicable CI; #187 Telegram/F04 stored template candidate. Operational gates OFF; `main` and VM unchanged. Operational handoff, staging and provider approval remain open.
 
+
+## 2026-11-24 — F03 email accepted; Telegram/F04 candidate
+
+- #186 merged at `40f21f66d10bc7e1b9952184ddab492d31b2996a`, head `b2750447`, 5/5 applicable CI (45446137539). Job 138630309305 emitted actual mixed email schedule, ledger replay and TLS message markers plus six SMTP TLS scenarios. #185 closed.
+- #187 candidate: actual F02 mixed terminal rows after accepted email probe, fresh guarded Telegram-only process with persisted synthetic templates, exact fake Bot API URL and stray requests prohibited, actual scheduler/Redis/one-shot workers. SUCCESS accepted, FAILED HTTP 503 uncertain, exact escaped payload and no device IP, no resend, unchanged email rows and F02 evidence. No real API connection or provider approval. CI pending; rollback revert test-only PR.
 
 ## 2026-11-24 — Mixed F02 outcomes accepted; F03 email candidate
 
