@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #148 real Chromium UI and persistence passed 7/7; #149 read-only upstream drift report candidate. All feature activation/deployment gates OFF; Apache/staging roles, trusted upload handoff, actual providers, operational policy, retention/recovery, scheduled upstream monitoring and release approval remain open. `main` and VM unchanged.
+**Current gate:** #150 upstream report 6/6 and #152 synthetic role guards 10/10 merged. #153 actual Apache role and strict protected bootstrap candidate; CI pending. Combined roles, trusted uploader, actual providers, operational policies, scheduled upstream reporting and release approval remain open. All feature activation/deployment gates OFF; `main` and VM unchanged.
 
+
+## 2026-11-24 — Upstream and role guards accepted; actual Apache candidate
+
+- #150 merged at `7c84e0c7f40dc3948ee483d7d3d256f87ae8cb0b`, 6/6 CI; five report tests and live NO_CHANGE verified (run 45311254064). Stable tag and fork main remain `121cff1b`; scheduled monitoring not yet configured. #152 merged at `615a7edfa9c53e4c9a7de3062a6cb817d8b24eee`, 10/10 CI; canonical dotenv, disabled feature gates, config cache and intake checks accepted. No role launch from those PRs.
+- #153 candidate uses an isolated ephemeral Compose project, generated protected dotenv, authenticated Redis, exact strict bootstrap gate, persistent storage and actual installed Apache role launcher. Separate unprivileged HTTP client checks login, assets, API and absent deliveries/runs. CI pending; no Horizon/scheduler, real upload, provider traffic or VM modification. Rollback: revert test-only PR; no persistent environment changes.
 
 ## 2026-11-24 — Real Chromium accepted; upstream drift report candidate
 
