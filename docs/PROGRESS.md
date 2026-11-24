@@ -5,8 +5,14 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** F01 #98, F02 #110/#112 and F03 #115–#118 merged; Core write-status #120 merged 5/5. F02 scheduled notification reconciliation candidate under review (#113). All runtime/automatic delivery gates remain OFF. Native Core outcome dispatch, finalization/activation F02, real TLS/auth, authorized integrations and full Docker/release gates remain open. `main` and VM unchanged.
+**Current gate:** F01 #98, F02 #110/#112, F03 #115–#118 and Core write-status #120 merged. F02 notification scheduler #121 merged (5/5), native outcome capture #122 merged (9/9). Native notification dispatch candidate under #113. All runtime and automatic notification gates remain OFF; combined CI, operational activation/finalized upload, actual provider tests, WhatsApp authorization and full staging/release gates remain open. `main` and VM unchanged.
 
+
+## 2026-11-24 — F02 scheduler and native outcome capture accepted
+
+- #121 merged at `249d80e10dd16e1d5eaf16e5b073bbc7d724883f`, corrected CI 45293765680 5/5; 1,794 tests passed, 8 skipped, 8,292 assertions. Optional queue architecture guard checks actual enabled Horizon configuration, not a blanket exclusion.
+- #122 merged at `fd924c84fce1a28b67e491929dcee9a2a7589fa9`, 9/9 checks, 1,793 passed, 8 skipped, 8,285 assertions, real bootstrap and restore CI. Independent changes did not overlap #121; combined suite pending in the next PR. Native outcome capture is per config, not aggregate device success.
+- Native dispatch candidate: dedicated activation floor, source namespace native-config, same queue/renderer/email and Telegram transports/claim service, no native Core notification preference changes. Synthetic Telegram only; no real SMTP/Telegram or production activation. Backlog and recipient rotation review remain required.
 
 ## 2026-11-24 — F02 automatic notification reconciliation candidate (#113)
 
