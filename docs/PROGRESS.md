@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #176 private pending isolation accepted 6/6; #177 persisted claim restart classification candidate. Operational gates OFF; `main` and VM unchanged. Durable recovery, ordinary device compatibility, multi-device receipts and staging remain open.
+**Current gate:** #178 persisted claim restart classification accepted 6/6; #179 explicit pending recovery candidate. Operational gates OFF; `main` and VM unchanged. Durable operational recovery, device compatibility, multi-device receipts and staging remain open.
 
+
+## 2026-11-24 — Persisted claim accepted; explicit recovery candidate
+
+- #178 merged at `aeda0844569a65e327c59b400f6350373584e6ab`, head `78af759f`, 6/6 CI (45437053678 / 45437053679). Job 138597595065 confirmed pending/published/ambiguous evidence classification, missing/torn/conflicting/substituted inode refusals; job 138597595458 retained scheduled SFTP receipt. #177 closed.
+- #179 candidate: separate explicit synthetic recovery mode after SIGKILL, persisted original grant window, same-lock validation of private inode and protected claim, missing/conflicting/expired refusal, quarantine overwritten via SFTP before promotion, atomic rename and both directory fsyncs, unchanged spent claim and idempotent repeated recovery. Default read-only inspection and prior discard tests preserved. No operational authorization or runtime changes. CI pending; rollback revert test-only PR.
 
 ## 2026-11-24 — Private pending accepted; persisted claim candidate
 

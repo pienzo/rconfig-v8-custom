@@ -118,3 +118,17 @@ jobs:
           grep -Fxq 'F02_SFTP_CLAIM_CRASH_RECONCILIATION_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-claim-crash.log"
           grep -Fxq 'F02_SFTP_NATIVE_DESCRIPTOR_OK (NO_BACKUP_SUCCESS)' "$RUNNER_TEMP/f02-sftp-claim-crash.log"
           grep -Fxq 'F02_SFTP_MANIFEST_LIVE_LISTENER_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-claim-crash.log"
+
+      - name: Explicit recovery of a verified private inode after publisher crash
+        run: |
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          set -o pipefail
+          timeout 150 docker run --rm --init --network none --security-opt no-new-privileges \
+            --env GITHUB_ACTIONS=true --env F02_SFTP_DISPOSABLE=1 --env F02_SFTP_LIVE_LOCK=1 --env F02_SFTP_MANIFEST=1 --env F02_SFTP_MANIFEST_CRASH=1 --env F02_SFTP_RECOVERY_PROBE=1 rconfig-f02-sftp-ci \
+            | tee "$RUNNER_TEMP/f02-sftp-recovery.log"
+          grep -Fxq 'F02_SFTP_PRIVATE_PENDING_AFTER_CRASH_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-recovery.log"
+          grep -Fxq 'F02_SFTP_RECOVERY_INVALID_REFUSED_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-recovery.log"
+          grep -Fxq 'F02_SFTP_RECOVERY_VERIFIED_INODE_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-recovery.log"
+          grep -Fxq 'F02_SFTP_RECOVERY_IDEMPOTENT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-recovery.log"
+          grep -Fxq 'F02_SFTP_NATIVE_DESCRIPTOR_OK (NO_BACKUP_SUCCESS)' "$RUNNER_TEMP/f02-sftp-recovery.log"
+          grep -Fxq 'F02_SFTP_MANIFEST_LIVE_LISTENER_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-recovery.log"
