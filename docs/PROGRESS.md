@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #146 fair bounded reconciliation passed 7/7. #147 real Chromium login and F02/F04 browser candidate, missing settings route repaired. All deployment and notification gates OFF; Apache/staging roles, trusted upload handoff, actual providers, operational age/recipient policy, retention/recovery, upstream integration and release approval remain open. `main` and VM unchanged.
+**Current gate:** #148 real Chromium UI and persistence passed 7/7; #149 read-only upstream drift report candidate. All feature activation/deployment gates OFF; Apache/staging roles, trusted upload handoff, actual providers, operational policy, retention/recovery, scheduled upstream monitoring and release approval remain open. `main` and VM unchanged.
 
+
+## 2026-11-24 — Real Chromium accepted; upstream drift report candidate
+
+- #148 corrected head `3a48d943` merged at `93873a1007492f7bd7559ad1ffa5c7bc1970b36a`, 7/7; 1,819 PHP tests, 8,475 assertions, 8 skipped, 385 frontend tests. Fixed missing settings route, updated route count regression, corrected WhatsApp browser event locator. Confirmed `CUSTOM_DOCKER_CHROMIUM_UI_OK`, `CUSTOM_DOCKER_BROWSER_PERSISTENCE_OK` and `CUSTOM_DOCKER_BOOTSTRAP_HTTP_AUTH_OK`. Real browser UI login, settings reload, email/WhatsApp synthetic draft persistence and F02 pattern preview passed; no actual provider.
+- #149: latest stable `core-8.3.0` annotated tag peeled to baseline `121cff1b`, upstream/main and fork/main equal, custom contains baseline. Candidate read-only drift report checks refs/ancestry and emits no-change or defer proposal. CI on relevant PR/push custom; automatic scheduling and manual Actions dispatch not yet enabled on default main, which remains clean. No new upstream commit available, no real integration PR or release.
 
 ## 2026-11-24 — Notification fairness accepted; browser candidate
 
