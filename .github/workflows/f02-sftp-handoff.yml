@@ -21,12 +21,20 @@ jobs:
         with:
           persist-credentials: false
       - name: Build disposable test image
-        run: docker build -f tests/staging/f02-sftp/Dockerfile -t rconfig-f02-sftp-ci .
+        run: |
+          set -eu
+          context="$(mktemp -d "$RUNNER_TEMP/f02-sftp-context.XXXXXXXX")"
+          trap 'rm -f -- "$context/Dockerfile" "$context/run.sh" "$context/handoff.py" "$context/f02_safe_digest.c"; rmdir -- "$context"' EXIT
+          cp tests/staging/f02-sftp/{Dockerfile,run.sh,handoff.py} "$context/"
+          cp tools/f02/linux/f02_safe_digest.c "$context/"
+          sh -n "$context/run.sh"
+          python3 -c 'import ast, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text())' "$context/handoff.py"
+          docker build -t rconfig-f02-sftp-ci "$context"
       - name: Real isolated SFTP and read-only handoff
         run: |
           test "$RUNNER_ENVIRONMENT" = github-hosted
           set -o pipefail
-          timeout 150 docker run --rm --network none --security-opt no-new-privileges \
+          timeout 150 docker run --rm --init --network none --security-opt no-new-privileges \
             --env GITHUB_ACTIONS=true --env F02_SFTP_DISPOSABLE=1 rconfig-f02-sftp-ci \
             | tee "$RUNNER_TEMP/f02-sftp-handoff.log"
           grep -Fxq 'F02_REAL_SFTP_QUARANTINE_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-handoff.log"
