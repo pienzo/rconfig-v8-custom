@@ -9,11 +9,15 @@ use App\Models\Task;
 use App\Services\Notifications\ExternalBackupNotificationLedger;
 use App\Services\Notifications\ExternalBackupNotificationMessage;
 use App\Services\Notifications\ExternalBackupNotificationReconciler;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 
 beforeEach(function () {
     $this->beginTransaction();
+    config()->set('cache.default', 'array');
+    Cache::forget('custom-backup-notification-scan:v1:external-file:telegram');
     Queue::fake();
     config()->set('rConfig.is_demo', false);
     config()->set('external-backups.runtime_enabled', true);
@@ -22,6 +26,7 @@ beforeEach(function () {
     config()->set('custom-backup-notifications.f02_from_utc', '2026-01-01 00:00:00');
     config()->set('rconfig-telegram.enabled', true);
     config()->set('rconfig-backup-email.enabled', false);
+    config()->set('rconfig-whatsapp.enabled', false);
     $device = Device::factory()->create();
     $task = Task::factory()->create(['task_command' => 'rconfig:check-external-backup']);
     $this->rule = ExternalBackupRule::create([
@@ -45,6 +50,7 @@ beforeEach(function () {
 });
 
 afterEach(function () {
+    Cache::forget('custom-backup-notification-scan:v1:external-file:telegram');
     $this->rollBackTransaction();
 });
 
@@ -146,4 +152,41 @@ test('success needs ordered observations a filename and a receipt at the recorde
     expect($this->reconciler->eligible($this->run->id, 'telegram'))->toBeTrue();
     expect($messages->metadata($this->run)['event'])->toBe('backup.success');
     expect($ledger->reconcile($this->run->id, 'telegram', 'primary'))->not->toBeNull();
+});
+
+test('a blocked first batch does not starve later eligible external outcomes', function () {
+    $ids = [$this->run->id];
+    for ($minute = 1; $minute <= 104; $minute++) {
+        $scheduled = CarbonImmutable::parse('2026-01-01 00:00:00', 'UTC')->addMinutes($minute);
+        $deadline = $scheduled->addMinutes(2)->format('Y-m-d H:i:s');
+        $ids[] = ExternalBackupCheckRun::create([
+            'rule_id' => $this->rule->id,
+            'device_id' => $this->rule->device_id,
+            'scheduled_at_utc' => $scheduled->format('Y-m-d H:i:s'),
+            'deadline_at_utc' => $deadline,
+            'first_observed_at_utc' => $deadline,
+            'last_observed_at_utc' => $deadline,
+            'status' => 'failed',
+            'reason' => 'deadline_elapsed',
+        ])->id;
+    }
+    $this->reconciler->enqueue();
+    Queue::assertPushed(ExternalBackupNotificationJob::class, 100);
+    Queue::assertNotPushed(ExternalBackupNotificationJob::class, fn ($job): bool => $job->runId === $ids[104]);
+
+    // No delivery succeeds; the second tick must still visit later rows.
+    Queue::fake();
+    $this->reconciler->enqueue();
+    Queue::assertPushed(ExternalBackupNotificationJob::class, 5);
+    Queue::assertPushed(ExternalBackupNotificationJob::class, fn ($job): bool => $job->runId === $ids[104]);
+
+    Queue::fake();
+    $this->reconciler->enqueue();
+    Queue::assertPushed(ExternalBackupNotificationJob::class, 100);
+    Queue::assertPushed(ExternalBackupNotificationJob::class, fn ($job): bool => $job->runId === $ids[0]);
+
+    Cache::forget('custom-backup-notification-scan:v1:external-file:telegram');
+    Queue::fake();
+    $this->reconciler->enqueue();
+    Queue::assertPushed(ExternalBackupNotificationJob::class, fn ($job): bool => $job->runId === $ids[0]);
 });

@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #142 F02 terminal notification consistency passed 7/7. #143 mandatory SMTP AUTH and actual local TLS probe candidate. All deployment and notification gates OFF; real browser/Apache, trusted upload handoff, provider authorization/test, notification backlog/recovery, upstream integration and release approval remain open. `main` and VM unchanged.
+**Current gate:** #144 mandatory SMTP AUTH and local TLS passed 7/7. #145 fair notification backlog scan candidate. All deployment and notification gates OFF; real browser/Apache, trusted upload handoff, provider authorization/test, operational age/recipient policy, retention/recovery, upstream integration and release approval remain open. `main` and VM unchanged.
 
+
+## 2026-11-24 — SMTP authentication and TLS accepted
+
+- #144 merged at `013b08b14436a2690c56258b3b81a1008d9e3b6f`, 7/7; 1,817 PHP tests, 8,461 assertions, 8 skipped; F02 Horizon and F03 real concurrent claim passed. Local synthetic SMTP verified valid TLS and AUTH, missing AUTH, HELO fallback, bad credentials, untrusted CA and wrong name. `F03 REAL_SMTP_TLS_AUTH_REQUIRED_OK (SYNTHETIC_ONLY)`. No real provider or Core mailer change.
+- #145 candidate rotates bounded reconciliation batches using cache hints per source/channel and a fixed high-water ID per cycle. Persistent failed preflight rows do not indefinitely block later rows within a healthy scan; older pending rows remain eligible next cycle. Cache loss or interrupted enqueue may delay a retry but never marks a delivery accepted. Shared cache and single scheduler role required for predictable rotation. No expiry, automatic recipient rerouting or actual activation. CI pending.
 
 ## 2026-11-24 — Terminal notification consistency accepted
 

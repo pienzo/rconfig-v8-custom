@@ -73,7 +73,9 @@ final class ExternalBackupNotificationReconciler
 
             // Limit each scheduler tick; the durable terminal rows are the
             // recovery source if Redis is unavailable or a worker disappears.
-            $ids = $this->candidates($channel, $cutoff)->orderBy('runs.id')->limit(100)->pluck('runs.id');
+            $ids = app(BackupNotificationReconciliationBatch::class)->next(
+                $this->candidates($channel, $cutoff), 'external-file', $channel, 'runs.id'
+            );
             foreach ($ids as $id) {
                 ExternalBackupNotificationJob::dispatch((int) $id, $channel);
             }
