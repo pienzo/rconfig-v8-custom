@@ -20,6 +20,10 @@ final class AuthenticatedBackupSmtpTransport extends EsmtpTransport
             $this->authenticated = false;
         }
 
+        if (str_starts_with($command, 'MAIL FROM:') && ! $this->authenticated) {
+            throw new TransportException('Backup SMTP requires successful authentication.');
+        }
+
         $response = parent::executeCommand($command, $codes);
 
         // Symfony's authenticators require precisely 235 for successful AUTH.
