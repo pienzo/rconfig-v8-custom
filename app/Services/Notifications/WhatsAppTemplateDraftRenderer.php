@@ -25,7 +25,8 @@ final class WhatsAppTemplateDraftRenderer
         $pattern = '/\{\{\s*([a-z][a-z0-9_.]*)\s*\}\}/u';
         $fields = [];
         $samples = [];
-        $synthetic = (new BackupMessageTemplateRenderer)->syntheticPreviewValues();
+        $renderer = new BackupMessageTemplateRenderer;
+        $synthetic = $renderer->syntheticPreviewValues();
         $synthetic['backup.status'] = $event === 'backup.success' ? 'SUCCESS' : 'FAILED';
         $provider = preg_replace_callback($pattern, static function (array $match) use (&$fields, &$samples, $synthetic): string {
             if (! in_array($match[1], WhatsAppBackupTemplateParameters::FIELDS, true) || count($fields) >= 8) {
