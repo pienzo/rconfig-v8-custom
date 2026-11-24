@@ -5,8 +5,14 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** F01 #98, F02 #110/#112, F03 #115–#118 and Core write-status #120 merged. F02 notification scheduler #121 merged (5/5), native outcome capture #122 merged (9/9). Native notification dispatch candidate under #113. All runtime and automatic notification gates remain OFF; combined CI, operational activation/finalized upload, actual provider tests, WhatsApp authorization and full staging/release gates remain open. `main` and VM unchanged.
+**Current gate:** #123 native notifications merged 5/5 (combined suite); F02 and native Email/Telegram scheduled paths implemented, not activated. F02 rule activation candidate #124 in review. All runtime/automatic notification gates remain OFF; trusted finalization, actual provider/worker tests, WhatsApp and full staging/release gates remain open. `main` and VM unchanged.
 
+
+## 2026-11-24 — Native notification integration accepted; F02 rule activation candidate
+
+- #123 merged at `b648bcb126323ab173df1394b9c8dc4a41934712`, CI 45295000168 5/5, 1,800 passed, 8 skipped, 8,316 assertions, native/MySQL/Redis/crash regressions pass. Native per-config and external F02 outcomes now have scheduled delivery candidates for email/Telegram; default gates OFF. No actual provider acceptance or staging delivery is established.
+- #124: admin-only rule activation/pause endpoint and UI candidate. Server-side explicit finalization approval plus runtime/queue/receipt flags and basic configuration presence required to activate; no file read, dispatch or network action on activation. Rule/task transition locked in one transaction, no pending runs may be abandoned by ordinary pause. UTC next-minute activation floor rejects stale scheduler jobs. UI reflects enabled state, not actual runtime health. Deployer must verify trusted uploader finalization, worker mount, permissions, native helper and complete staging tests before authorizing any activation. Emergency global runtime shutdown is separate; reconcile pending runs before restarting. No VM or production changes.
+- Remaining: real finalized upload handoff and operational staging, notification backlog/worker recovery and actual secure transport, WhatsApp approved template workflow and authorization, upstream sync/release gates.
 
 ## 2026-11-24 — F02 scheduler and native outcome capture accepted
 
