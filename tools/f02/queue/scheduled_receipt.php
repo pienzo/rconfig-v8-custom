@@ -113,7 +113,7 @@ $deliveryCount = $sftp ? DB::table('custom_backup_notification_deliveries')->cou
 
 try {
     foreach (range(1, $multi ? 2 : 1) as $index) {
-        $device = Device::factory()->create();
+        $device = Device::factory()->create($mixed ? ['device_name' => $index === 1 ? 'F02-CI-A' : 'F02-CI-B'] : []);
         $devices[$index] = $device;
         $task = Task::factory()->create([
             'task_command' => 'rconfig:check-external-backup',
@@ -350,6 +350,22 @@ try {
     scheduledReceiptCheck($verify() === $receiptIds, 'no duplicated receipt or occurrence');
     if ($mixed) {
         echo "F02_MIXED_DEVICE_REPLAY_UNCHANGED_OK (SYNTHETIC_ONLY)\n";
+        // All notification flags remain off in this process and its Horizon.
+        // A fresh guarded process enables only synthetic loopback email.
+        $notification = new Process(['python3', $root . '/tools/f03/mixed_outcome_smtp.py',
+            (string) $success->id, (string) $pending->id], $root, null, null, 90);
+        $notification->run();
+        scheduledReceiptCheck($notification->isSuccessful(), 'mixed notification child exit');
+        scheduledReceiptCheck(DB::table('custom_backup_notification_deliveries')->count() === $deliveryCount + 2, 'exactly two new synthetic deliveries');
+        foreach (['F03_MIXED_SCHEDULE_QUEUE_OK (SYNTHETIC_ONLY)',
+            'F03_MIXED_EMAIL_LEDGER_REPLAY_OK (SYNTHETIC_ONLY)',
+            'F03_MIXED_REAL_TLS_MESSAGES_OK (SYNTHETIC_ONLY)'] as $marker) {
+            scheduledReceiptCheck(in_array($marker, explode("\n", $notification->getOutput()), true), 'mixed notification marker');
+            echo $marker . PHP_EOL;
+        }
+        scheduledReceiptCheck($success->fresh()->getRawOriginal() === $successSnapshot
+            && $receipt->fresh()->getRawOriginal() === $receiptSnapshot
+            && $pending->fresh()->getRawOriginal() === $receiptIds[2][0], 'notifications leave terminal evidence unchanged');
     } elseif ($multi) {
         echo "F02_MULTI_DEVICE_RECEIPT_REPLAY_OK (SYNTHETIC_ONLY)\n";
     }
@@ -377,6 +393,10 @@ try {
 
     foreach ($rules as $rule) {
         $runIds = ExternalBackupCheckRun::where('rule_id', $rule->id)->pluck('id');
+        if ($mixed) {
+            DB::table('custom_backup_notification_deliveries')->where('source_type', 'external-file')
+                ->whereIn('source_id', $runIds)->delete();
+        }
         ExternalBackupFileReceipt::whereIn('check_run_id', $runIds)->delete();
         ExternalBackupCheckRun::where('rule_id', $rule->id)->delete();
         $rule->delete();
