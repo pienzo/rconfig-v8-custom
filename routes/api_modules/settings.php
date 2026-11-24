@@ -4,6 +4,9 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('settings')->group(function () {
     Route::get('/notification-templates', 'BackupNotificationTemplateController@index');
+    Route::get('/whatsapp-template-drafts', 'WhatsAppTemplateDraftController@index');
+    Route::post('/whatsapp-template-drafts/preview', 'WhatsAppTemplateDraftController@preview');
+    Route::put('/whatsapp-template-drafts', 'WhatsAppTemplateDraftController@save');
     Route::post('/notification-templates/preview', 'BackupNotificationTemplateController@preview');
     Route::post('/notification-templates/telegram/test', 'BackupNotificationTemplateController@testTelegram')->middleware('throttle:3,1');
     Route::post('/notification-templates/email/test', 'BackupNotificationTemplateController@testEmail')->middleware('throttle:3,1');
