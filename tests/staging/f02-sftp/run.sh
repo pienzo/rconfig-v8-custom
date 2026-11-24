@@ -79,6 +79,13 @@ if test "$live" = 1; then
             install -D -o root -g root -m 0755 "$dep" "$jail$dep"
         done
     done
+    # External sftp-server resolves its own UID after entering the jail.
+    # Provide only synthetic public identity records, never /etc/shadow.
+    install -d -o root -g root -m 0755 "$jail/etc"
+    getent passwd f02upload > "$jail/etc/passwd"
+    getent group f02upload > "$jail/etc/group"
+    printf 'passwd: files\ngroup: files\n' > "$jail/etc/nsswitch.conf"
+    chmod 0444 "$jail/etc/passwd" "$jail/etc/group" "$jail/etc/nsswitch.conf"
     install -o root -g root -m 0444 /dev/null "$jail/session.lock"
     cat > "$jail/session-lock.sh" <<'WRAPPER'
 #!/bin/sh
@@ -87,7 +94,9 @@ set -eu
 # The client cannot replace the lock inode or execute another command.
 exec 9</session.lock
 /usr/bin/flock -x 9
-/usr/lib/openssh/sftp-server -d /incoming
+status=0
+/usr/lib/openssh/sftp-server -d /incoming || status=$?
+exit "$status"
 WRAPPER
     chmod 0555 "$jail/session-lock.sh"
     runuser -u f02upload -- test ! -w "$jail"
