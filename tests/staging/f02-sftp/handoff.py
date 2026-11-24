@@ -10,6 +10,7 @@ import select
 import signal
 import stat
 import struct
+import sys
 import subprocess
 import time
 
@@ -440,7 +441,7 @@ for name in expected:
     with (final / name).open('rb') as stream:
         assert stream.read(1)
 """
-    result = subprocess.run(["runuser", "-u", "f02read", "--", "python3", "-c", code,
+    result = subprocess.run(["runuser", "-u", "f02read", "--", "python3", "-I", "-c", code,
                              str(FINAL), str(PRIVATE), *names], timeout=10, capture_output=True)
     require(result.returncode == 0, "reader view or private directory access")
 
@@ -490,6 +491,8 @@ def manifest_crash_probe():
 
         # No external processes or real files are targeted. Only this forked
         # synthetic publisher is terminated at the selected checkpoint.
+        sys.stdout.flush()
+        sys.stderr.flush()
         pid = os.fork()
         if pid == 0:
             try:
