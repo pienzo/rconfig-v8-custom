@@ -7,6 +7,7 @@ return [
     'enabled' => env('RCONFIG_WHATSAPP_ENABLED', false),
     // Explicit operator attestation: approved templates, recipient opt-in and costs.
     'policy_approved' => env('RCONFIG_WHATSAPP_POLICY_APPROVED', false),
+    'from_utc' => env('RCONFIG_WHATSAPP_FROM_UTC', ''),
     'body_fields_success' => env('RCONFIG_WHATSAPP_BODY_FIELDS_SUCCESS', ''),
     'body_fields_failed' => env('RCONFIG_WHATSAPP_BODY_FIELDS_FAILED', ''),
     'graph_version' => env('RCONFIG_WHATSAPP_GRAPH_VERSION', 'v26.0'),

@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Services\Notifications\ExternalBackupEmailDispatcher;
 use App\Services\Notifications\ExternalBackupNotificationReconciler;
 use App\Services\Notifications\ExternalBackupTelegramDispatcher;
+use App\Services\Notifications\ExternalBackupWhatsAppDispatcher;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -46,6 +47,7 @@ final class ExternalBackupNotificationJob implements ShouldBeUnique, ShouldQueue
             match ($this->channel) {
                 'email' => $email->dispatch($this->runId),
                 'telegram' => $telegram->dispatch($this->runId),
+                'whatsapp' => app(ExternalBackupWhatsAppDispatcher::class)->dispatch($this->runId),
                 default => null,
             };
         } catch (Throwable) {

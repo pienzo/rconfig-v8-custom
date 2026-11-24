@@ -32,6 +32,9 @@ beforeEach(function () {
 });
 
 afterEach(function () {
+    config()->set('rconfig-whatsapp.enabled', false);
+    config()->set('rconfig-whatsapp.policy_approved', false);
+    config()->set('rconfig-whatsapp.from_utc', '');
     if (isset($this->outcomeId)) {
         DB::table('custom_backup_notification_deliveries')->where('source_type', 'native-config')->where('source_id', $this->outcomeId)->delete();
         DB::table('custom_native_backup_outcomes')->where('id', $this->outcomeId)->delete();
@@ -68,4 +71,35 @@ test('scheduler enqueues only eligible native outcomes on the isolated queue', f
         && $job->channel === 'telegram' && $job->queue === 'BackupNotifications');
     Queue::assertNotPushed(NativeBackupNotificationJob::class, fn ($job): bool => $job->channel === 'email');
     Http::assertNothingSent();
+});
+
+test('native WhatsApp requires its own activation floor and sends an approved template once', function () {
+    config()->set('rconfig-whatsapp.enabled', true);
+    config()->set('rconfig-whatsapp.policy_approved', true);
+    config()->set('rconfig-whatsapp.from_utc', '2026-01-01 00:00:00');
+    config()->set('rconfig-whatsapp.access_token', 'EAA' . str_repeat('x', 55));
+    config()->set('rconfig-whatsapp.phone_number_id', '123456789012345');
+    config()->set('rconfig-whatsapp.recipient', '15550100123');
+    config()->set('rconfig-whatsapp.graph_version', 'v26.0');
+    config()->set('rconfig-whatsapp.template_language', 'it');
+    config()->set('rconfig-whatsapp.template_success', 'backup_success_alert');
+    config()->set('rconfig-whatsapp.template_failed', 'backup_failed_alert');
+    config()->set('rconfig-whatsapp.body_fields_success', 'backup.status,event.id');
+    config()->set('rconfig-whatsapp.body_fields_failed', 'backup.status,event.id');
+    Http::fake(['graph.facebook.com/*' => Http::response(['messages' => [['id' => 'wamid.SYNTHETIC']]], 200)]);
+    config()->set('rconfig-whatsapp.policy_approved', false);
+    expect($this->dispatcher->dispatch($this->outcomeId, 'whatsapp'))->toBe('skipped');
+    config()->set('rconfig-whatsapp.policy_approved', true);
+    config()->set('rconfig-whatsapp.from_utc', '2026-01-02 00:00:00');
+    expect($this->dispatcher->dispatch($this->outcomeId, 'whatsapp'))->toBe('skipped');
+    Http::assertNothingSent();
+
+    config()->set('rconfig-whatsapp.from_utc', '2026-01-01 00:00:00');
+    expect($this->dispatcher->dispatch($this->outcomeId, 'whatsapp'))->toBe('accepted');
+    expect($this->dispatcher->dispatch($this->outcomeId, 'whatsapp'))->toBe('skipped');
+    Http::assertSentCount(1);
+    Http::assertSent(fn (Request $request): bool => $request['type'] === 'template'
+        && $request['template']['name'] === 'backup_success_alert'
+        && $request['template']['components'][0]['parameters'][0]['text'] === 'SUCCESS'
+        && $request['template']['components'][0]['parameters'][1]['text'] === 'native-config:' . $this->outcomeId);
 });

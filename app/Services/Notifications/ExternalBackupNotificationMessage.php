@@ -16,6 +16,21 @@ final class ExternalBackupNotificationMessage
      */
     public function render(ExternalBackupCheckRun $run, string $channel): array
     {
+        ['event' => $event, 'values' => $values] = $this->metadata($run);
+        $stored = CustomBackupNotificationTemplate::query()
+            ->where('channel', $channel)->where('event_type', $event)->first();
+        $template = $stored === null
+            ? $this->renderer->defaults($channel, $event)
+            : ['title' => (string) $stored->title, 'body' => (string) $stored->body];
+
+        return $this->renderer->render($channel, $template['title'], $template['body'], $values);
+    }
+
+    /**
+     * @return array{event: string, values: array<string, scalar|null>}
+     */
+    public function metadata(ExternalBackupCheckRun $run): array
+    {
         $receipt = $run->receipt()->first();
         if ($run->status === 'success' && $run->reason === 'verified_file_receipt'
             && $receipt !== null && (int) $receipt->device_id === (int) $run->device_id) {
@@ -35,15 +50,9 @@ final class ExternalBackupNotificationMessage
         $device = $run->device()->first(['id', 'device_name']);
         $taskId = $run->rule()->value('task_id');
         $taskName = DB::table('tasks')->where('id', $taskId)->value('task_name');
-        $stored = CustomBackupNotificationTemplate::query()
-            ->where('channel', $channel)->where('event_type', $event)->first();
-        $template = $stored === null
-            ? $this->renderer->defaults($channel, $event)
-            : ['title' => (string) $stored->title, 'body' => (string) $stored->body];
-
         // Only explicitly selected metadata; no device IP, credentials,
         // configuration contents, filesystem paths, digest or raw exceptions.
-        return $this->renderer->render($channel, $template['title'], $template['body'], [
+        $values = [
             'device.name' => $this->safeText($device?->device_name),
             'backup.status' => strtoupper((string) $run->status),
             'backup.source' => 'external-file',
@@ -54,7 +63,9 @@ final class ExternalBackupNotificationMessage
             'task.id' => is_numeric($taskId) ? (string) $taskId : null,
             'event.id' => 'external-file:' . $run->id,
             'event.timestamp' => $instant . ' UTC',
-        ]);
+        ];
+
+        return ['event' => $event, 'values' => $values];
     }
 
     private function safeFilename(mixed $value): ?string

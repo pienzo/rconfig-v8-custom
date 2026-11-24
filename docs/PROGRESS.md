@@ -5,8 +5,14 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #123 native notifications merged 5/5 (combined suite); F02 and native Email/Telegram scheduled paths implemented, not activated. F02 rule activation candidate #124 in review. All runtime/automatic notification gates remain OFF; trusted finalization, actual provider/worker tests, WhatsApp and full staging/release gates remain open. `main` and VM unchanged.
+**Current gate:** F02 admin activation #125 merged 9/9; approved-template WhatsApp preflight #126 merged 5/5. WhatsApp scheduled dispatch candidate under #113; combined CI pending. All runtime and notification gates remain OFF. Trusted finalized upload, operational staging, provider approval and real transport/recovery tests, WhatsApp mapping UI, and release gates remain open. `main` and VM unchanged.
 
+
+## 2026-11-24 — F02 activation and WhatsApp preflight accepted
+
+- #125 merged at `b95019d10d813892f86dd9009fcb94d692850d53`, 9/9 CI, 1,803 PHP tests passed, 8 skipped, 8,340 assertions, real Core migration/restore checks. No actual activation.
+- #126 merged at `bb8c4f8c0f51e8bfc5fae05cad0b9c00ab8996a0`, 5/5 CI, 1,803 PHP tests passed, 8 skipped, 8,334 assertions. Only disjoint .env.example edits overlapped #125. Approved-template preflight and safe ordered mapping; no provider calls.
+- WhatsApp dispatch candidate uses the existing source cutoff plus an independent channel activation floor (later of the two), global/channel/consent-policy gates, existing durable single-attempt claim and destination lock. Synthetic HTTP tests for native success, F02 verified receipt, failure/uncertain/replay. The static text is approved by Meta, not editable as free text. No account approval, pricing authorization or actual delivery established. Combined CI and mapping UI still required.
 
 ## 2026-11-24 — Native notification integration accepted; F02 rule activation candidate
 
