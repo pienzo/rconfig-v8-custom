@@ -2,6 +2,7 @@
 
 namespace App\Services\Notifications;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -18,10 +19,11 @@ final class ExternalBackupTerminalOutcome
             ->whereColumn('runs.deadline_at_utc', '>', 'runs.scheduled_at_utc')
             ->whereColumn('runs.first_observed_at_utc', '>=', 'runs.scheduled_at_utc')
             ->whereColumn('runs.last_observed_at_utc', '>=', 'runs.first_observed_at_utc')
+            ->where('runs.last_observed_at_utc', '<=', CarbonImmutable::now('UTC')->format('Y-m-d H:i:s'))
             ->where(function (Builder $query): void {
                 $query->where(function (Builder $success): void {
-                    $success->where('runs.status', 'success')
-                        ->where('runs.reason', 'verified_file_receipt')
+                    $success->whereRaw('CAST(runs.status AS BINARY) = ?', ['success'])
+                        ->whereRaw('CAST(runs.reason AS BINARY) = ?', ['verified_file_receipt'])
                         ->whereNotNull('runs.matched_filename')
                         ->whereNotIn('runs.matched_filename', ['', '.', '..'])
                         ->whereColumn('runs.last_observed_at_utc', '>', 'runs.first_observed_at_utc')
@@ -33,8 +35,8 @@ final class ExternalBackupTerminalOutcome
                                 ->whereColumn('receipts.accepted_at_utc', 'runs.last_observed_at_utc');
                         });
                 })->orWhere(function (Builder $failed): void {
-                    $failed->where('runs.status', 'failed')
-                        ->whereIn('runs.reason', [
+                    $failed->whereRaw('CAST(runs.status AS BINARY) = ?', ['failed'])
+                        ->whereIn(DB::raw('CAST(runs.reason AS BINARY)'), [
                             'missing', 'stale', 'undersized', 'unstable', 'invalid_timestamp',
                             'requires_safe_open', 'access', 'unsafe_file', 'invalid_pattern', 'deadline_elapsed',
                         ])

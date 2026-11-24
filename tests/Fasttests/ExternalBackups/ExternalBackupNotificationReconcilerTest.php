@@ -93,6 +93,9 @@ test('inconsistent terminal failures cannot be scheduled rendered or reconciled'
     $messages = app(ExternalBackupNotificationMessage::class);
     foreach ([
         ['reason' => 'unknown'],
+        ['reason' => 'DEADLINE_ELAPSED'],
+        ['status' => 'FAILED'],
+        ['last_observed_at_utc' => '2099-01-01 00:00:00'],
         ['last_observed_at_utc' => '2026-01-01 00:01:00'],
         ['first_observed_at_utc' => null],
         ['first_observed_at_utc' => '2025-12-31 23:59:59'],

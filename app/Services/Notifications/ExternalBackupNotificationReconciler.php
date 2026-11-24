@@ -5,7 +5,6 @@ namespace App\Services\Notifications;
 use App\Jobs\ExternalBackupNotificationJob;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
-use Illuminate\Support\Facades\DB;
 
 final class ExternalBackupNotificationReconciler
 {
@@ -48,8 +47,6 @@ final class ExternalBackupNotificationReconciler
     {
         return ExternalBackupTerminalOutcome::query()
             ->where('runs.scheduled_at_utc', '>=', $cutoff)
-            ->whereNotNull('runs.last_observed_at_utc')
-            ->where('runs.last_observed_at_utc', '<=', CarbonImmutable::now('UTC')->format('Y-m-d H:i:s'))
             ->whereNotExists(function (Builder $query) use ($channel): void {
                 $query->selectRaw('1')->from('custom_backup_notification_deliveries as deliveries')
                     ->where('deliveries.source_type', 'external-file')
