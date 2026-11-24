@@ -1,0 +1,28 @@
+name: Read-only upstream drift report
+
+on:
+  pull_request:
+    paths:
+      - 'tools/upstream/**'
+      - '.github/workflows/upstream-drift.yml'
+  push:
+    branches: [custom]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: Upstream drift report (no repository writes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout tested report code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Test report decisions and tag validation
+        run: python3 -m unittest discover -s tools/upstream -p 'test_*.py'
+      - name: Read public upstream and fork metadata
+        run: python3 tools/upstream/drift.py
