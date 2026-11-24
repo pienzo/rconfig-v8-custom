@@ -268,3 +268,22 @@ jobs:
       - name: Test F03 real MySQL concurrent delivery claims and crash (hosted only)
         # Independent processes; local synthetic effect, no provider calls.
         run: F03_SYNTHETIC_DELIVERY_CLAIM=1 php tools/f03/delivery_claim.php
+
+      - name: Test actual F02 schedule event through Horizon and native receipt (hosted only)
+        # Dedicated Redis logical DBs on the disposable service, no provider.
+        shell: bash
+        run: |
+          set -euo pipefail
+          inbox="$(mktemp -d "$RUNNER_TEMP/rconfig-f02-horizon.XXXXXXXX")"
+          chmod 700 "$inbox"
+          trap 'rmdir "$inbox"' EXIT
+          F02_SYNTHETIC_HORIZON=1 REDIS_DB=13 REDIS_CACHE_DB=14 \
+            QUEUE_CONNECTION=redis CACHE_DRIVER=redis CACHE_STORE=redis MAIL_MAILER=log \
+            RCONFIG_F02_RUNTIME_ENABLED=true RCONFIG_F02_QUEUE_ENABLED=true \
+            RCONFIG_F02_RECEIPT_ACCEPTANCE_ENABLED=true RCONFIG_F02_FINALIZATION_APPROVED=true \
+            RCONFIG_F02_RECEIPT_HMAC_KEY="base64:$(openssl rand -base64 32)" \
+            RCONFIG_EXTERNAL_BACKUP_INTAKE_ROOT="$inbox" \
+            RCONFIG_F02_NATIVE_DIGEST_BINARY="$RUNNER_TEMP/rconfig-f02-safe-digest" \
+            RCONFIG_CUSTOM_BACKUP_NOTIFICATIONS_ENABLED=false RCONFIG_NATIVE_BACKUP_NOTIFICATIONS_ENABLED=false \
+            RCONFIG_TELEGRAM_ENABLED=false RCONFIG_BACKUP_EMAIL_ENABLED=false RCONFIG_WHATSAPP_ENABLED=false \
+            php tools/f02/queue/scheduled_receipt.php
