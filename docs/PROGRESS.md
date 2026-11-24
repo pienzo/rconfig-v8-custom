@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #162 isolated real SFTP accepted 6/6; #163 actual SFTP-to-scheduled-receipt candidate. All operational runtime gates OFF; `main` and VM unchanged. Live uploader trust and authorized staging remain open.
+**Current gate:** #164 actual SFTP-to-scheduled receipt accepted 6/6; #165 live-listener session-lock candidate. All operational runtime gates OFF; `main` and VM unchanged. Trusted completion contract, concurrent devices, authorized staging and release remain open.
 
+
+## 2026-11-24 — Actual SFTP receipt accepted; live-session exclusion candidate
+
+- #164 merged at `8f6ff74ccaf2b52f5b16dec4a8f53ee03990de01`, head `f11d0aae`, 6/6 CI (45406065274 / 45406063692). Actual job 138487007091 emitted negative preflight, published inode and SFTP scheduler/Horizon receipt markers. No new deliveries, replay idempotent. #163 closed; quiesced synthetic proof only.
+- #165 candidate retains original SFTP fixture and adds explicit live-listener test: root-protected per-uploader advisory flock held by a forced chrooted SFTP subsystem wrapper; refuse publication while first session remains open after rename; successful synthetic batch exit then exclusive publisher lock; second authenticated session waits while publisher copies, then resumes and changes quarantine only. Native descriptor evidence and unchanged published inode/content required; no receipt in this separate fixture, no operational activation. Advisory-lock cooperation, session lifecycle failures, real device completion contract and concurrency remain open. Initial run 45407781715: quiesced fixture passed, live listener failed before any live marker after about 12 s (readiness likely). OpenSSH portable V_9_2_P1 sftp-server-main.c calls sanitise_stdfd in misc.c, which unconditionally opens /dev/null O_RDWR; jail omitted it. Candidate adds only the standard null character device, unprivileged chrooted subsystem capability preflight with exact marker and bounded stage diagnostics. Cause still requires corrected CI confirmation. Rollback revert test-only PR.
 
 ## 2026-11-24 — Real SFTP accepted; scheduled receipt candidate
 
