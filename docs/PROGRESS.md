@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #180 explicit pending recovery accepted 6/6; #181 multi-device actual scheduled receipt candidate. Operational gates OFF; `main` and VM unchanged. Operational recovery, device compatibility, staging and release remain open.
+**Current gate:** #182 multi-device actual receipts accepted 6/6; #183 mixed device outcomes candidate. Operational gates OFF; `main` and VM unchanged. Operational recovery, device compatibility, staging and release remain open.
 
+
+## 2026-11-24 — Multi-device receipts accepted; mixed outcomes candidate
+
+- #182 merged at `61501bcb0e8a2859027747ef0543999cd7f32e7a`, head `e8858289`, 6/6 CI (45441791876 / 45441791901). Job 138614625176 emitted queued two events, exact receipt tokens and replay; #181 closed.
+- #183 candidate: actual two-device SFTP transport and scheduler, A success with exact receipt, B undersized pending without receipt; real original 120-second deadline, actual expiry event, terminal failed undersized, A unchanged, replay both events and sweeper, no notifications. Separate Redis DB7/8. Existing single/multi success probes retained. Follow-up may independently expire B; no exclusive sweeper causality claim. CI pending, no runtime/VM changes. Rollback revert test-only PR.
 
 ## 2026-11-24 — Explicit recovery accepted; multi-device receipt candidate
 

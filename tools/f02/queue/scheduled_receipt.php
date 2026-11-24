@@ -11,6 +11,7 @@ use App\Models\ExternalBackupFileReceipt;
 use App\Models\ExternalBackupRule;
 use App\Models\Task;
 use App\Services\ExternalBackups\ExternalBackupReceiptTokenFactory;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -33,9 +34,10 @@ function scheduledReceiptCheck(bool $ok, string $stage): void
 
 $sftp = getenv('F02_SYNTHETIC_SFTP_RECEIPT') === '1';
 $multi = getenv('F02_SYNTHETIC_MULTI_RECEIPT') === '1';
-$redisDb = $multi ? '9' : ($sftp ? '11' : '13');
-$cacheDb = $multi ? '10' : ($sftp ? '12' : '14');
-if (($multi && ! $sftp) || getenv('GITHUB_ACTIONS') !== 'true' || getenv('APP_ENV') !== 'testing'
+$mixed = getenv('F02_SYNTHETIC_MIXED_RECEIPT') === '1';
+$redisDb = $mixed ? '7' : ($multi ? '9' : ($sftp ? '11' : '13'));
+$cacheDb = $mixed ? '8' : ($multi ? '10' : ($sftp ? '12' : '14'));
+if (($mixed && ! $multi) || ($multi && ! $sftp) || getenv('GITHUB_ACTIONS') !== 'true' || getenv('APP_ENV') !== 'testing'
     || getenv('F02_SYNTHETIC_HORIZON') !== '1'
     || getenv('DB_HOST') !== '127.0.0.1' || getenv('DB_DATABASE') !== 'v8core_test'
     || getenv('REDIS_HOST') !== '127.0.0.1' || getenv('REDIS_DB') !== $redisDb
@@ -131,9 +133,9 @@ try {
             'device_id' => $device->id,
             'pattern_mode' => 'glob',
             'filename_pattern' => $sftp ? 'backup.cfg' : 'synthetic_*.cfg',
-            'minimum_bytes' => 1,
+            'minimum_bytes' => $mixed && $index === 2 ? 1048576 : 1,
             'quiet_seconds' => 2,
-            'deadline_seconds' => 180,
+            'deadline_seconds' => $mixed && $index === 2 ? 120 : 180,
             'clock_skew_seconds' => 5,
             'enabled' => true,
         ]);
@@ -149,6 +151,13 @@ try {
         $matches = array_values(array_filter($schedule->events(), static fn ($event): bool => $event->description === $name));
         scheduledReceiptCheck(count($matches) === 1 && $matches[0]->isDue($app), 'actual due F02 event');
         $events[$index] = $matches[0];
+    }
+
+    $expiryEvent = null;
+    if ($mixed) {
+        $expiryEvents = array_values(array_filter($schedule->events(), static fn ($event): bool => $event->description === 'f02-expire-pending'));
+        scheduledReceiptCheck(count($expiryEvents) === 1 && $expiryEvents[0]->isDue($app), 'actual expiry schedule event');
+        $expiryEvent = $expiryEvents[0];
     }
 
     if ($sftp) {
@@ -236,27 +245,78 @@ try {
     }
 
     // Existing single-worker supervisor configuration, dedicated test Redis.
-    $master = new Process([PHP_BINARY, 'artisan', 'horizon', '--environment=production'], $root, null, null, 100);
+    $master = new Process([PHP_BINARY, 'artisan', 'horizon', '--environment=production'], $root, null, null, $mixed ? 220 : 100);
     $master->start();
-    $await = static function (Closure $condition, string $label) use ($master): void {
-        $deadline = microtime(true) + 45;
+    $await = static function (Closure $condition, string $label, int $timeout = 45) use ($master): void {
+        $deadline = microtime(true) + $timeout;
         while (! $condition()) {
             scheduledReceiptCheck($master->isRunning() && microtime(true) < $deadline, $label);
             usleep(200000);
         }
     };
-    $await(static fn (): bool => ExternalBackupCheckRun::whereIn('rule_id', $ruleIds)->where('status', 'success')->count() === count($rules), 'actual Horizon worker receipts');
-    $await(static fn (): bool => $queue->size('ExternalBackupChecks') === 0, 'queue acknowledgement');
+    if ($mixed) {
+        $await(static fn (): bool => ExternalBackupCheckRun::where('rule_id', $rules[1]->id)->where('status', 'success')->exists()
+            && ExternalBackupCheckRun::where('rule_id', $rules[2]->id)->where('status', 'pending')->where('reason', 'undersized')->exists(), 'mixed initial observations');
+        $success = ExternalBackupCheckRun::where('rule_id', $rules[1]->id)->sole();
+        $pending = ExternalBackupCheckRun::where('rule_id', $rules[2]->id)->sole();
+        $receipt = ExternalBackupFileReceipt::where('check_run_id', $success->id)->sole();
+        scheduledReceiptCheck((int) $success->device_id === (int) $devices[1]->id
+            && (int) $receipt->device_id === (int) $devices[1]->id
+            && $success->reason === 'verified_file_receipt'
+            && $success->matched_filename === 'backup.cfg'
+            && hash_equals($expectedTokens[1], (string) $receipt->verified_file_token)
+            && (int) $pending->device_id === (int) $devices[2]->id
+            && $pending->matched_filename === 'backup.cfg'
+            && ! ExternalBackupFileReceipt::where('device_id', $devices[2]->id)->exists(), 'independent success and pending undersized');
+        $successSnapshot = $success->getRawOriginal();
+        $receiptSnapshot = $receipt->getRawOriginal();
+        $deadline = CarbonImmutable::createFromFormat('!Y-m-d H:i:s', $pending->getRawOriginal('deadline_at_utc'), 'UTC');
+        scheduledReceiptCheck($deadline !== false && $deadline->isFuture()
+            && $pending->getRawOriginal('scheduled_at_utc') === $success->getRawOriginal('scheduled_at_utc'), 'original mixed UTC window');
+        echo "F02_MIXED_DEVICE_PENDING_ISOLATION_OK (SYNTHETIC_ONLY)\n";
+        // Real wall-clock deadline. No DB edits or frozen application clock.
+        // The delayed follow-up may itself expire the run if it crosses the
+        // deadline; the actual scheduled sweeper must also be safe to replay.
+        $await(static function () use ($deadline, $rules): bool {
+            scheduledReceiptCheck(! ExternalBackupCheckRun::where('rule_id', $rules[2]->id)->where('status', 'success')->exists(), 'undersized never successful');
 
-    $verify = static function () use ($rules, $devices, $sftp, $expectedTokens, $files, $identities, $deliveryCount): array {
+            return CarbonImmutable::now('UTC')->greaterThanOrEqualTo($deadline);
+        }, 'actual mixed deadline elapsed', 125);
+        scheduledReceiptCheck($expiryEvent !== null && $expiryEvent->isDue($app), 'due expiry schedule');
+        $expiryEvent->run($app);
+        $await(static fn (): bool => ExternalBackupCheckRun::where('rule_id', $rules[2]->id)->where('status', 'failed')->exists(), 'actual mixed expiry');
+        $await(static fn (): bool => $queue->size('ExternalBackupChecks') === 0, 'mixed queue acknowledgement');
+        scheduledReceiptCheck($success->fresh()->getRawOriginal() === $successSnapshot
+            && $receipt->fresh()->getRawOriginal() === $receiptSnapshot, 'successful device unchanged by expiry');
+        echo "F02_MIXED_DEVICE_DEADLINE_ELAPSED_OK (SYNTHETIC_ONLY)\n";
+    } else {
+        $await(static fn (): bool => ExternalBackupCheckRun::whereIn('rule_id', $ruleIds)->where('status', 'success')->count() === count($rules), 'actual Horizon worker receipts');
+        $await(static fn (): bool => $queue->size('ExternalBackupChecks') === 0, 'queue acknowledgement');
+    }
+
+    $verify = static function () use ($rules, $devices, $sftp, $mixed, $expectedTokens, $files, $identities, $deliveryCount): array {
         $receiptIds = [];
         foreach ($rules as $index => $rule) {
             $run = ExternalBackupCheckRun::where('rule_id', $rule->id)->sole();
-            $receipt = ExternalBackupFileReceipt::where('check_run_id', $run->id)->sole();
-            scheduledReceiptCheck($run->status === 'success' && $run->reason === 'verified_file_receipt'
-                && (int) $run->device_id === (int) $devices[$index]->id
-                && (int) $receipt->device_id === (int) $devices[$index]->id, 'verified device receipt persisted');
-            $receiptIds[$index] = [(int) $run->id, (int) $receipt->id];
+            scheduledReceiptCheck((int) $run->device_id === (int) $devices[$index]->id, 'exact occurrence device');
+            $failure = $mixed && $index === 2;
+            if ($failure) {
+                scheduledReceiptCheck($run->status === 'failed' && $run->reason === 'undersized'
+                    && $run->matched_filename === 'backup.cfg'
+                    && $run->getRawOriginal('last_observed_at_utc') >= $run->getRawOriginal('deadline_at_utc')
+                    && ! ExternalBackupFileReceipt::where('check_run_id', $run->id)->exists()
+                    && ! ExternalBackupFileReceipt::where('device_id', $devices[$index]->id)->exists(), 'terminal undersized without receipt');
+                $receiptIds[$index] = [$run->getRawOriginal(), null];
+            } else {
+                $receipt = ExternalBackupFileReceipt::where('check_run_id', $run->id)->sole();
+                scheduledReceiptCheck($run->status === 'success' && $run->reason === 'verified_file_receipt'
+                    && (int) $receipt->device_id === (int) $devices[$index]->id, 'verified device receipt persisted');
+                $receiptIds[$index] = [$run->getRawOriginal(), $receipt->getRawOriginal()];
+                if ($sftp) {
+                    scheduledReceiptCheck($run->matched_filename === 'backup.cfg'
+                        && hash_equals($expectedTokens[$index], (string) $receipt->verified_file_token), 'exact SFTP device receipt token');
+                }
+            }
             if ($sftp) {
                 clearstatcache(true, $files[$index]);
                 $current = lstat($files[$index]);
@@ -264,8 +324,6 @@ try {
                 foreach (['dev', 'ino', 'mode', 'uid', 'gid', 'nlink', 'size', 'mtime', 'ctime'] as $key) {
                     scheduledReceiptCheck($current[$key] === $identities[$index][$key], 'published inode unchanged');
                 }
-                scheduledReceiptCheck($run->matched_filename === 'backup.cfg'
-                    && hash_equals($expectedTokens[$index], (string) $receipt->verified_file_token), 'exact SFTP device receipt token');
             }
         }
         if ($sftp) {
@@ -275,7 +333,9 @@ try {
         return $receiptIds;
     };
     $receiptIds = $verify();
-    if ($multi) {
+    if ($mixed) {
+        echo "F02_MIXED_DEVICE_TERMINAL_ISOLATION_OK (SYNTHETIC_ONLY)\n";
+    } elseif ($multi) {
         echo "F02_MULTI_DEVICE_EXACT_RECEIPTS_OK (SYNTHETIC_ONLY)\n";
     }
 
@@ -283,15 +343,22 @@ try {
     foreach ($events as $event) {
         $event->run($app);
     }
+    if ($mixed) {
+        $expiryEvent->run($app);
+    }
     $await(static fn (): bool => $queue->size('ExternalBackupChecks') === 0, 'replay acknowledgement');
     scheduledReceiptCheck($verify() === $receiptIds, 'no duplicated receipt or occurrence');
-    if ($multi) {
+    if ($mixed) {
+        echo "F02_MIXED_DEVICE_REPLAY_UNCHANGED_OK (SYNTHETIC_ONLY)\n";
+    } elseif ($multi) {
         echo "F02_MULTI_DEVICE_RECEIPT_REPLAY_OK (SYNTHETIC_ONLY)\n";
     }
-    if ($sftp) {
-        echo "F02_REAL_SFTP_SCHEDULE_HORIZON_RECEIPT_OK (SYNTHETIC_ONLY)\n";
+    if (! $mixed) {
+        if ($sftp) {
+            echo "F02_REAL_SFTP_SCHEDULE_HORIZON_RECEIPT_OK (SYNTHETIC_ONLY)\n";
+        }
+        echo "F02 REAL_SCHEDULE_EVENT_HORIZON_NATIVE_RECEIPT_OK (SYNTHETIC_ONLY)\n";
     }
-    echo "F02 REAL_SCHEDULE_EVENT_HORIZON_NATIVE_RECEIPT_OK (SYNTHETIC_ONLY)\n";
 } catch (Throwable $exception) {
     $failed = true;
     scheduledReceiptFailure($exception);
