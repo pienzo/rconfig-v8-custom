@@ -8,6 +8,7 @@ use App\Models\Config;
 use App\Services\Config\FileOperations;
 use App\Services\ConfigCompare\ConfigCompareExclusionCleaner;
 use App\Services\ConfigHistory\ConfigHistoryManager;
+use App\Services\Notifications\NativeBackupOutcomeRecorder;
 use Illuminate\Support\Facades\Log;
 
 class SaveConfigsToDiskAndDb
@@ -76,7 +77,7 @@ class SaveConfigsToDiskAndDb
         $this->model->duration = $duration;
         $this->model->latest_version = 1;
 
-        $saved = $this->model->save();
+        $saved = app(NativeBackupOutcomeRecorder::class)->save($this->model);
 
         if ($saved && ! empty($savedFileInfo) && $this->model->download_status === 1) {
             $this->runVersionCompare();
@@ -117,7 +118,7 @@ class SaveConfigsToDiskAndDb
         $this->model->end_time = $this->devicerecord['end_time']->toDateTimeString();
         $this->model->duration = (int) $this->devicerecord['start_time']->diffInSeconds($this->devicerecord['end_time']);
         $this->model->latest_version = 1;
-        $this->model->save();
+        app(NativeBackupOutcomeRecorder::class)->save($this->model);
 
         return ['success' => true, 'commandName' => $this->commandName];
     }
