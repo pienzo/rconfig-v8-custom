@@ -5,8 +5,18 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #148 real Chromium UI and persistence passed 7/7; #149 read-only upstream drift report candidate. All feature activation/deployment gates OFF; Apache/staging roles, trusted upload handoff, actual providers, operational policy, retention/recovery, scheduled upstream monitoring and release approval remain open. `main` and VM unchanged.
+**Current gate:** #154 strict bootstrap and actual Apache accepted 6/6; #155 simultaneous role candidate. All feature activation/deployment gates OFF. Trusted uploader, actual providers, operational policies, scheduled upstream reporting and release approval remain open. `main` and VM unchanged.
 
+
+## 2026-11-24 — Apache accepted; simultaneous roles candidate
+
+- #154 merged at `a708c12d381bab6538b894d5b26db14ff537c94d` (head `a2f0a622`), 6/6 CI: runs 45389976976 / 45389977014. All four Apache markers confirmed; SMTP valid/no-auth/HELO/bad-auth/untrusted/wrong-name all passed. 1,819 PHP passes, 8,475 assertions, 8 skips. #153 closed. Test-only changes, no VM or production launch.
+- #155 candidate: reuse the accepted strict bootstrap harness; separate hosted jobs preserve the Apache-only test and add all three real roles. Verify same image, protected dotenv, shared storage, no exposed ports or bootstrap secret in service roles, internal network, Redis authentication, actual worker UID/GID, exactly two native supervisors, genuine fresh scheduled heartbeat, authenticated HTTP while all roles run, empty custom run/delivery ledgers. No manual heartbeat, external provider or trusted upload; CI pending. Rollback: revert test-only PR.
+
+## 2026-11-24 — Upstream and role guards accepted; actual Apache candidate
+
+- #150 merged at `7c84e0c7f40dc3948ee483d7d3d256f87ae8cb0b`, 6/6 CI; five report tests and live NO_CHANGE verified (run 45311254064). Stable tag and fork main remain `121cff1b`; scheduled monitoring not yet configured. #152 merged at `615a7edfa9c53e4c9a7de3062a6cb817d8b24eee`, 10/10 CI; canonical dotenv, disabled feature gates, config cache and intake checks accepted. No role launch from those PRs.
+- #153 candidate uses an isolated ephemeral Compose project, generated protected dotenv, authenticated Redis, exact strict bootstrap gate, persistent storage and actual installed Apache role launcher. Separate unprivileged HTTP client checks login, assets, API and absent deliveries/runs. Initial gate failure fixed by refusing ambient overrides before loading dotenv and disabling the Laravel PutenvAdapter in the test CLI only. Run 45314708671 confirms real strict bootstrap and authenticated Apache HTTP markers, including the exact negative override test. Final process inspection failed because docker top requires PID in its output; Pint also failed. Run 45316380578 on f8616909 passed all four Apache markers including final process inspection; four standard checks also passed, only Pint remained red (unary spacing). Removed remaining unary negations and sorted imports. Run 45327280402 confirms Apache again and Pint passed in 45327280407; 1,819 PHP tests/8,475 assertions passed but existing SMTP fixture failed on wrong-name completion. Hardened only the synthetic TLS fixture for peer alert/reset before any SMTP command, kept negative client outcome and zero credentials/envelope checks; full CI still required before merge; no Horizon/scheduler, real upload, provider traffic or VM modification. Rollback: revert test-only PR; no persistent environment changes.
 
 ## 2026-11-24 — Real Chromium accepted; upstream drift report candidate
 

@@ -15,6 +15,7 @@ combined_roles_verify_layout() {
         test "$(docker inspect --format '{{.State.Running}}' "$container_id")" = true
         test "$(docker inspect --format '{{.Image}}' "$container_id")" = "$image_id"
         test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$container_id")" = true
+        test "$(docker inspect --format '{{.HostConfig.Privileged}}' "$container_id")" = false
         test "$(docker inspect --format '{{len .HostConfig.PortBindings}}' "$container_id")" = 0
         test "$(docker inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}' "$container_id")" = "$network"
         test "$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/www/html/rconfig/storage"}}{{.Name}}{{end}}{{end}}' "$container_id")" = "$volume"
@@ -74,7 +75,7 @@ combined_roles_start_and_verify() {
     done
     combined_roles_verify_layout
     # Redis auth must remain enforced, even inside the isolated network.
-    compose exec -T redis redis-cli ping | grep -Fxq 'NOAUTH Authentication required.'
+    compose exec -T redis redis-cli ping 2>&1 | grep -Fx 'NOAUTH Authentication required.' >/dev/null
     docker run --rm -i --name "$project-observer" --network "$network" \
         "${common[@]}" "${identity[@]}" --env RCONFIG_COMBINED_ROLE_PHASE=live \
         --env "RCONFIG_COMBINED_ROLE_STARTED_AT=$started" \
