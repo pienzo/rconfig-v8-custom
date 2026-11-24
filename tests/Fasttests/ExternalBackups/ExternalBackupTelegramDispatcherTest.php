@@ -37,6 +37,7 @@ beforeEach(function () {
         'device_id' => $this->device->id,
         'scheduled_at_utc' => '2026-11-23 20:00:00',
         'deadline_at_utc' => '2026-11-23 20:02:00',
+        'first_observed_at_utc' => '2026-11-23 20:00:30',
         'last_observed_at_utc' => '2026-11-23 20:02:00',
         'status' => 'failed',
         'reason' => 'deadline_elapsed',
@@ -87,7 +88,10 @@ test('terminal failure is rendered and accepted only once by the fake Telegram p
 });
 
 test('success without receipt cannot send, but a matching receipt allows success', function () {
-    $this->run->update(['status' => 'success', 'reason' => 'verified_file_receipt', 'matched_filename' => 'demo.cfg']);
+    $this->run->update([
+        'status' => 'success', 'reason' => 'verified_file_receipt', 'matched_filename' => 'demo.cfg',
+        'last_observed_at_utc' => '2026-11-23 20:01:00',
+    ]);
     expect(fn () => $this->dispatcher->dispatch($this->run->id))->toThrow(DomainException::class);
     Http::assertNothingSent();
 
@@ -164,7 +168,10 @@ test('external WhatsApp success requires a matching receipt', function () {
     config()->set('external-backups.runtime_enabled', true);
     config()->set('external-backups.queue_enabled', true);
     config()->set('custom-backup-notifications.f02_from_utc', '2026-01-01 00:00:00');
-    $this->run->update(['status' => 'success', 'reason' => 'verified_file_receipt', 'matched_filename' => 'demo.cfg']);
+    $this->run->update([
+        'status' => 'success', 'reason' => 'verified_file_receipt', 'matched_filename' => 'demo.cfg',
+        'last_observed_at_utc' => '2026-11-23 20:01:00',
+    ]);
     $dispatcher = app(ExternalBackupWhatsAppDispatcher::class);
     expect($dispatcher->dispatch($this->run->id))->toBe('skipped');
     Http::assertNothingSent();
@@ -180,4 +187,11 @@ test('external WhatsApp success requires a matching receipt', function () {
     Http::assertSentCount(1);
     Http::assertSent(fn (Request $request): bool => $request['template']['name'] === 'backup_success_alert'
         && $request['template']['components'][0]['parameters'][0]['text'] === 'SUCCESS');
+});
+
+test('a premature terminal failure is refused before transport or intent creation', function () {
+    $this->run->update(['last_observed_at_utc' => '2026-11-23 20:01:00']);
+    expect(fn () => $this->dispatcher->dispatch($this->run->id))->toThrow(DomainException::class);
+    Http::assertNothingSent();
+    expect(DB::table('custom_backup_notification_deliveries')->where('source_type', 'external-file')->where('source_id', $this->run->id)->count())->toBe(0);
 });

@@ -31,17 +31,14 @@ final class ExternalBackupNotificationMessage
      */
     public function metadata(ExternalBackupCheckRun $run): array
     {
-        $receipt = $run->receipt()->first();
-        if ($run->status === 'success' && $run->reason === 'verified_file_receipt'
-            && $receipt !== null && (int) $receipt->device_id === (int) $run->device_id) {
-            $event = 'backup.success';
-            $instant = $receipt->getRawOriginal('accepted_at_utc');
-        } elseif ($run->status === 'failed' && $receipt === null) {
-            $event = 'backup.failed';
-            $instant = $run->getRawOriginal('last_observed_at_utc');
-        } else {
+        $outcome = ExternalBackupTerminalOutcome::query()->where('runs.id', $run->id)
+            ->first(['runs.status', 'runs.last_observed_at_utc']);
+        if ($outcome === null) {
             throw new DomainException('No consistent terminal F02 outcome to render.');
         }
+
+        $event = $outcome->status === 'success' ? 'backup.success' : 'backup.failed';
+        $instant = $outcome->last_observed_at_utc;
 
         if (! is_string($instant) || preg_match('/\A\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\z/', $instant) !== 1) {
             throw new DomainException('Missing terminal F02 timestamp.');
@@ -54,7 +51,7 @@ final class ExternalBackupNotificationMessage
         // configuration contents, filesystem paths, digest or raw exceptions.
         $values = [
             'device.name' => $this->safeText($device?->device_name),
-            'backup.status' => strtoupper((string) $run->status),
+            'backup.status' => strtoupper((string) $outcome->status),
             'backup.source' => 'external-file',
             'backup.filename' => $this->safeFilename($run->matched_filename),
             'backup.timestamp' => $instant . ' UTC',
