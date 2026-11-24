@@ -1,4 +1,4 @@
-"""Synthetic, quiesced handoff proof only. Not a production publisher."""
+"""Synthetic handoff with excluded SFTP writers only. Not a production publisher."""
 import hashlib
 import json
 import os

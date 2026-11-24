@@ -7,6 +7,9 @@ test -f /.dockerenv
 test "$(id -u)" = 0
 test ! -e /sandbox
 umask 077
+live="${F02_SFTP_LIVE_LOCK:-0}"
+case "$live" in 0|1) ;; *) exit 2 ;; esac
+if test "$live" = 1; then test "${F02_SFTP_EXPORT:-0}" = 0; fi
 published=/sandbox/published
 device=123
 reader_gid=2002
@@ -24,7 +27,9 @@ if test "${F02_SFTP_EXPORT:-}" = 1; then
 fi
 export F02_SFTP_PUBLISHED="$published" F02_SFTP_DEVICE="$device" F02_SFTP_READER_GID="$reader_gid"
 groupadd -g 2001 f02upload
-useradd -M -u 2001 -g 2001 -d /incoming -s /usr/sbin/nologin -p '*' f02upload
+upload_shell=/usr/sbin/nologin
+if test "$live" = 1; then upload_shell=/bin/sh; fi
+useradd -M -u 2001 -g 2001 -d /incoming -s "$upload_shell" -p '*' f02upload
 groupadd -g "$reader_gid" f02read
 useradd -M -u 2002 -g "$reader_gid" -d /nonexistent -s /usr/sbin/nologin f02read
 install -d -o root -g root -m 0755 /sandbox /sandbox/quarantine
@@ -56,9 +61,39 @@ ChrootDirectory /sandbox/quarantine
 ForceCommand internal-sftp -d /incoming
 DisableForwarding yes
 PermitTTY no
+PermitUserRC no
+PermitUserEnvironment no
 Subsystem sftp internal-sftp
 LogLevel ERROR
 CONF
+if test "$live" = 1; then
+    # Only in this isolated test: external SFTP server and minimal runtime
+    # inside the root-controlled jail. No interactive shell is exposed.
+    jail=/sandbox/quarantine
+    for binary in /bin/sh /usr/bin/flock /usr/lib/openssh/sftp-server; do
+        install -D -o root -g root -m 0755 "$binary" "$jail$binary"
+        deps="$(ldd "$binary")"
+        case "$deps" in *'not found'*) exit 1 ;; esac
+        printf '%s\n' "$deps" | awk '/=> \// {print $3} /^[[:space:]]*\// {print $1}' |
+        while IFS= read -r dep; do
+            install -D -o root -g root -m 0755 "$dep" "$jail$dep"
+        done
+    done
+    install -o root -g root -m 0444 /dev/null "$jail/session.lock"
+    cat > "$jail/session-lock.sh" <<'WRAPPER'
+#!/bin/sh
+set -eu
+# Keep the descriptor in this parent shell until its SFTP child exits.
+# The client cannot replace the lock inode or execute another command.
+exec 9</session.lock
+/usr/bin/flock -x 9
+/usr/lib/openssh/sftp-server -d /incoming
+WRAPPER
+    chmod 0555 "$jail/session-lock.sh"
+    runuser -u f02upload -- test ! -w "$jail"
+    runuser -u f02upload -- test ! -w "$jail/session.lock"
+    sed -i 's@^ForceCommand .*@ForceCommand /session-lock.sh@' /sandbox/sshd.conf
+fi
 /usr/sbin/sshd -t -f /sandbox/sshd.conf
 /usr/sbin/sshd -D -e -f /sandbox/sshd.conf >/sandbox/sshd.log 2>&1 &
 listener=$!
@@ -85,24 +120,58 @@ printf 'put /sandbox/partial /incoming/upload.part\n' | sftp_batch
 test -s /sandbox/quarantine/incoming/upload.part
 test -z "$(ls -A "$published/$device")"
 # Even a matching final-looking name in quarantine is not reader-visible.
-printf 'put /sandbox/complete /incoming/upload.part\nrename /incoming/upload.part /incoming/backup.cfg\n' | sftp_batch
+if test "$live" = 1; then
+    # Keep a real SFTP session open after the client has renamed its file.
+    # A final-looking name is not enough to permit publication.
+    mkfifo /sandbox/session-input
+    exec 8<>/sandbox/session-input
+    sftp_batch </sandbox/session-input >/sandbox/session-output 2>&1 &
+    first=$!
+    printf 'put /sandbox/complete /incoming/upload.part\nrename /incoming/upload.part /incoming/backup.cfg\n' >&8
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+        if test -s /sandbox/quarantine/incoming/backup.cfg; then break; fi
+        kill -0 "$first"
+        sleep 1
+    done
+    test -s /sandbox/quarantine/incoming/backup.cfg
+    kill -0 "$first"
+    exec 7</sandbox/quarantine/session.lock
+    status=0
+    flock -n -E 73 7 || status=$?
+    test "$status" = 73
+    test -z "$(ls -A "$published/$device")"
+    printf '%s\n' 'F02_SFTP_ACTIVE_SESSION_PUBLICATION_REFUSED_OK (SYNTHETIC_ONLY)'
+    printf 'bye\n' >&8
+    wait "$first"
+    exec 8>&-
+    rm /sandbox/session-input
+else
+    printf 'put /sandbox/complete /incoming/upload.part\nrename /incoming/upload.part /incoming/backup.cfg\n' | sftp_batch
+fi
 test ! -e /sandbox/quarantine/incoming/upload.part
 test -s /sandbox/quarantine/incoming/backup.cfg
 test -z "$(ls -A "$published/$device")"
 if printf 'put /sandbox/complete /outside.cfg\n' | sftp_batch >/dev/null 2>&1; then exit 1; fi
 if printf 'ls /published\n' | sftp_batch >/dev/null 2>&1; then exit 1; fi
 printf '%s\n' 'F02_REAL_SFTP_QUARANTINE_OK (SYNTHETIC_ONLY)'
-# Quiesce this dedicated listener and require all uploader processes to exit.
-kill "$listener"
-wait "$listener" || true
-listener=
-for attempt in 1 2 3 4 5 6 7 8 9 10; do
-    if ! pgrep -u 2001 >/dev/null; then break; fi
-    sleep 1
-done
-if pgrep -u 2001 >/dev/null; then exit 1; fi
-# Negative inputs in the private quarantine. No writer is running when the
-# test publisher opens a candidate; this does NOT model a live uploader.
+if test "$live" = 1; then
+    # Successful batch exit is known to the test controller, not inferred
+    # merely from a rename. Acquire the same lock before reading any bytes.
+    flock -w 10 7
+    kill -0 "$listener"
+else
+    # Original quiesced proof: stop this dedicated listener.
+    kill "$listener"
+    wait "$listener" || true
+    listener=
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+        if ! pgrep -u 2001 >/dev/null; then break; fi
+        sleep 1
+    done
+    if pgrep -u 2001 >/dev/null; then exit 1; fi
+fi
+# Negative inputs created by the trusted test controller before publishing.
+# All SFTP writes are excluded by the held lock or stopped listener.
 runuser -u f02upload -- sh -ec '
     cd /sandbox/quarantine/incoming
     ln -s backup.cfg symlink.cfg
@@ -110,8 +179,38 @@ runuser -u f02upload -- sh -ec '
     printf x > alias.cfg
     ln alias.cfg hardlink.cfg
 '
-if pgrep -u 2001 >/dev/null; then exit 1; fi
+if test "$live" = 1; then
+    # A second authenticated session must wait on the same inode. Close the
+    # inherited publisher descriptor in the child before it runs the client.
+    (
+        exec 7<&-
+        printf 'put /sandbox/partial /incoming/backup.cfg\n' | sftp_batch
+    ) >/sandbox/second-output 2>&1 &
+    second=$!
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+        if pgrep -u 2001 -x flock >/dev/null; then break; fi
+        kill -0 "$second"
+        sleep 1
+    done
+    pgrep -u 2001 -x flock >/dev/null
+    kill -0 "$second"
+    cmp -s /sandbox/complete /sandbox/quarantine/incoming/backup.cfg
+    printf '%s\n' 'F02_SFTP_RECONNECT_BLOCKED_DURING_PUBLISH_OK (SYNTHETIC_ONLY)'
+else
+    if pgrep -u 2001 >/dev/null; then exit 1; fi
+fi
 python3 /usr/local/bin/f02-handoff.py
+if test "$live" = 1; then
+    before="$(stat -c '%d:%i:%s:%y:%z' "$published/$device/backup.cfg")"
+    flock -u 7
+    exec 7<&-
+    wait "$second"
+    kill -0 "$listener"
+    cmp -s /sandbox/partial /sandbox/quarantine/incoming/backup.cfg
+    cmp -s /sandbox/complete "$published/$device/backup.cfg"
+    test "$(stat -c '%d:%i:%s:%y:%z' "$published/$device/backup.cfg")" = "$before"
+    printf '%s\n' 'F02_SFTP_LIVE_LISTENER_IMMUTABLE_HANDOFF_OK (SYNTHETIC_ONLY)'
+fi
 runuser -u f02read -- test -r "$published/$device/backup.cfg"
 runuser -u f02read -- test ! -w "$published/$device/backup.cfg"
 runuser -u f02read -- test ! -w "$published/$device"
