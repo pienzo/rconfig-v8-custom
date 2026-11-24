@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #190 WhatsApp/F04 accepted 5/5 CI; #191 scanner load and release gate inventory candidate. Operational gates OFF; no release approved. Next operator gate #75 remains read-only and separately scoped.
+**Current gate:** #192 scanner load accepted 5/5; #75 operator staging attestation pending. No OS access or release approval. All operational gates remain OFF.
 
+
+## 2026-11-25 — Scanner load accepted; staging attestation next
+
+- #192 merged at `c3009772bd6f91017812f43144f78364bb016bed`, head `ec8c88fd`, 5/5 CI [45488371852](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45488371852), job 138779742899: 1819 PHP tests/8475 assertions/8 skips. Actual metadata benchmark: 33 devices, 26,384 files, 66 scans, 52,768 entries, elapsed 133.01 ms, p95 1.39 ms, max 27.15 ms, incremental PHP peak allocation 978,496 bytes. Exact results and both limit refusals passed. #191 closed. Not digest, RSS, cold-cache, worker or target-storage throughput evidence.
+- Next: explicitly confirm synthetic staging scope; operator read-only metadata inventory and reviewed bootstrap preflight per #75 and [OPERATIONS.md](OPERATIONS.md). No build, sync, migration or app launch performed. Actual operator state unknown since STEP82. License discrepancy, dependency triage and provider approval remain open.
 
 ## 2026-11-24 — Three-channel integration accepted; scanner load candidate
 
