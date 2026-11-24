@@ -12,6 +12,7 @@ final class ExternalBackupNotificationReconciler
     private const CHANNEL_FLAGS = [
         'email' => 'rconfig-backup-email.enabled',
         'telegram' => 'rconfig-telegram.enabled',
+        'whatsapp' => 'rconfig-whatsapp.enabled',
     ];
 
     public function cutoff(string $channel): ?string
@@ -36,7 +37,11 @@ final class ExternalBackupNotificationReconciler
             return null;
         }
 
-        return $date && $date->format('Y-m-d H:i:s') === $raw ? $raw : null;
+        if (! $date || $date->format('Y-m-d H:i:s') !== $raw) {
+            return null;
+        }
+
+        return $channel === 'whatsapp' ? app(WhatsAppNotificationActivation::class)->cutoff($raw) : $raw;
     }
 
     private function candidates(string $channel, string $cutoff): Builder

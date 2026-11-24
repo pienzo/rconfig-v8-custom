@@ -14,7 +14,7 @@ final class ExternalBackupNotificationLedger
 {
     public function reconcile(int $runId, string $channel, string $destinationKey, bool $singleDestination = false): ?int
     {
-        if ($runId < 1 || ! in_array($channel, BackupMessageTemplateRenderer::CHANNELS, true)
+        if ($runId < 1 || ! in_array($channel, [...BackupMessageTemplateRenderer::CHANNELS, 'whatsapp'], true)
             || preg_match('/\A[a-z0-9_-]{1,64}\z/', $destinationKey) !== 1) {
             throw new InvalidArgumentException('Invalid notification delivery identity.');
         }

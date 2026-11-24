@@ -70,6 +70,6 @@ test('verified success creates one pending intent without copying receipt eviden
 });
 
 test('unsupported channels and recipient addresses are rejected', function () {
-    expect(fn () => $this->ledger->reconcile($this->run->id, 'whatsapp', 'primary'))->toThrow(InvalidArgumentException::class);
+    expect(fn () => $this->ledger->reconcile($this->run->id, 'sms', 'primary'))->toThrow(InvalidArgumentException::class);
     expect(fn () => $this->ledger->reconcile($this->run->id, 'email', 'demo@example.test'))->toThrow(InvalidArgumentException::class);
 });

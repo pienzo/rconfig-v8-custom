@@ -36,13 +36,8 @@ final class NativeBackupNotificationDispatcher
         }
 
         $event = (string) $outcome->event_type;
-        $stored = CustomBackupNotificationTemplate::query()
-            ->where('channel', $channel)->where('event_type', $event)->first();
-        $template = $stored === null
-            ? $this->renderer->defaults($channel, $event)
-            : ['title' => (string) $stored->title, 'body' => (string) $stored->body];
         $instant = (string) $outcome->occurred_at_utc . ' UTC';
-        $message = $this->renderer->render($channel, $template['title'], $template['body'], [
+        $values = [
             'device.name' => (string) $outcome->device_name,
             'backup.status' => $event === 'backup.success' ? 'SUCCESS' : 'FAILED',
             'backup.source' => 'native-config',
@@ -52,22 +47,35 @@ final class NativeBackupNotificationDispatcher
             'backup.error' => $event === 'backup.failed' ? 'Native config download failed' : null,
             'event.id' => 'native-config:' . $outcomeId,
             'event.timestamp' => $instant,
-        ]);
+        ];
 
-        if ($channel === 'email') {
-            $prepared = $this->email->prepare($message['title'], $message['body']);
+        if ($channel === 'whatsapp') {
+            $parameters = app(WhatsAppBackupTemplateParameters::class)->render($event, $values);
+            $prepared = app(WhatsAppCloudTemplateTransport::class)->prepareAutomatic($event, $parameters);
             $destination = $prepared['destination'];
             $send = $prepared['send'];
         } else {
-            $text = $message['formatted_text'];
-            $destination = $this->telegram->automaticDestinationKey($text);
-            $send = function () use ($text, $destination): void {
-                if (! hash_equals($destination, $this->telegram->automaticDestinationKey($text))) {
-                    throw new LogicException('Telegram destination changed.');
-                }
+            $stored = CustomBackupNotificationTemplate::query()
+                ->where('channel', $channel)->where('event_type', $event)->first();
+            $template = $stored === null
+                ? $this->renderer->defaults($channel, $event)
+                : ['title' => (string) $stored->title, 'body' => (string) $stored->body];
+            $message = $this->renderer->render($channel, $template['title'], $template['body'], $values);
+            if ($channel === 'email') {
+                $prepared = $this->email->prepare($message['title'], $message['body']);
+                $destination = $prepared['destination'];
+                $send = $prepared['send'];
+            } else {
+                $text = $message['formatted_text'];
+                $destination = $this->telegram->automaticDestinationKey($text);
+                $send = function () use ($text, $destination): void {
+                    if (! hash_equals($destination, $this->telegram->automaticDestinationKey($text))) {
+                        throw new LogicException('Telegram destination changed.');
+                    }
 
-                $this->telegram->send($text);
-            };
+                    $this->telegram->send($text);
+                };
+            }
         }
 
         $deliveryId = $this->intent($outcomeId, $event, $channel, $destination);
