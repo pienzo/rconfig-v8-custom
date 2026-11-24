@@ -4,6 +4,10 @@
 **Purpose:** durable handoff between ChatGPT conversations. **Operational checkpoint:** [PROGRESS.md](PROGRESS.md). **Source audit:** [UPSTREAM_AUDIT.md](UPSTREAM_AUDIT.md). **Original requirements:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 in the ChatGPT project (not committed).
 **Evidence rule:** GitHub commits, PRs, issue records, and CI are authoritative for repository changes; only approved staging results can establish deployment or end-to-end behavior. Never infer completed work merely from a plan.
 
+## 2026-11-24 update — synthetic integrated notification channels accepted; operator gate remains open
+
+Latest accepted code: `7a6d83bb8fcf3456811ba76113351fe50599f3b7` after #190, CI 45453736175 (5/5); #188 corrected CI 45450631852; #186 CI 45446137539; #184 CI 45443700293. Actual mixed SFTP/Horizon terminal outcomes feed local TLS SMTP and simulated Telegram/WhatsApp HTTP with real reconciler, Redis and worker, persisted templates/approved mapping, no replay. All operational gates remain OFF. Historical sections below are point-in-time records, not the current CI state. See [TEST_PLAN.md](TEST_PLAN.md) for consolidated G1–G6 and [PROGRESS.md](PROGRESS.md) for latest candidate. #191 load probe pending CI. No operator changes to the staging VM since the last reported STEP82; #75 read-only attestation is the next operator gate, not bootstrap approval. No release or provider activation.
+
 ## 2026-11-23 update — F02 real verifier → worker → receipt integration accepted; release NOT ready
 
 **GitHub verified:** `custom` at `42c4b0af0e532ed3c3fd691ef95401e2951ca0b9`, `main` still upstream-clean `121cff1b243794af260f6c5850553b5f1b0af881`. [PR #110](https://github.com/pienzo/rconfig-v8-custom/pull/110) merged at `a1ae3fbbc793c74159e31e6a9a23905eae51f83a` after [5/5 CI](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45273095564). It wires a two-observation file candidate through the native digest adapter to the transactional unique receipt and F02 SUCCESS service **behind the explicitly disabled receipt-acceptance switch**. No native backup download job was changed.
