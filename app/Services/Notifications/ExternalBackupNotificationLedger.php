@@ -21,16 +21,11 @@ final class ExternalBackupNotificationLedger
 
         return DB::transaction(function () use ($runId, $channel, $destinationKey, $singleDestination): ?int {
             $run = ExternalBackupCheckRun::query()->whereKey($runId)->lockForUpdate()->firstOrFail();
-            $receipt = $run->receipt()->first();
-
-            if ($run->status === 'success' && $run->reason === 'verified_file_receipt'
-                && $receipt !== null && (int) $receipt->device_id === (int) $run->device_id) {
-                $event = 'backup.success';
-            } elseif ($run->status === 'failed' && $receipt === null) {
-                $event = 'backup.failed';
-            } else {
+            if (! ExternalBackupTerminalOutcome::query()->where('runs.id', $runId)->exists()) {
                 return null;
             }
+
+            $event = $run->status === 'success' ? 'backup.success' : 'backup.failed';
 
             $identity = [
                 'source_type' => 'external-file',

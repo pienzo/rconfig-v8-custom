@@ -44,7 +44,11 @@ test('pending and success without receipt cannot create delivery intents', funct
 });
 
 test('terminal failure is reconciled once per channel and destination', function () {
-    $this->run->update(['status' => 'failed', 'reason' => 'deadline_elapsed']);
+    $this->run->update([
+        'status' => 'failed', 'reason' => 'deadline_elapsed',
+        'first_observed_at_utc' => '2026-11-23 20:00:30',
+        'last_observed_at_utc' => '2026-11-23 20:02:00',
+    ]);
     $id = $this->ledger->reconcile($this->run->id, 'email', 'primary');
     expect($id)->not->toBeNull();
     expect($this->ledger->reconcile($this->run->id, 'email', 'primary'))->toBe($id);
@@ -55,7 +59,11 @@ test('terminal failure is reconciled once per channel and destination', function
 });
 
 test('verified success creates one pending intent without copying receipt evidence', function () {
-    $this->run->update(['status' => 'success', 'reason' => 'verified_file_receipt']);
+    $this->run->update([
+        'status' => 'success', 'reason' => 'verified_file_receipt', 'matched_filename' => 'demo.cfg',
+        'first_observed_at_utc' => '2026-11-23 20:00:30',
+        'last_observed_at_utc' => '2026-11-23 20:01:00',
+    ]);
     ExternalBackupFileReceipt::create([
         'check_run_id' => $this->run->id,
         'device_id' => $this->run->device_id,

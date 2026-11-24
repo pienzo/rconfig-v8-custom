@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #134 Docker real bootstrap + HTTP auth passed 6/6; #136 upstream publication guard passed 5/5. #137 F02 selected scheduler event through actual Horizon/Redis/native receipt candidate. All deployment and notification gates OFF; trusted upload handoff, Apache/browser staging, actual providers, retention/recovery and upstream/release approval remain open. `main` and VM unchanged.
+**Current gate:** #138 real selected F02 scheduler event/Horizon/native receipt passed 5/5; #140 UI interaction tests and Docker regression passed 7/7. #141 terminal outcome notification consistency candidate. All deployment and notification gates OFF; trusted upload handoff, real browser/Apache staging, provider tests, retention/recovery and upstream/release approval remain open. `main` and VM unchanged.
 
+
+## 2026-11-24 — Horizon receipt and UI regressions accepted
+
+- #138 corrected head `5d95def1` merged at `11810ff1b531adcc849e61998fed89dea876671a`, 5/5; 1,813 PHP tests, 8,412 assertions, 8 skipped; separate native test 3/11 and `F02 REAL_SCHEDULE_EVENT_HORIZON_NATIVE_RECEIPT_OK (SYNTHETIC_ONLY)` verified. #140 merged at `6282126ec762cbdb5e871f85aa2f227c6e363508`, 7/7; 384 frontend tests in 56 files, repeated Docker offline and authenticated HTTP smoke passed. Independent diffs; no browser E2E or real external uploader established.
+- #141 candidate shares terminal consistency query across reconciliation, message metadata and ledger, refuses premature/contradictory failure and mismatched or missing success receipt. Synthetic regression tests only; no activation. Combined CI pending.
 
 ## 2026-11-24 — Docker HTTP and release guard accepted
 

@@ -3,9 +3,11 @@
 use App\Jobs\ExternalBackupNotificationJob;
 use App\Models\Device;
 use App\Models\ExternalBackupCheckRun;
+use App\Models\ExternalBackupFileReceipt;
 use App\Models\ExternalBackupRule;
 use App\Models\Task;
 use App\Services\Notifications\ExternalBackupNotificationLedger;
+use App\Services\Notifications\ExternalBackupNotificationMessage;
 use App\Services\Notifications\ExternalBackupNotificationReconciler;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -34,6 +36,7 @@ beforeEach(function () {
         'device_id' => $device->id,
         'scheduled_at_utc' => '2026-01-01 00:00:00',
         'deadline_at_utc' => '2026-01-01 00:02:00',
+        'first_observed_at_utc' => '2026-01-01 00:00:30',
         'last_observed_at_utc' => '2026-01-01 00:02:00',
         'status' => 'failed',
         'reason' => 'deadline_elapsed',
@@ -78,4 +81,66 @@ test('pending intent is recoverable but claimed or uncertain delivery never requ
         DB::table('custom_backup_notification_deliveries')->where('id', $id)->update(['status' => $status]);
         expect($this->reconciler->eligible($this->run->id, 'telegram'))->toBeFalse();
     }
+});
+
+test('inconsistent terminal failures cannot be scheduled rendered or reconciled', function () {
+    $valid = [
+        'status' => 'failed', 'reason' => 'deadline_elapsed',
+        'first_observed_at_utc' => '2026-01-01 00:00:30',
+        'last_observed_at_utc' => '2026-01-01 00:02:00',
+    ];
+    $ledger = app(ExternalBackupNotificationLedger::class);
+    $messages = app(ExternalBackupNotificationMessage::class);
+    foreach ([
+        ['reason' => 'unknown'],
+        ['last_observed_at_utc' => '2026-01-01 00:01:00'],
+        ['first_observed_at_utc' => null],
+        ['first_observed_at_utc' => '2025-12-31 23:59:59'],
+        ['first_observed_at_utc' => '2026-01-01 00:03:00'],
+    ] as $invalid) {
+        $this->run->update(array_replace($valid, $invalid));
+        expect($this->reconciler->eligible($this->run->id, 'telegram'))->toBeFalse();
+        expect($ledger->reconcile($this->run->id, 'telegram', 'primary'))->toBeNull();
+        expect(fn () => $messages->metadata($this->run))->toThrow(DomainException::class);
+    }
+    $this->reconciler->enqueue();
+    Queue::assertNothingPushed();
+    expect(DB::table('custom_backup_notification_deliveries')->count())->toBe(0);
+});
+
+test('success needs ordered observations a filename and a receipt at the recorded terminal instant', function () {
+    $valid = [
+        'status' => 'success', 'reason' => 'verified_file_receipt', 'matched_filename' => 'demo.cfg',
+        'first_observed_at_utc' => '2026-01-01 00:00:30',
+        'last_observed_at_utc' => '2026-01-01 00:01:00',
+    ];
+    $this->run->update($valid);
+    $receipt = ExternalBackupFileReceipt::create([
+        'check_run_id' => $this->run->id,
+        'device_id' => $this->run->device_id,
+        'verified_file_token' => str_repeat('e', 64),
+        'accepted_at_utc' => '2026-01-01 00:01:00',
+    ]);
+    $ledger = app(ExternalBackupNotificationLedger::class);
+    $messages = app(ExternalBackupNotificationMessage::class);
+    foreach ([
+        ['first_observed_at_utc' => '2026-01-01 00:01:00'],
+        ['last_observed_at_utc' => '2026-01-01 00:02:00'],
+        ['matched_filename' => null],
+        ['status' => 'failed', 'reason' => 'deadline_elapsed', 'last_observed_at_utc' => '2026-01-01 00:02:00'],
+    ] as $invalid) {
+        $this->run->update(array_replace($valid, $invalid));
+        expect($this->reconciler->eligible($this->run->id, 'telegram'))->toBeFalse();
+        expect($ledger->reconcile($this->run->id, 'telegram', 'primary'))->toBeNull();
+        expect(fn () => $messages->metadata($this->run))->toThrow(DomainException::class);
+    }
+    $this->run->update($valid);
+    $receipt->update(['accepted_at_utc' => '2026-01-01 00:01:01']);
+    expect($this->reconciler->eligible($this->run->id, 'telegram'))->toBeFalse();
+    expect($ledger->reconcile($this->run->id, 'telegram', 'primary'))->toBeNull();
+    expect(fn () => $messages->metadata($this->run))->toThrow(DomainException::class);
+    $receipt->update(['accepted_at_utc' => '2026-01-01 00:01:00']);
+    expect($this->reconciler->eligible($this->run->id, 'telegram'))->toBeTrue();
+    expect($messages->metadata($this->run)['event'])->toBe('backup.success');
+    expect($ledger->reconcile($this->run->id, 'telegram', 'primary'))->not->toBeNull();
 });

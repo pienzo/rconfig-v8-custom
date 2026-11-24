@@ -46,25 +46,8 @@ final class ExternalBackupNotificationReconciler
 
     private function candidates(string $channel, string $cutoff): Builder
     {
-        return DB::table('external_backup_check_runs as runs')
+        return ExternalBackupTerminalOutcome::query()
             ->where('runs.scheduled_at_utc', '>=', $cutoff)
-            ->where(function (Builder $query): void {
-                $query->where(function (Builder $success): void {
-                    $success->where('runs.status', 'success')
-                        ->where('runs.reason', 'verified_file_receipt')
-                        ->whereExists(function (Builder $receipt): void {
-                            $receipt->selectRaw('1')->from('external_backup_file_receipts as receipts')
-                                ->whereColumn('receipts.check_run_id', 'runs.id')
-                                ->whereColumn('receipts.device_id', 'runs.device_id');
-                        });
-                })->orWhere(function (Builder $failed): void {
-                    $failed->where('runs.status', 'failed')
-                        ->whereNotExists(function (Builder $receipt): void {
-                            $receipt->selectRaw('1')->from('external_backup_file_receipts as receipts')
-                                ->whereColumn('receipts.check_run_id', 'runs.id');
-                        });
-                });
-            })
             ->whereNotNull('runs.last_observed_at_utc')
             ->where('runs.last_observed_at_utc', '<=', CarbonImmutable::now('UTC')->format('Y-m-d H:i:s'))
             ->whereNotExists(function (Builder $query) use ($channel): void {
