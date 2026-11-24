@@ -7,10 +7,10 @@ test "$RUNNER_ENVIRONMENT" = github-hosted
 mode="${1:---apache-only}"
 test "$#" -le 1
 case "$mode" in
-    --apache-only|--combined) ;;
+    --apache-only|--combined|--recreate) ;;
     *) exit 2 ;;
 esac
-if [[ "$mode" == --combined ]]; then
+if [[ "$mode" != --apache-only ]]; then
     source tests/staging/integration/docker-combined-roles.sh
 fi
 project="rconfig-apache-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
@@ -30,7 +30,7 @@ compose() {
 
 cleanup() {
     local status=$?
-    if [[ "$mode" == --combined ]]; then
+    if [[ "$mode" != --apache-only ]]; then
         if (( status != 0 )); then combined_roles_diagnostics || true; fi
         combined_roles_cleanup
     fi
@@ -108,6 +108,7 @@ grep -Fxq "STAGING_STRICT_DOCKER_BOOTSTRAP_OK (SYNTHETIC_ONLY)" "$RUNNER_TEMP/$p
 rm -f "$RUNNER_TEMP/$project-bootstrap.log"
 
 # Start Apache first, without bootstrap secret or host port.
+start_apache() {
 docker run -d --name "$app" --network "$network" \
     "${common[@]}" \
     --tmpfs /run/apache2:rw,nosuid,nodev,mode=0755 \
@@ -119,16 +120,20 @@ if ! test "$(docker inspect --format '{{.State.Running}}' "$app")" = true; then
     docker logs "$app" 2>&1 | grep -E '^staging role refused:|^AH[0-9]+:' | tail -n 10 || true
     exit 1
 fi
+}
+start_apache
 # In combined mode, require live native Horizon workers and a genuine
 # scheduled heartbeat before testing HTTP with all three services running.
-if [[ "$mode" == --combined ]]; then
+if [[ "$mode" != --apache-only ]]; then
     combined_roles_start_and_verify
 fi
 # The separate unprivileged client shares the app's network namespace,
 # reads the bootstrap-only secret locally and never mounts it into Apache.
+verify_apache_http() {
+    local persistence="${1:-none}"
 docker run --rm -i --name "$probe" --network "container:$app" \
     "${common[@]}" "${admin[@]}" "${identity[@]}" \
-    --env RCONFIG_ROLE_PROBE_PHASE=http \
+    --env RCONFIG_ROLE_PROBE_PHASE=http --env "RCONFIG_ROLE_PERSISTENCE=$persistence" \
     --entrypoint php "$image" < tests/staging/integration/docker-apache.php | tee "$RUNNER_TEMP/$project-http.log"
 grep -Fxq "STAGING_APACHE_AUTHENTICATED_HTTP_OK (SYNTHETIC_ONLY)" "$RUNNER_TEMP/$project-http.log"
 rm -f "$RUNNER_TEMP/$project-http.log"
@@ -137,8 +142,36 @@ test "$(docker inspect --format '{{.State.Running}}' "$app")" = true
 # so pipefail cannot mistake a successful early match for SIGPIPE.
 docker top "$app" -eo pid,comm | awk '$1 ~ /^[0-9]+$/ && $2 == "apache2" { found = 1 } END { exit !found }'
 printf '%s\n' 'STAGING_ACTUAL_APACHE_ROLE_OK (SYNTHETIC_ONLY)'
-if [[ "$mode" == --combined ]]; then
+}
+if [[ "$mode" == --recreate ]]; then verify_apache_http seed; else verify_apache_http; fi
+if [[ "$mode" != --apache-only ]]; then
     combined_roles_verify_layout
     combined_roles_verify_processes
     printf '%s\n' 'STAGING_ACTUAL_THREE_ROLES_OK (SYNTHETIC_ONLY)'
+fi
+
+if [[ "$mode" == --recreate ]]; then
+    # Stop only exact hosted test containers. Keep both infra IDs and all mounts.
+    declare -A original_ids
+    for role in app horizon scheduler; do
+        original_ids[$role]="$(docker inspect --format '{{.Id}}' "$project-$role")"
+    done
+    db_id="$(compose ps -q db)"
+    redis_id="$(compose ps -q redis)"
+    test -n "$db_id" && test -n "$redis_id"
+    docker stop -t 15 "$project-scheduler" "$project-horizon" "$app" >/dev/null
+    docker rm "$project-scheduler" "$project-horizon" "$app" >/dev/null
+    # The observer waits for the old Redis Horizon leases to expire naturally.
+    combined_roles_observe stopped
+    start_apache
+    combined_roles_start_and_verify recreate
+    for role in app horizon scheduler; do
+        test "$(docker inspect --format '{{.Id}}' "$project-$role")" != "${original_ids[$role]}"
+    done
+    test "$(compose ps -q db)" = "$db_id"
+    test "$(compose ps -q redis)" = "$redis_id"
+    verify_apache_http verify
+    combined_roles_verify_layout
+    combined_roles_verify_processes
+    printf '%s\n' 'STAGING_ROLE_RECREATION_PERSISTENCE_OK (SYNTHETIC_ONLY)'
 fi

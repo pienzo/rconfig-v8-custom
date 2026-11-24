@@ -14,6 +14,7 @@ use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ConnectException;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Env;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 function apacheCheck(bool $ok, string $label): void
@@ -26,6 +27,8 @@ function apacheCheck(bool $ok, string $label): void
 
 $root = '/var/www/html/rconfig';
 $phase = getenv('RCONFIG_ROLE_PROBE_PHASE');
+$persistence = getenv('RCONFIG_ROLE_PERSISTENCE') ?: 'none';
+apacheCheck(in_array($persistence, ['none', 'seed', 'verify'], true), 'persistence mode');
 apacheCheck(getenv('GITHUB_ACTIONS') === 'true' && getenv('IS_DOCKER') === 'true'
     && in_array($phase, ['bootstrap', 'http'], true)
     && posix_geteuid() === 1000 && posix_getegid() === 33
@@ -146,7 +149,8 @@ $response = $client->post('/login', [
 ]);
 apacheCheck($response->getStatusCode() === 302
     && str_ends_with($response->getHeaderLine('Location'), '/dashboard'), 'actual Apache administrator login');
-apacheCheck($client->get('/dashboard')->getStatusCode() === 200, 'actual Apache dashboard');
+$dashboard = $client->get('/dashboard');
+apacheCheck($dashboard->getStatusCode() === 200, 'actual Apache dashboard');
 
 foreach ([
     $api => 'drafts',
@@ -157,6 +161,49 @@ foreach ([
     apacheCheck($response->getStatusCode() === 200, 'authenticated API ' . $field);
     $data = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
     apacheCheck(is_array($data[$field] ?? null), 'API shape ' . $field);
+}
+if ($persistence !== 'none') {
+    $fixture = 'synthetic-role-recreation-v1';
+    $fixturePath = storage_path('.synthetic-role-recreation');
+    $draft = [
+        'event_type' => 'backup.failed',
+        'title' => 'Synthetic role recreation',
+        'body' => 'Synthetic restart {{backup.status}} for {{device.name}}.',
+    ];
+    if ($persistence === 'seed') {
+        apacheCheck(Cache::get($fixture) === null && file_exists($fixturePath) === false, 'fresh persistence fixtures');
+        apacheCheck(preg_match('/<meta name="csrf-token" content="([^"]+)"/', (string) $dashboard->getBody(), $csrf) === 1, 'authenticated CSRF');
+        $response = $client->put($api, [
+            'headers' => [...$headers, 'X-CSRF-TOKEN' => $csrf[1]],
+            'json' => $draft,
+        ]);
+        apacheCheck($response->getStatusCode() === 200, 'synthetic draft saved through API');
+        $saved = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
+        apacheCheck(($saved['saved'] ?? null) === true && ($saved['sent'] ?? null) === false
+            && ($saved['approved'] ?? null) === false, 'draft remains unsent and unapproved');
+        $value = bin2hex(random_bytes(32));
+        $handle = fopen($fixturePath, 'x');
+        apacheCheck(is_resource($handle), 'exclusive synthetic storage fixture');
+        apacheCheck(fwrite($handle, $value) === strlen($value), 'persist storage fixture');
+        fclose($handle);
+        apacheCheck(Cache::store('redis')->put($fixture, $value, 1800), 'persist Redis fixture');
+        echo "STAGING_RECREATION_FIXTURES_SEEDED_OK (SYNTHETIC_ONLY)\n";
+    } else {
+        $value = file_get_contents($fixturePath);
+        apacheCheck(is_string($value) && preg_match('/\\A[a-f0-9]{64}\\z/', $value) === 1
+            && Cache::store('redis')->get($fixture) === $value, 'matching original Redis and storage fixtures');
+        $response = $client->get($api, ['headers' => $headers]);
+        apacheCheck($response->getStatusCode() === 200, 'persistent draft API');
+        $result = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
+        $matching = array_filter($result['drafts'] ?? [], static function (array $row) use ($draft): bool {
+            return ($row['event_type'] ?? null) === $draft['event_type']
+                && ($row['title'] ?? null) === $draft['title']
+                && ($row['body'] ?? null) === $draft['body']
+                && ($row['saved'] ?? null) === true;
+        });
+        apacheCheck(count($matching) === 1, 'persisted synthetic draft');
+        echo "STAGING_RECREATION_FIXTURES_PERSISTED_OK (SYNTHETIC_ONLY)\n";
+    }
 }
 apacheCheck(DB::table('external_backup_check_runs')->count() === 0, 'no F02 runs');
 apacheCheck(DB::table('custom_backup_notification_deliveries')->count() === 0, 'no notification delivery');

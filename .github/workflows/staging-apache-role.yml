@@ -51,3 +51,17 @@ jobs:
         run: docker build --build-arg "SOURCE_REVISION=$(git rev-parse HEAD)" -t rconfig-custom-ci:apache .
       - name: Real protected bootstrap and three simultaneous roles
         run: bash tests/staging/integration/docker-apache.sh --combined
+
+  recreate-roles:
+    name: Recreate all roles and verify persistence
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Build disposable source image
+        run: docker build --build-arg "SOURCE_REVISION=$(git rev-parse HEAD)" -t rconfig-custom-ci:apache .
+      - name: Real role recreation with preserved state
+        run: bash tests/staging/integration/docker-apache.sh --recreate
