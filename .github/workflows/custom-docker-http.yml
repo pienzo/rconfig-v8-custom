@@ -14,6 +14,7 @@ on:
       - 'composer.*'
       - 'package*.json'
       - 'tests/staging/integration/docker-http.php'
+      - 'tests/staging/browser/**'
       - '.github/workflows/custom-docker-http.yml'
   workflow_dispatch:
 
@@ -34,7 +35,10 @@ jobs:
       - name: Build local image
         run: docker build --build-arg "SOURCE_REVISION=$(git rev-parse HEAD)" -t rconfig-custom-ci:http .
 
-      - name: Run disposable first-install and HTTP probe
+      - name: Build isolated test browser image
+        run: docker build -t rconfig-custom-ci:browser tests/staging/browser
+
+      - name: Run disposable first-install, HTTP and Chromium probes
         shell: bash
         run: |
           set -euo pipefail
@@ -47,11 +51,12 @@ jobs:
           redis="$suffix-redis"
           app="$suffix-app"
           storage="$suffix-storage"
+          browser="$suffix-browser"
           cleanup() {
-            docker rm -f -v "$app" "$db" "$redis" >/dev/null 2>&1 || true
+            docker rm -f -v "$browser" "$app" "$db" "$redis" >/dev/null 2>&1 || true
             docker volume rm "$storage" >/dev/null 2>&1 || true
             docker network rm "$network" >/dev/null 2>&1 || true
-            rm -f "$tmp/db.env" "$tmp/app.env"
+            rm -f "$tmp/db.env" "$tmp/app.env" "$tmp/browser.env"
             rmdir "$tmp"
           }
           trap cleanup EXIT
@@ -60,13 +65,15 @@ jobs:
           password="$(openssl rand -hex 32)"
           root_password="$(openssl rand -hex 32)"
           key="$(openssl rand -base64 32)"
+          browser_password="$(openssl rand -hex 32)"
+          printf 'RCONFIG_BROWSER_CI=disposable-v1\nRCONFIG_SYNTHETIC_BROWSER_PASSWORD=%s\n' "$browser_password" > "$tmp/browser.env"
           {
             printf 'MARIADB_ROOT_PASSWORD=%s\n' "$root_password"
             printf 'MARIADB_PASSWORD=%s\n' "$password"
             printf 'MARIADB_DATABASE=rconfig_ci_http\nMARIADB_USER=rconfig_ci_http\n'
           } > "$tmp/db.env"
           {
-            printf 'APP_KEY=base64:%s\nDB_PASSWORD=%s\n' "$key" "$password"
+            printf 'APP_KEY=base64:%s\nDB_PASSWORD=%s\nRCONFIG_SYNTHETIC_BROWSER_PASSWORD=%s\n' "$key" "$password" "$browser_password"
             cat <<'ENV'
           RCONFIG_DOCKER_HTTP_CI=disposable-v1
           APP_ENV=production
@@ -102,7 +109,7 @@ jobs:
           RCONFIG_WHATSAPP_POLICY_APPROVED=false
           ENV
           } > "$tmp/app.env"
-          unset password root_password key
+          unset password root_password key browser_password
 
           docker network create --internal "$network" >/dev/null
           docker volume create "$storage" >/dev/null
@@ -130,4 +137,18 @@ jobs:
             --tmpfs /tmp:rw,nosuid,nodev,mode=1777 \
             --tmpfs /var/www/html/rconfig/bootstrap/cache:rw,nosuid,nodev,uid=1000,gid=33,mode=0770 \
             --entrypoint php rconfig-custom-ci:http \
-            < tests/staging/integration/docker-http.php
+            < tests/staging/integration/docker-http.php &
+          app_pid=$!
+          for attempt in $(seq 1 30); do
+            if docker inspect --format '{{.State.Running}}' "$app" 2>/dev/null | grep -qx true; then
+              break
+            fi
+            kill -0 "$app_pid"
+            sleep 1
+          done
+          test "$(docker inspect --format '{{.State.Running}}' "$app")" = true
+          docker run --rm --name "$browser" --network "container:$app" \
+            --cap-drop ALL --security-opt no-new-privileges --shm-size=512m \
+            --env-file "$tmp/browser.env" rconfig-custom-ci:browser
+          docker exec --user 1000:33 "$app" touch /tmp/rconfig-browser-done
+          wait "$app_pid"

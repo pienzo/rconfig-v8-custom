@@ -95,7 +95,10 @@ final class SyntheticDockerHttpRuntimeGate implements StagingBootstrapRuntimeGat
     }
 }
 
-$password = bin2hex(random_bytes(32));
+$browserPassword = getenv('RCONFIG_SYNTHETIC_BROWSER_PASSWORD');
+$browserEnabled = $browserPassword !== false;
+dockerHttpCheck(! $browserEnabled || preg_match('/\A[a-f0-9]{64}\z/', $browserPassword) === 1, 'synthetic browser password');
+$password = $browserEnabled ? $browserPassword : bin2hex(random_bytes(32));
 $key = config('app.key');
 $storage = storage_path();
 $gate = new SyntheticDockerHttpRuntimeGate($storage, $password, $key);
@@ -112,7 +115,7 @@ dockerHttpCheck(file_get_contents($storage . '/.staging-bootstrap-complete') ===
 $server = new Process([
     PHP_BINARY, '-S', '127.0.0.1:8080',
     $root . '/vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php',
-], $root . '/public', null, null, 90);
+], $root . '/public', null, null, 240);
 $server->disableOutput();
 
 try {
@@ -163,6 +166,22 @@ try {
         dockerHttpCheck($response->getStatusCode() === 200, 'authenticated custom API ' . $field);
         $data = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
         dockerHttpCheck(is_array($data[$field] ?? null), 'custom API shape ' . $field);
+    }
+
+    if ($browserEnabled) {
+        $deadline = microtime(true) + 180;
+        while (! is_file('/tmp/rconfig-browser-done')) {
+            dockerHttpCheck($server->isRunning() && microtime(true) < $deadline, 'browser completion');
+            usleep(200000);
+        }
+        dockerHttpCheck(DB::table('custom_backup_notification_templates')
+            ->where('channel', 'email')->where('event_type', 'backup.success')
+            ->where('title', 'Browser synthetic email')->exists(), 'browser email save persisted');
+        dockerHttpCheck(DB::table('custom_backup_notification_templates')
+            ->where('channel', 'whatsapp-draft')->where('event_type', 'backup.failed')
+            ->where('title', 'Browser synthetic WhatsApp')->exists(), 'browser draft save persisted');
+        dockerHttpCheck(DB::table('external_backup_check_runs')->count() === 0, 'pattern preview created no run');
+        echo "CUSTOM_DOCKER_BROWSER_PERSISTENCE_OK (SYNTHETIC_ONLY)\n";
     }
 
     dockerHttpCheck(DB::table('custom_backup_notification_deliveries')->count() === 0, 'no notification delivery');

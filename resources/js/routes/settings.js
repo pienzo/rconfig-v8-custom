@@ -43,6 +43,12 @@ export default [
     meta: { rbacViewName: "Setting", pageTitleKey: "SettingsSecurity" },
   },
   {
+    path: "/settings/notification-templates",
+    name: "settings-notification-templates",
+    component: () => import("@/pages/Settings/Main.vue"),
+    meta: { rbacViewName: "Setting", pageTitleKey: "Settings" },
+  },
+  {
     path: "/settings/restapi",
     name: "settings-restapi",
     component: () => import("@/pages/Settings/Main.vue"),
