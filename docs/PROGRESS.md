@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #144 mandatory SMTP AUTH and local TLS passed 7/7. #145 fair notification backlog scan candidate. All deployment and notification gates OFF; real browser/Apache, trusted upload handoff, provider authorization/test, operational age/recipient policy, retention/recovery, upstream integration and release approval remain open. `main` and VM unchanged.
+**Current gate:** #146 fair bounded reconciliation passed 7/7. #147 real Chromium login and F02/F04 browser candidate, missing settings route repaired. All deployment and notification gates OFF; Apache/staging roles, trusted upload handoff, actual providers, operational age/recipient policy, retention/recovery, upstream integration and release approval remain open. `main` and VM unchanged.
 
+
+## 2026-11-24 — Notification fairness accepted; browser candidate
+
+- #146 merged at `de787d397305b424931f254fee6c62f4a898a44a`, 7/7; 1,819 PHP tests, 8,475 assertions, 8 skipped; real F02 Horizon, F03 claim/crash and local TLS AUTH markers confirmed. Independent source/channel bounded batch rotation validated.
+- #147 candidate: restore the missing Vue route for the notification settings panel and run real Chromium in a test-only Playwright image on the disposable HTTP app network namespace, no published port or provider traffic. Actual Vue login, sidebar/reload, email and WhatsApp local persistence, F02 pattern preview. Existing HTTP probe remains; browser completion and DB assertions required. No Apache, actual providers or live file receipt asserted. CI pending.
 
 ## 2026-11-24 — SMTP authentication and TLS accepted
 
