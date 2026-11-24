@@ -47,8 +47,12 @@ def scenario(folder, mode, cert, key, trust):
     port = listener.getsockname()[1]
     observed = {"auth": 0, "mail": 0, "data": 0, "tls": False}
     errors = []
+    rejected_certificate = mode in {"untrusted", "wrong-name"}
+    commands = 0
 
     def serve():
+        nonlocal commands
+        phase = "accept"
         try:
             with listener:
                 conn, _ = listener.accept()
@@ -57,12 +61,9 @@ def scenario(folder, mode, cert, key, trust):
                     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
                     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
                     ctx.load_cert_chain(cert, key)
-                    try:
-                        tls = ctx.wrap_socket(conn, server_side=True)
-                    except ssl.SSLError:
-                        if mode in {"untrusted", "wrong-name"}:
-                            return
-                        raise
+                    phase = "handshake"
+                    tls = ctx.wrap_socket(conn, server_side=True)
+                    phase = "smtp"
                     with tls, tls.makefile("rwb") as stream:
                         observed["tls"] = True
 
@@ -75,6 +76,8 @@ def scenario(folder, mode, cert, key, trust):
                             line = stream.readline(65536)
                             if not line:
                                 break
+                            commands += 1
+                            require(not rejected_certificate, "no SMTP command after invalid certificate")
                             command = line.rstrip(b"\r\n")
                             if command.startswith(b"EHLO "):
                                 if mode == "helo":
@@ -118,7 +121,20 @@ def scenario(folder, mode, cert, key, trust):
                             else:
                                 raise RuntimeError("Unexpected SMTP command")
         except Exception as exc:
-            errors.append(type(exc).__name__)
+            # A peer rejecting the certificate can send a TLS alert or close
+            # the socket (including a reset during the first server greeting).
+            # Never accept a timeout, fixture/setup failure or any SMTP command
+            # in the certificate-negative cases.
+            expected_alert = isinstance(exc, ssl.SSLError) and exc.reason in {
+                "TLSV1_ALERT_UNKNOWN_CA", "SSLV3_ALERT_BAD_CERTIFICATE",
+                "SSLV3_ALERT_CERTIFICATE_UNKNOWN", "TLSV1_ALERT_CERTIFICATE_UNKNOWN",
+                "UNEXPECTED_EOF_WHILE_READING",
+            }
+            peer_closed = isinstance(exc, (ConnectionResetError, BrokenPipeError, ssl.SSLEOFError))
+            if rejected_certificate and phase in {"handshake", "smtp"} and commands == 0 and (expected_alert or peer_closed):
+                return
+            # Class and stage only; never print SMTP data or credentials.
+            errors.append(f"{phase}:{type(exc).__name__}")
 
     worker = threading.Thread(target=serve, daemon=True)
     worker.start()
@@ -127,7 +143,8 @@ def scenario(folder, mode, cert, key, trust):
         cwd=ROOT, capture_output=True, text=True, timeout=25,
     )
     worker.join(timeout=16)
-    require(not worker.is_alive() and not errors, mode + " fixture completion")
+    require(not worker.is_alive(), mode + " fixture thread completion")
+    require(not errors, mode + " fixture completion: " + ", ".join(errors))
     require(result.returncode == 0, mode + " PHP probe exit")
     expected = "ACCEPTED" if mode == "valid" else "UNCERTAIN"
     require(result.stdout.strip() == expected, mode + " sanitized outcome")
@@ -140,7 +157,7 @@ def scenario(folder, mode, cert, key, trust):
         elif mode == "bad-auth":
             require(observed["tls"] and observed["auth"] == 1, mode + " authentication rejected")
         else:
-            require(observed["auth"] == 0, mode + " no credentials on failed TLS")
+            require(commands == 0 and observed["auth"] == 0, mode + " no commands or credentials on failed TLS")
     print("F03 SMTP TLS " + mode + " OK")
 
 
