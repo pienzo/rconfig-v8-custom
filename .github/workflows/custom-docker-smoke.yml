@@ -1,0 +1,64 @@
+name: Custom Docker source build and isolated smoke
+
+on:
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'docker/**'
+      - 'app/**'
+      - 'config/**'
+      - 'database/migrations/**'
+      - 'resources/**'
+      - 'routes/**'
+      - 'public/**'
+      - 'storage/app/rconfig/templates/**'
+      - 'tools/f02/linux/f02_safe_digest.c'
+      - 'composer.json'
+      - 'composer.lock'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.*'
+      - 'tests/staging/integration/image-smoke.php'
+      - '.github/workflows/custom-docker-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: custom-docker-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-image:
+    name: Source-built Docker image and offline unprivileged runtime smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout tested source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Build local image only (no publish)
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision="$(git rev-parse HEAD)"
+          docker build --build-arg "SOURCE_REVISION=$revision" --tag rconfig-custom-ci:smoke .
+          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' rconfig-custom-ci:smoke)" = "$revision"
+          test "$(docker image inspect --format '{{json .Config.Entrypoint}}' rconfig-custom-ci:smoke)" = '["/usr/local/bin/entrypoint.sh"]'
+          test "$(docker image inspect --format '{{json .Config.Cmd}}' rconfig-custom-ci:smoke)" = '["supervisord","-c","/etc/supervisor/supervisord.conf"]'
+
+      - name: Smoke production dependencies, assets, defaults and native helper without starting services
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -i \
+            --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --user 1000:33 \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,mode=1777 \
+            --entrypoint php rconfig-custom-ci:smoke \
+            < tests/staging/integration/image-smoke.php
