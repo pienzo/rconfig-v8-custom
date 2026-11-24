@@ -124,6 +124,9 @@ test('automatic WhatsApp preflight requires policy approval and captures the val
 
     config()->set('rconfig-whatsapp.recipient', '393339876543');
     expect($transport->prepareAutomatic('backup.failed', ['Demo'])['destination'])->not->toBe($prepared['destination']);
+    expect(fn () => $prepared['send']())->toThrow(RuntimeException::class);
+    Http::assertNothingSent();
+    config()->set('rconfig-whatsapp.recipient', '393331234567');
     $prepared['send']();
     Http::assertSentCount(1);
     Http::assertSent(fn ($request) => $request['to'] === '393331234567' && $request['type'] === 'template');

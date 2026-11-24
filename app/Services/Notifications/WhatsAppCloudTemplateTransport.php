@@ -48,8 +48,10 @@ final class WhatsAppCloudTemplateTransport
         return [
             'destination' => hash_hmac('sha256', 'whatsapp:' . $prepared['recipient'], $key),
             'send' => static function () use ($prepared): void {
-                if (config('rconfig-whatsapp.policy_approved', false) !== true
-                    || config('rconfig-whatsapp.enabled', false) !== true) {
+                if (config('custom-backup-notifications.enabled', false) !== true
+                    || config('rconfig-whatsapp.policy_approved', false) !== true
+                    || config('rconfig-whatsapp.enabled', false) !== true
+                    || config('rconfig-whatsapp.recipient') !== $prepared['recipient']) {
                     throw new RuntimeException('Automatic WhatsApp delivery is not approved.');
                 }
 
@@ -136,12 +138,12 @@ final class WhatsAppCloudTemplateTransport
                     // Do not echo headers or provider details to logs or the caller.
                     throw new RuntimeException('WhatsApp Cloud API connection failed.');
                 }
-        
+
                 if ($response->status() !== 200 || ! is_string($response->json('messages.0.id'))
                     || $response->json('messages.0.id') === '') {
                     throw new RuntimeException('WhatsApp provider rejected the template submission.');
                 }
-        
+
                 // The ID is private delivery correlation metadata, not an actual
                 // read/delivery receipt; do not return it in HTTP responses or logs.
                 return $response->json('messages.0.id');
