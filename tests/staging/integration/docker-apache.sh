@@ -4,6 +4,15 @@ set -euo pipefail
 test "$GITHUB_ACTIONS" = true
 test "$RUNNER_ENVIRONMENT" = github-hosted
 [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+mode="${1:---apache-only}"
+test "$#" -le 1
+case "$mode" in
+    --apache-only|--combined) ;;
+    *) exit 2 ;;
+esac
+if [[ "$mode" == --combined ]]; then
+    source tests/staging/integration/docker-combined-roles.sh
+fi
 project="rconfig-apache-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 network="$project"_staging_internal
 volume="$project"-storage
@@ -20,6 +29,11 @@ compose() {
 }
 
 cleanup() {
+    local status=$?
+    if [[ "$mode" == --combined ]]; then
+        if (( status != 0 )); then combined_roles_diagnostics || true; fi
+        combined_roles_cleanup
+    fi
     docker rm -f -v "$probe" "$app" "$bootstrap" "$preflight" >/dev/null 2>&1 || true
     docker volume rm "$volume" >/dev/null 2>&1 || true
     compose down --volumes --remove-orphans >/dev/null 2>&1 || true
@@ -93,7 +107,7 @@ docker run --rm -i --name "$bootstrap" --network "$network" \
 grep -Fxq "STAGING_STRICT_DOCKER_BOOTSTRAP_OK (SYNTHETIC_ONLY)" "$RUNNER_TEMP/$project-bootstrap.log"
 rm -f "$RUNNER_TEMP/$project-bootstrap.log"
 
-# Only the app role; no bootstrap secret, Horizon, scheduler or host port.
+# Start Apache first, without bootstrap secret or host port.
 docker run -d --name "$app" --network "$network" \
     "${common[@]}" \
     --tmpfs /run/apache2:rw,nosuid,nodev,mode=0755 \
@@ -104,6 +118,11 @@ test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$app")" = true
 if ! test "$(docker inspect --format '{{.State.Running}}' "$app")" = true; then
     docker logs "$app" 2>&1 | grep -E '^staging role refused:|^AH[0-9]+:' | tail -n 10 || true
     exit 1
+fi
+# In combined mode, require live native Horizon workers and a genuine
+# scheduled heartbeat before testing HTTP with all three services running.
+if [[ "$mode" == --combined ]]; then
+    combined_roles_start_and_verify
 fi
 # The separate unprivileged client shares the app's network namespace,
 # reads the bootstrap-only secret locally and never mounts it into Apache.
@@ -118,3 +137,8 @@ test "$(docker inspect --format '{{.State.Running}}' "$app")" = true
 # so pipefail cannot mistake a successful early match for SIGPIPE.
 docker top "$app" -eo pid,comm | awk '$1 ~ /^[0-9]+$/ && $2 == "apache2" { found = 1 } END { exit !found }'
 printf '%s\n' 'STAGING_ACTUAL_APACHE_ROLE_OK (SYNTHETIC_ONLY)'
+if [[ "$mode" == --combined ]]; then
+    combined_roles_verify_layout
+    combined_roles_verify_processes
+    printf '%s\n' 'STAGING_ACTUAL_THREE_ROLES_OK (SYNTHETIC_ONLY)'
+fi

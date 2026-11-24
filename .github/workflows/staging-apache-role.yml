@@ -1,4 +1,4 @@
-name: Staging actual Apache role (synthetic)
+name: Staging actual roles (synthetic)
 
 on:
   pull_request:
@@ -16,6 +16,7 @@ on:
       - 'composer.*'
       - 'package*.json'
       - 'tests/staging/integration/docker-apache*'
+      - 'tests/staging/integration/docker-combined-roles*'
       - '.github/workflows/staging-apache-role.yml'
   workflow_dispatch:
 
@@ -36,3 +37,17 @@ jobs:
         run: docker build --build-arg "SOURCE_REVISION=$(git rev-parse HEAD)" -t rconfig-custom-ci:apache .
       - name: Real protected bootstrap and Apache role
         run: bash tests/staging/integration/docker-apache.sh
+
+  combined-roles:
+    name: Simultaneous Apache Horizon and Scheduler
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Build disposable source image
+        run: docker build --build-arg "SOURCE_REVISION=$(git rev-parse HEAD)" -t rconfig-custom-ci:apache .
+      - name: Real protected bootstrap and three simultaneous roles
+        run: bash tests/staging/integration/docker-apache.sh --combined
