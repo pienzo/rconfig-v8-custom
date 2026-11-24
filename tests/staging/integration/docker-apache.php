@@ -19,7 +19,7 @@ use Illuminate\Support\Env;
 function apacheCheck(bool $ok, string $label): void
 {
     if (! $ok) {
-        fwrite(STDERR, 'Staging Apache integration failed: ' . $label . PHP_EOL);
+        file_put_contents('php://stderr', 'Staging Apache integration failed: ' . $label . PHP_EOL);
         exit(1);
     }
 }
@@ -57,7 +57,7 @@ $app = require $root . '/bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 // Laravel's CLI exception renderer may otherwise exit zero outside Artisan.
 set_exception_handler(static function (Throwable $error): never {
-    fwrite(STDERR, 'Staging Apache unexpected exception: ' . get_class($error) . PHP_EOL);
+    file_put_contents('php://stderr', 'Staging Apache unexpected exception: ' . get_class($error) . PHP_EOL);
     exit(1);
 });
 apacheCheck(! $app->configurationIsCached() && $app->environmentFile() === '.env', 'protected dotenv selected');

@@ -26,6 +26,7 @@ cleanup() {
     sudo rm -f -- "$root/config/.env" "$root/secrets/mariadb_root_password" \
         "$root/secrets/mariadb_app_password" "$root/secrets/redis.conf" "$root/admin"
     sudo rmdir -- "$root/config" "$root/secrets" "$root" || true
+    rm -f -- "$RUNNER_TEMP/$project-bootstrap.log" "$RUNNER_TEMP/$project-http.log" "$RUNNER_TEMP/$project-negative.log"
 }
 trap cleanup EXIT
 
@@ -73,14 +74,17 @@ docker run --rm --name "$preflight" --network "$network" \
     --env RCONFIG_STAGING_BOOTSTRAP=core-synthetic-v1 \
     --entrypoint /usr/local/bin/staging-bootstrap-container-entrypoint.sh "$image" --check
 # A deliberately injected ambient value must fail before any migration.
-if docker run --rm -i --network "$network" \
+negative_status=0
+docker run --rm -i --network "$network" \
     "${common[@]}" "${admin[@]}" "${identity[@]}" \
     --env RCONFIG_STAGING_BOOTSTRAP=core-synthetic-v1 \
     --env RCONFIG_ROLE_PROBE_PHASE=bootstrap --env DB_HOST=db \
-    --entrypoint php "$image" < tests/staging/integration/docker-apache.php; then
-    echo 'Ambient override was not refused' >&2
-    exit 1
-fi
+    --entrypoint php "$image" < tests/staging/integration/docker-apache.php \
+    > "$RUNNER_TEMP/$project-negative.log" 2>&1 || negative_status=$?
+test "$negative_status" -eq 1
+grep -Fxq "Staging Apache integration failed: ambient override DB_HOST" "$RUNNER_TEMP/$project-negative.log"
+printf '%s\n' 'STAGING_AMBIENT_OVERRIDE_REFUSED_OK (SYNTHETIC_ONLY)'
+rm -f "$RUNNER_TEMP/$project-negative.log"
 docker run --rm -i --name "$bootstrap" --network "$network" \
     "${common[@]}" "${admin[@]}" "${identity[@]}" \
     --env RCONFIG_STAGING_BOOTSTRAP=core-synthetic-v1 \
