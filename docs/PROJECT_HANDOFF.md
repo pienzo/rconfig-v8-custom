@@ -1,8 +1,13 @@
 # rConfig V8 Custom — Cross-chat handoff and roadmap
 
-**Verified checkpoint:** 2026-11-23 (GitHub connector, read-only verification before this document).
+**Verified checkpoint:** 2026-11-25 (GitHub connector; no new OS observation).
 **Purpose:** durable handoff between ChatGPT conversations. **Operational checkpoint:** [PROGRESS.md](PROGRESS.md). **Source audit:** [UPSTREAM_AUDIT.md](UPSTREAM_AUDIT.md). **Original requirements:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 in the ChatGPT project (not committed).
 **Evidence rule:** GitHub commits, PRs, issue records, and CI are authoritative for repository changes; only approved staging results can establish deployment or end-to-end behavior. Never infer completed work merely from a plan.
+
+## 2026-11-25 update — scanner load accepted; operator staging attestation next
+
+- #192 merged at `c3009772bd6f91017812f43144f78364bb016bed`, head `ec8c88fd`, 5/5 CI [45488371852](https://github.com/pienzo/rconfig-v8-custom/actions/runs/45488371852), job 138779742899: 1819 PHP tests/8475 assertions/8 skips. Actual metadata benchmark: 33 devices, 26,384 files, 66 scans, 52,768 entries, elapsed 133.01 ms, p95 1.39 ms, max 27.15 ms, incremental PHP peak allocation 978,496 bytes. Exact results and both limit refusals passed. #191 closed. Not digest, RSS, cold-cache, worker or target-storage throughput evidence.
+The next gate is #75, not another transport fixture. See [OPERATIONS.md](OPERATIONS.md) and [TEST_PLAN.md](TEST_PLAN.md). Confirm approved synthetic-only scope before operator checks. Historical VM state is not current evidence. No OS connector, no deployment, no license/provider approval.
 
 ## 2026-11-24 update — synthetic integrated notification channels accepted; operator gate remains open
 
