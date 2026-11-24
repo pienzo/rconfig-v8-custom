@@ -86,6 +86,17 @@ if test "$live" = 1; then
     getent group f02upload > "$jail/etc/group"
     printf 'passwd: files\ngroup: files\n' > "$jail/etc/nsswitch.conf"
     chmod 0444 "$jail/etc/passwd" "$jail/etc/group" "$jail/etc/nsswitch.conf"
+    # OpenSSH sftp-server-main.c calls sanitise_stdfd(), which opens
+    # /dev/null O_RDWR even if stdin/stdout/stderr are already open.
+    # Only this harmless character device is needed in the disposable jail.
+    install -d -o root -g root -m 0755 "$jail/dev"
+    mknod -m 0666 "$jail/dev/null" c 1 3
+    test "$(stat -c '%t:%T' "$jail/dev/null")" = 1:3
+    test -c "$jail/dev/null"
+    chroot --userspec=2001:2001 --groups=2001 "$jail" /usr/lib/openssh/sftp-server -Q requests > /sandbox/jailed-requests
+    grep -Fxq open /sandbox/jailed-requests
+    grep -Fxq close /sandbox/jailed-requests
+    printf '%s\n' 'F02_SFTP_JAILED_SUBSYSTEM_PREFLIGHT_OK (SYNTHETIC_ONLY)'
     install -o root -g root -m 0444 /dev/null "$jail/session.lock"
     cat > "$jail/session-lock.sh" <<'WRAPPER'
 #!/bin/sh
@@ -106,7 +117,19 @@ fi
 /usr/sbin/sshd -t -f /sandbox/sshd.conf
 /usr/sbin/sshd -D -e -f /sandbox/sshd.conf >/sandbox/sshd.log 2>&1 &
 listener=$!
+stage=listener-start
 cleanup() {
+    status=$?
+    if test "$status" -ne 0; then
+        printf 'F02 SFTP fixture failed: stage=%s exit=%s\n' "$stage" "$status" >&2
+        # All files are synthetic. Only bounded error diagnostics, never keys,
+        # environment values, protocol traces or file contents.
+        for log in /sandbox/sshd.log /sandbox/ready-output /sandbox/session-output /sandbox/second-output; do
+            if test -f "$log"; then
+                grep -Ei 'couldn.t open /dev/null|permission denied|no such file|not found|no user found|connection closed|connection reset|connection refused|broken pipe|subsystem request failed|flock:|fatal:|error:' "$log" | tail -n 8 >&2 || true
+            fi
+        done
+    fi
     if test -n "${listener:-}"; then kill "$listener" 2>/dev/null || true; wait "$listener" 2>/dev/null || true; fi
 }
 trap cleanup EXIT
@@ -116,18 +139,21 @@ sftp_batch() {
         -o UserKnownHostsFile=/sandbox/keys/known_hosts -o GlobalKnownHostsFile=/dev/null \
         -o ConnectTimeout=3 f02upload@127.0.0.1
 }
+stage=authenticated-readiness
 ready=0
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
-    if printf 'pwd\n' | sftp_batch >/dev/null 2>&1; then ready=1; break; fi
+    if printf 'pwd\n' | sftp_batch >/sandbox/ready-output 2>&1; then ready=1; break; fi
     kill -0 "$listener"
     sleep 1
 done
 test "$ready" = 1
+stage=partial-upload
 printf '%s\n' 'SYNTHETIC-PARTIAL' > /sandbox/partial
 printf '%s\n' 'SYNTHETIC-F02-FINAL-CONTENT' > /sandbox/complete
 printf 'put /sandbox/partial /incoming/upload.part\n' | sftp_batch
 test -s /sandbox/quarantine/incoming/upload.part
 test -z "$(ls -A "$published/$device")"
+stage=first-session-rename
 # Even a matching final-looking name in quarantine is not reader-visible.
 if test "$live" = 1; then
     # Keep a real SFTP session open after the client has renamed its file.
@@ -144,12 +170,14 @@ if test "$live" = 1; then
     done
     test -s /sandbox/quarantine/incoming/backup.cfg
     kill -0 "$first"
+    stage=active-session-lock
     exec 7</sandbox/quarantine/session.lock
     status=0
     flock -n -E 73 7 || status=$?
     test "$status" = 73
     test -z "$(ls -A "$published/$device")"
     printf '%s\n' 'F02_SFTP_ACTIVE_SESSION_PUBLICATION_REFUSED_OK (SYNTHETIC_ONLY)'
+    stage=first-session-close
     printf 'bye\n' >&8
     wait "$first"
     exec 8>&-
@@ -166,6 +194,7 @@ printf '%s\n' 'F02_REAL_SFTP_QUARANTINE_OK (SYNTHETIC_ONLY)'
 if test "$live" = 1; then
     # Successful batch exit is known to the test controller, not inferred
     # merely from a rename. Acquire the same lock before reading any bytes.
+    stage=publisher-lock
     flock -w 10 7
     kill -0 "$listener"
 else
@@ -196,6 +225,7 @@ if test "$live" = 1; then
         printf 'put /sandbox/partial /incoming/backup.cfg\n' | sftp_batch
     ) >/sandbox/second-output 2>&1 &
     second=$!
+    stage=second-session-waiting
     for attempt in 1 2 3 4 5 6 7 8 9 10; do
         if pgrep -u 2001 -x flock >/dev/null; then break; fi
         kill -0 "$second"
@@ -208,11 +238,13 @@ if test "$live" = 1; then
 else
     if pgrep -u 2001 >/dev/null; then exit 1; fi
 fi
+stage=protected-publication
 python3 /usr/local/bin/f02-handoff.py
 if test "$live" = 1; then
     before="$(stat -c '%d:%i:%s:%y:%z' "$published/$device/backup.cfg")"
     flock -u 7
     exec 7<&-
+    stage=second-session-resume
     wait "$second"
     kill -0 "$listener"
     cmp -s /sandbox/partial /sandbox/quarantine/incoming/backup.cfg
@@ -220,6 +252,7 @@ if test "$live" = 1; then
     test "$(stat -c '%d:%i:%s:%y:%z' "$published/$device/backup.cfg")" = "$before"
     printf '%s\n' 'F02_SFTP_LIVE_LISTENER_IMMUTABLE_HANDOFF_OK (SYNTHETIC_ONLY)'
 fi
+stage=final-permissions
 runuser -u f02read -- test -r "$published/$device/backup.cfg"
 runuser -u f02read -- test ! -w "$published/$device/backup.cfg"
 runuser -u f02read -- test ! -w "$published/$device"

@@ -48,6 +48,7 @@ jobs:
           timeout 150 docker run --rm --init --network none --security-opt no-new-privileges \
             --env GITHUB_ACTIONS=true --env F02_SFTP_DISPOSABLE=1 --env F02_SFTP_LIVE_LOCK=1 rconfig-f02-sftp-ci \
             | tee "$RUNNER_TEMP/f02-sftp-live-lock.log"
+          grep -Fxq 'F02_SFTP_JAILED_SUBSYSTEM_PREFLIGHT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-live-lock.log"
           grep -Fxq 'F02_SFTP_ACTIVE_SESSION_PUBLICATION_REFUSED_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-live-lock.log"
           grep -Fxq 'F02_SFTP_RECONNECT_BLOCKED_DURING_PUBLISH_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-live-lock.log"
           grep -Fxq 'F02_SFTP_LIVE_LISTENER_IMMUTABLE_HANDOFF_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-live-lock.log"
