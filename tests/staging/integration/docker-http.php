@@ -23,6 +23,18 @@ function dockerHttpCheck(bool $ok, string $label): void
     }
 }
 
+$root = '/var/www/html/rconfig';
+dockerHttpCheck(getenv('RCONFIG_DOCKER_HTTP_CI') === 'disposable-v1'
+    && getenv('IS_DOCKER') === 'true'
+    && posix_geteuid() === 1000 && posix_getegid() === 33
+    && getenv('DB_HOST') === 'db' && getenv('DB_DATABASE') === 'rconfig_ci_http'
+    && getenv('DB_USERNAME') === 'rconfig_ci_http' && getenv('REDIS_HOST') === 'redis'
+    && getenv('MAIL_MAILER') === 'log' && getcwd() === $root, 'disposable container identity');
+
+require $root . '/vendor/autoload.php';
+$app = require $root . '/bootstrap/app.php';
+$app->make(Kernel::class)->bootstrap();
+
 final class SyntheticDockerHttpRuntimeGate implements StagingBootstrapRuntimeGate
 {
     public function __construct(
@@ -82,18 +94,6 @@ final class SyntheticDockerHttpRuntimeGate implements StagingBootstrapRuntimeGat
             && ! file_exists($marker) && ! is_link($marker);
     }
 }
-
-$root = '/var/www/html/rconfig';
-dockerHttpCheck(getenv('RCONFIG_DOCKER_HTTP_CI') === 'disposable-v1'
-    && getenv('IS_DOCKER') === 'true'
-    && posix_geteuid() === 1000 && posix_getegid() === 33
-    && getenv('DB_HOST') === 'db' && getenv('DB_DATABASE') === 'rconfig_ci_http'
-    && getenv('DB_USERNAME') === 'rconfig_ci_http' && getenv('REDIS_HOST') === 'redis'
-    && getenv('MAIL_MAILER') === 'log' && getcwd() === $root, 'disposable container identity');
-
-require $root . '/vendor/autoload.php';
-$app = require $root . '/bootstrap/app.php';
-$app->make(Kernel::class)->bootstrap();
 
 $password = bin2hex(random_bytes(32));
 $key = config('app.key');
