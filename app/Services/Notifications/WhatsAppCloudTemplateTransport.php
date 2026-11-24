@@ -2,6 +2,7 @@
 
 namespace App\Services\Notifications;
 
+use Closure;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
@@ -20,6 +21,50 @@ final class WhatsAppCloudTemplateTransport
      * @param  list<string>  $bodyParameters
      */
     public function sendApprovedTemplate(string $event, array $bodyParameters = []): string
+    {
+        return $this->prepareRequest($event, $bodyParameters)['send']();
+    }
+
+    /**
+     * Validate configuration and capture the exact approved request before
+     * the durable delivery claim. No external request takes place here.
+     *
+     * @param  list<string>  $bodyParameters
+     * @return array{destination: string, send: Closure(): void}
+     */
+    public function prepareAutomatic(string $event, array $bodyParameters): array
+    {
+        if (config('custom-backup-notifications.enabled', false) !== true
+            || config('rconfig-whatsapp.policy_approved', false) !== true) {
+            throw new RuntimeException('Automatic WhatsApp delivery is not approved.');
+        }
+
+        $prepared = $this->prepareRequest($event, $bodyParameters);
+        $key = config('app.key');
+        if (! is_string($key) || $key === '') {
+            throw new RuntimeException('Automatic WhatsApp destination is not configured.');
+        }
+
+        return [
+            'destination' => hash_hmac('sha256', 'whatsapp:' . $prepared['recipient'], $key),
+            'send' => static function () use ($prepared): void {
+                if (config('custom-backup-notifications.enabled', false) !== true
+                    || config('rconfig-whatsapp.policy_approved', false) !== true
+                    || config('rconfig-whatsapp.enabled', false) !== true
+                    || config('rconfig-whatsapp.recipient') !== $prepared['recipient']) {
+                    throw new RuntimeException('Automatic WhatsApp delivery is not approved.');
+                }
+
+                $prepared['send']();
+            },
+        ];
+    }
+
+    /**
+     * @param  list<string>  $bodyParameters
+     * @return array{recipient: string, send: Closure(): string}
+     */
+    private function prepareRequest(string $event, array $bodyParameters): array
     {
         if (config('rconfig-whatsapp.enabled') !== true) {
             throw new RuntimeException('WhatsApp delivery is disabled.');
@@ -54,7 +99,8 @@ final class WhatsAppCloudTemplateTransport
         $values = [];
         foreach ($bodyParameters as $parameter) {
             if (! is_string($parameter) || $parameter === ''
-                || strlen($parameter) > 512 || preg_match('//u', $parameter) !== 1) {
+                || strlen($parameter) > 512 || preg_match('//u', $parameter) !== 1
+                || preg_match('/[\x00-\x1F\x7F]/', $parameter) !== 0) {
                 throw new InvalidArgumentException('Invalid WhatsApp template parameter.');
             }
 
@@ -72,31 +118,36 @@ final class WhatsAppCloudTemplateTransport
             ]];
         }
 
-        try {
-            $response = Http::withToken($token)
-                ->asJson()
-                ->withOptions(['allow_redirects' => false])
-                ->connectTimeout(3)
-                ->timeout(10)
-                ->post('https://graph.facebook.com/' . $version . '/' . $numberId . '/messages', [
-                    'messaging_product' => 'whatsapp',
-                    'recipient_type' => 'individual',
-                    'to' => $recipient,
-                    'type' => 'template',
-                    'template' => $template,
-                ]);
-        } catch (ConnectionException) {
-            // Do not echo headers or provider details to logs or the caller.
-            throw new RuntimeException('WhatsApp Cloud API connection failed.');
-        }
+        return [
+            'recipient' => $recipient,
+            'send' => static function () use ($token, $version, $numberId, $recipient, $template): string {
+                try {
+                    $response = Http::withToken($token)
+                        ->asJson()
+                        ->withOptions(['allow_redirects' => false])
+                        ->connectTimeout(3)
+                        ->timeout(10)
+                        ->post('https://graph.facebook.com/' . $version . '/' . $numberId . '/messages', [
+                            'messaging_product' => 'whatsapp',
+                            'recipient_type' => 'individual',
+                            'to' => $recipient,
+                            'type' => 'template',
+                            'template' => $template,
+                        ]);
+                } catch (ConnectionException) {
+                    // Do not echo headers or provider details to logs or the caller.
+                    throw new RuntimeException('WhatsApp Cloud API connection failed.');
+                }
 
-        if ($response->status() !== 200 || ! is_string($response->json('messages.0.id'))
-            || $response->json('messages.0.id') === '') {
-            throw new RuntimeException('WhatsApp provider rejected the template submission.');
-        }
+                if ($response->status() !== 200 || ! is_string($response->json('messages.0.id'))
+                    || $response->json('messages.0.id') === '') {
+                    throw new RuntimeException('WhatsApp provider rejected the template submission.');
+                }
 
-        // The ID is private delivery correlation metadata, not an actual
-        // read/delivery receipt; do not return it in HTTP responses or logs.
-        return $response->json('messages.0.id');
+                // The ID is private delivery correlation metadata, not an actual
+                // read/delivery receipt; do not return it in HTTP responses or logs.
+                return $response->json('messages.0.id');
+            },
+        ];
     }
 }
