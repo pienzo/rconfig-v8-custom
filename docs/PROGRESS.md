@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #182 multi-device actual receipts accepted 6/6; #183 mixed device outcomes candidate. Operational gates OFF; `main` and VM unchanged. Operational recovery, device compatibility, staging and release remain open.
+**Current gate:** #184 mixed F02 outcomes accepted 5/5 applicable CI; #185 actual F03 email integration candidate. Operational gates OFF; `main` and VM unchanged. Operational handoff, staging and provider approval remain open.
 
+
+## 2026-11-24 — Mixed F02 outcomes accepted; F03 email candidate
+
+- #184 merged at `61bc3eec52193737ea94c094bff12fa33dd00e38`, head `e46df121`, 5/5 applicable CI (45443700293). Job 138621547955 emitted pending isolation, real elapsed deadline, terminal isolation and unchanged replay. Standalone SFTP workflow path-filtered out; single/multi/mixed SFTP actual CI passed. #183 closed.
+- #185 candidate connects those real terminal rows to actual F03 scheduler reconciliation, dedicated Redis notification queue and real one-shot worker with only synthetic email enabled in fresh guarded process. Loopback implicit TLS, ephemeral CA, mandatory AUTH, exact two messages/ledger rows, replay no new sends. F02 parent and Horizon notification flags stay OFF. No real provider, no production changes. CI pending; rollback revert test-only PR.
 
 ## 2026-11-24 — Multi-device receipts accepted; mixed outcomes candidate
 

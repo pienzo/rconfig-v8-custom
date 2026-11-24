@@ -359,6 +359,9 @@ jobs:
           grep -Fxq 'F02_MIXED_DEVICE_DEADLINE_ELAPSED_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
           grep -Fxq 'F02_MIXED_DEVICE_TERMINAL_ISOLATION_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
           grep -Fxq 'F02_MIXED_DEVICE_REPLAY_UNCHANGED_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
+          grep -Fxq 'F03_MIXED_SCHEDULE_QUEUE_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
+          grep -Fxq 'F03_MIXED_EMAIL_LEDGER_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
+          grep -Fxq 'F03_MIXED_REAL_TLS_MESSAGES_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
 
       - name: Test F03 actual implicit TLS SMTP and mandatory AUTH (hosted only)
         # Local loopback fixture, ephemeral test CA, no relay or real provider.
