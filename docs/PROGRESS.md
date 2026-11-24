@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #164 actual SFTP-to-scheduled receipt accepted 6/6; #165 live-listener session-lock candidate. All operational runtime gates OFF; `main` and VM unchanged. Trusted completion contract, concurrent devices, authorized staging and release remain open.
+**Current gate:** #166 live-listener single-device exclusion accepted 6/6; #167 concurrent-device isolation candidate. Operational runtime gates OFF; `main` and VM unchanged. Trusted completion, interrupted transfer handling, operational staging and release remain open.
 
+
+## 2026-11-24 — Live listener accepted; multi-device exclusion candidate
+
+- #166 merged at `b7bd932c2f2763b282367c083535ca9d71fd778f`, head `aa43b252`, 6/6 CI (45408642613 / 45408642844). Job 138496088450 confirmed jailed subsystem preflight, active session refusal, blocked reconnect, native descriptor and unchanged publication with listener running. Existing scheduled SFTP receipt and negative preflight passed in job 138496230876. #165 closed. Synthetic cooperative locking only.
+- #167 candidate extends the accepted test with a second distinct principal, SSH key, chroot, lock inode, device 124 and distinct bytes under same basename. While A publisher lock is held and A reconnect waits, B completes SFTP and publishes using its own lock. Require cross-key and cross-jail refusals, both native descriptor markers, distinct published inodes and B unchanged after A resumes. Original single-device tests retained. No operational changes, no multi-device receipt acceptance. CI pending; rollback revert test-only PR.
 
 ## 2026-11-24 — Actual SFTP receipt accepted; live-session exclusion candidate
 
