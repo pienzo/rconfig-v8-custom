@@ -1,20 +1,13 @@
+import os
+import tempfile
 import unittest
 
-from drift import BASELINE_SHA, BASELINE_TAG, FORK, UPSTREAM, compare, proposal, report, resolve_tag
+from drift import BASELINE_SHA, BASELINE_TAG, UPSTREAM, compare_git, git, proposal, report, resolve_tag
 
 A = BASELINE_SHA
 B = "b" * 40
 C = "c" * 40
 T = "d" * 40
-
-
-def delta(ahead, behind, base):
-    return {
-        "ahead_by": ahead, "behind_by": behind,
-        "status": "diverged" if ahead and behind else "ahead" if ahead else "behind" if behind else "identical",
-        "base_commit": {"sha": base},
-        "merge_base_commit": {"sha": base if not behind else A},
-    }
 
 
 class DriftTest(unittest.TestCase):
@@ -50,25 +43,39 @@ class DriftTest(unittest.TestCase):
             data = {
                 (UPSTREAM, "releases/latest"): {"tag_name": BASELINE_TAG, "draft": False, "prerelease": False},
                 (UPSTREAM, "git/ref/tags/" + BASELINE_TAG): {"object": {"type": "commit", "sha": A}},
-                (UPSTREAM, "branches/main"): {"commit": {"sha": A}},
-                (FORK, "branches/main"): {"commit": {"sha": A}},
-                (FORK, "branches/custom"): {"commit": {"sha": B}},
-                (UPSTREAM, f"compare/{A}...{A}?per_page=1"): delta(0, 0, A),
-                (UPSTREAM, f"compare/{A}...{B}?per_page=1"): delta(100, 0, A),
             }
             return data[repo, path]
-        result = report(read)
+        clean = {"ahead": 0, "behind": 0, "status": "identical", "merge_base": A}
+        contains = {"ahead": 100, "behind": 0, "status": "ahead", "merge_base": A}
+        result = report(read, lambda tag: (A, A, A, B, clean, contains, contains, clean))
         self.assertEqual(result["proposal"], "NO_CHANGE")
         self.assertFalse(result["automatic_apply"])
         self.assertEqual(result["custom"], B)
 
-    def test_comparison_rejects_inconsistent_response(self):
+    def test_real_git_ancestry_on_disposable_synthetic_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            git(directory, "init", "--bare", "--template=")
+            tree = git(directory, "hash-object", "-t", "tree", "-w", os.devnull)
+            def commit(parent=None):
+                args = ["-c", "user.name=CI", "-c", "user.email=ci@example.invalid",
+                        "commit-tree", tree, "-m", "synthetic " + ("child" if parent else "root")]
+                if parent:
+                    args += ["-p", parent]
+                return git(directory, *args)
+            root = commit()
+            child = commit(root)
+            self.assertEqual(compare_git(directory, root, child),
+                             {"ahead": 1, "behind": 0, "status": "ahead", "merge_base": root})
+            self.assertEqual(compare_git(directory, child, root)["behind"], 1)
+            self.assertEqual(compare_git(directory, root, root)["status"], "identical")
+
+    def test_tag_change_between_api_and_git_fails_closed(self):
+        def read(repo, path):
+            if path == "releases/latest":
+                return {"tag_name": BASELINE_TAG, "draft": False, "prerelease": False}
+            return {"object": {"type": "commit", "sha": A}}
         with self.assertRaises(ValueError):
-            compare(lambda *_: delta(0, 0, C), A, B)
-        wrong = delta(1, 0, A)
-        wrong["merge_base_commit"]["sha"] = C
-        with self.assertRaises(ValueError):
-            compare(lambda *_: wrong, A, B)
+            report(read, lambda tag: (B, A, A, B, {}, {}, {}, {}))
 
 
 if __name__ == "__main__":

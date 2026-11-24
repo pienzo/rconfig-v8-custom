@@ -1,8 +1,12 @@
 """Read-only report for the approved public fork. Never pushes, merges or deploys."""
 
 import json
+import os
 import re
+import subprocess
 import sys
+import tempfile
+import urllib.error
 import urllib.request
 
 API = "https://api.github.com/repos/"
@@ -24,6 +28,11 @@ def core_tag(value):
     return value
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ValueError("Unexpected API redirect")
+
+
 def read_json(repo, path):
     if repo not in {UPSTREAM, FORK} or not re.fullmatch(r"[A-Za-z0-9/_.?=&-]+", path):
         raise ValueError("Unexpected API target")
@@ -32,7 +41,10 @@ def read_json(repo, path):
         "User-Agent": "rconfig-custom-readonly-drift",
         "X-GitHub-Api-Version": "2022-11-28",
     })
-    with urllib.request.urlopen(request, timeout=20) as response:
+    token = os.environ.get("RCONFIG_DRIFT_READ_TOKEN")
+    if token:
+        request.add_header("Authorization", "Bearer " + token)
+    with urllib.request.build_opener(NoRedirect()).open(request, timeout=20) as response:
         if response.geturl() != request.full_url:
             raise ValueError("Unexpected API redirect")
         data = response.read(8 * 1024 * 1024 + 1)
@@ -53,20 +65,62 @@ def resolve_tag(read, tag):
     raise ValueError("Excessive tag indirection")
 
 
-def compare(read, base, head):
+def git(directory, *args):
+    env = dict(os.environ)
+    env.update({"GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_COUNT": "0"})
+    for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS",
+                "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"):
+        env.pop(key, None)
+    result = subprocess.run(
+        ["git", "-C", directory, "-c", "credential.helper=", "-c", "http.followRedirects=false", *args],
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        text=True, check=True, timeout=90,
+    )
+    return result.stdout.strip()
+
+
+def compare_git(directory, base, head):
     base, head = sha(base), sha(head)
-    data = read(UPSTREAM, "compare/" + base + "..." + head + "?per_page=1")
-    ahead, behind = data["ahead_by"], data["behind_by"]
-    if type(ahead) is not int or type(behind) is not int or min(ahead, behind) < 0:
-        raise ValueError("Invalid comparison counts")
-    expected = ("diverged" if ahead and behind else "ahead" if ahead else
-                "behind" if behind else "identical")
-    if data["status"] != expected or sha(data["base_commit"]["sha"]) != base:
-        raise ValueError("Unexpected comparison identity or status")
-    merge_base = sha(data["merge_base_commit"]["sha"])
+    merge_base = sha(git(directory, "merge-base", base, head))
+    behind, ahead = map(int, git(directory, "rev-list", "--left-right", "--count", base + "..." + head).split())
+    status = ("diverged" if ahead and behind else "ahead" if ahead else
+              "behind" if behind else "identical")
     if behind == 0 and merge_base != base:
         raise ValueError("Inconsistent ancestor evidence")
-    return {"ahead": ahead, "behind": behind, "status": expected, "merge_base": merge_base}
+    return {"ahead": ahead, "behind": behind, "status": status, "merge_base": merge_base}
+
+
+def snapshot(tag):
+    # Fetch only named public refs into a disposable bare repository. No
+    # checkout, hooks, submodules, persisted credentials or remote writes.
+    with tempfile.TemporaryDirectory(prefix="rconfig-upstream-drift-") as directory:
+        git(directory, "init", "--bare", "--template=")
+        upstream_refs = ["+refs/heads/main:refs/check/upstream-main",
+                         "+refs/tags/" + BASELINE_TAG + ":refs/check/baseline"]
+        if tag != BASELINE_TAG:
+            upstream_refs.append("+refs/tags/" + tag + ":refs/check/stable")
+        git(directory, "fetch", "--no-tags", "--no-recurse-submodules",
+            "https://github.com/" + UPSTREAM + ".git", *upstream_refs)
+        git(directory, "fetch", "--no-tags", "--no-recurse-submodules",
+            "https://github.com/" + FORK + ".git",
+            "+refs/heads/main:refs/check/fork-main", "+refs/heads/custom:refs/check/custom")
+
+        def commit(ref):
+            return sha(git(directory, "rev-parse", "--verify", ref + "^{commit}"))
+
+        baseline = commit("refs/check/baseline")
+        if baseline != BASELINE_SHA:
+            raise ValueError("Recorded baseline tag moved")
+        stable = baseline if tag == BASELINE_TAG else commit("refs/check/stable")
+        upstream_main = commit("refs/check/upstream-main")
+        fork_main = commit("refs/check/fork-main")
+        custom = commit("refs/check/custom")
+        return (stable, upstream_main, fork_main, custom,
+                compare_git(directory, upstream_main, fork_main),
+                compare_git(directory, baseline, custom),
+                compare_git(directory, stable, custom),
+                compare_git(directory, stable, upstream_main))
 
 
 def proposal(main, baseline, stable, main_contains_stable):
@@ -79,21 +133,16 @@ def proposal(main, baseline, stable, main_contains_stable):
     return "NO_CHANGE"
 
 
-def report(read=read_json):
+def report(read=read_json, inspect=snapshot):
     release = read(UPSTREAM, "releases/latest")
     if release["draft"] is not False or release["prerelease"] is not False:
         raise ValueError("Unstable release")
     tag = core_tag(release["tag_name"])
-    stable = resolve_tag(read, tag)
-    if resolve_tag(read, BASELINE_TAG) != BASELINE_SHA:
-        raise ValueError("Recorded baseline tag moved")
-    upstream_main = sha(read(UPSTREAM, "branches/main")["commit"]["sha"])
-    fork_main = sha(read(FORK, "branches/main")["commit"]["sha"])
-    custom = sha(read(FORK, "branches/custom")["commit"]["sha"])
-    main_delta = compare(read, upstream_main, fork_main)
-    baseline_delta = compare(read, BASELINE_SHA, custom)
-    stable_delta = compare(read, stable, custom)
-    stable_main_delta = compare(read, stable, upstream_main)
+    stable_api = resolve_tag(read, tag)
+    (stable, upstream_main, fork_main, custom,
+     main_delta, baseline_delta, stable_delta, stable_main_delta) = inspect(tag)
+    if stable != stable_api:
+        raise ValueError("Stable release tag changed between API and git fetch")
     decision = proposal(main_delta, baseline_delta, stable_delta, stable_main_delta["behind"] == 0)
     return {
         "baseline": {"tag": BASELINE_TAG, "sha": BASELINE_SHA},
@@ -115,8 +164,11 @@ def report(read=read_json):
 def main():
     try:
         result = report()
-    except (OSError, ValueError, KeyError, TypeError):
-        print("UPSTREAM_DRIFT_REPORT_UNAVAILABLE; no change applied", file=sys.stderr)
+    except urllib.error.HTTPError as error:
+        print(f"UPSTREAM_DRIFT_REPORT_UNAVAILABLE: HTTP {error.code}; no change applied", file=sys.stderr)
+        return 1
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        print(f"UPSTREAM_DRIFT_REPORT_UNAVAILABLE: {type(error).__name__}; no change applied", file=sys.stderr)
         return 1
     print(json.dumps(result, indent=2))
     if result["proposal"] == "DEFER_INCONSISTENT_BASELINE_OR_FORK":
