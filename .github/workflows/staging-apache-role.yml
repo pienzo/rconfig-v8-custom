@@ -65,3 +65,17 @@ jobs:
         run: docker build --build-arg "SOURCE_REVISION=$(git rev-parse HEAD)" -t rconfig-custom-ci:apache .
       - name: Real role recreation with preserved state
         run: bash tests/staging/integration/docker-apache.sh --recreate
+
+  restart-infra:
+    name: Restart MariaDB Redis AOF and recover all roles
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Build disposable source image
+        run: docker build --build-arg "SOURCE_REVISION=$(git rev-parse HEAD)" -t rconfig-custom-ci:apache .
+      - name: Controlled infrastructure restart and persistent state
+        run: bash tests/staging/integration/docker-apache.sh --infra-restart

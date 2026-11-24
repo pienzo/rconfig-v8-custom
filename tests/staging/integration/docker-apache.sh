@@ -7,7 +7,7 @@ test "$RUNNER_ENVIRONMENT" = github-hosted
 mode="${1:---apache-only}"
 test "$#" -le 1
 case "$mode" in
-    --apache-only|--combined|--recreate) ;;
+    --apache-only|--combined|--recreate|--infra-restart) ;;
     *) exit 2 ;;
 esac
 if [[ "$mode" != --apache-only ]]; then
@@ -149,14 +149,14 @@ verify_apache_http() {
     docker top "$app" -eo pid,comm | awk '$1 ~ /^[0-9]+$/ && $2 == "apache2" { found = 1 } END { exit !found }'
     printf '%s\n' 'STAGING_ACTUAL_APACHE_ROLE_OK (SYNTHETIC_ONLY)'
 }
-if [[ "$mode" == --recreate ]]; then verify_apache_http seed; else verify_apache_http; fi
+if [[ "$mode" == --recreate || "$mode" == --infra-restart ]]; then verify_apache_http seed; else verify_apache_http; fi
 if [[ "$mode" != --apache-only ]]; then
     combined_roles_verify_layout
     combined_roles_verify_processes
     printf '%s\n' 'STAGING_ACTUAL_THREE_ROLES_OK (SYNTHETIC_ONLY)'
 fi
 
-if [[ "$mode" == --recreate ]]; then
+if [[ "$mode" == --recreate || "$mode" == --infra-restart ]]; then
     # Stop only exact hosted test containers. Keep both infra IDs and all mounts.
     declare -A original_ids
     for role in app horizon scheduler; do
@@ -169,6 +169,56 @@ if [[ "$mode" == --recreate ]]; then
     docker rm "$project-scheduler" "$project-horizon" "$app" >/dev/null
     # The observer waits for the old Redis Horizon leases to expire naturally.
     combined_roles_observe stopped
+    if [[ "$mode" == --infra-restart ]]; then
+        # Both services are the unique disposable Compose project. Keep the
+        # original containers, named volumes, secrets and network intact.
+        declare -A infra_started infra_volume
+        for service in db redis; do
+            id="$(compose ps -q "$service")"
+            test -n "$id"
+            infra_started[$service]="$(docker inspect --format '{{.State.StartedAt}}' "$id")"
+            destination=/var/lib/mysql
+            if [[ "$service" == redis ]]; then destination=/data; fi
+            infra_volume[$service]="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "'"$destination"'"}}{{.Name}}{{end}}{{end}}' "$id")"
+            test -n "${infra_volume[$service]}"
+        done
+        # Explicit orderly shutdown; do not count a forced termination as pass.
+        compose stop -t 60 db redis
+        for id in "$db_id" "$redis_id"; do
+            test "$(docker inspect --format '{{.State.Status}}' "$id")" = exited
+            test "$(docker inspect --format '{{.State.ExitCode}}' "$id")" = 0
+        done
+        printf '%s\n' 'STAGING_INFRA_ORDERLY_STOP_OK (SYNTHETIC_ONLY)'
+        compose up -d --no-recreate --wait --wait-timeout 180 db redis
+        test "$(docker network inspect --format '{{.Internal}}' "$network")" = true
+        for service in db redis; do
+            id="$(compose ps -q "$service")"
+            test "$(docker inspect --format '{{.State.Health.Status}}' "$id")" = healthy
+            test "$(docker inspect --format '{{.State.StartedAt}}' "$id")" != "${infra_started[$service]}"
+            test "$(docker inspect --format '{{len .HostConfig.PortBindings}}' "$id")" = 0
+            destination=/var/lib/mysql
+            if [[ "$service" == redis ]]; then destination=/data; fi
+            test "$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "'"$destination"'"}}{{.Name}}{{end}}{{end}}' "$id")" = "${infra_volume[$service]}"
+        done
+        test "$(compose ps -q db)" = "$db_id"
+        test "$(compose ps -q redis)" = "$redis_id"
+        compose exec -T redis redis-cli ping 2>&1 | grep -Fx 'NOAUTH Authentication required.' >/dev/null
+        # Only the non-secret AOF status is emitted; password never becomes
+        # an argument or a log line. Require successful loading and AOF write status.
+        compose exec -T redis sh -ec '
+            pass=$(awk '\''$1 == "requirepass" { print $2; exit }'\'' /run/secrets/redis.conf)
+            test -n "$pass"
+            REDISCLI_AUTH="$pass" redis-cli --raw INFO persistence | tr -d "\r" | awk '\''
+                /^loading:0$/ { loaded=1 }
+                /^aof_enabled:1$/ { enabled=1 }
+                /^aof_last_write_status:ok$/ { written=1 }
+                END { exit !(loaded && enabled && written) }'\''
+        '
+        # Verify old heartbeat still exists and old leases stay absent before
+        # allowing any role to start on the recovered infrastructure.
+        combined_roles_observe stopped
+        printf '%s\n' 'STAGING_INFRA_RESTART_AOF_AUTH_OK (SYNTHETIC_ONLY)'
+    fi
     start_apache
     combined_roles_start_and_verify recreate
     for role in app horizon scheduler; do
@@ -180,4 +230,7 @@ if [[ "$mode" == --recreate ]]; then
     combined_roles_verify_layout
     combined_roles_verify_processes
     printf '%s\n' 'STAGING_ROLE_RECREATION_PERSISTENCE_OK (SYNTHETIC_ONLY)'
+    if [[ "$mode" == --infra-restart ]]; then
+        printf '%s\n' 'STAGING_FULL_INFRA_RESTART_PERSISTENCE_OK (SYNTHETIC_ONLY)'
+    fi
 fi

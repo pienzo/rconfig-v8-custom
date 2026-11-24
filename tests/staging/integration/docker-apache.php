@@ -16,6 +16,7 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Env;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Redis;
 
 function apacheCheck(bool $ok, string $label): void
 {
@@ -171,7 +172,8 @@ if ($persistence !== 'none') {
         'body' => 'Synthetic restart {{backup.status}} for {{device.name}}.',
     ];
     if ($persistence === 'seed') {
-        apacheCheck(Cache::get($fixture) === null && file_exists($fixturePath) === false, 'fresh persistence fixtures');
+        apacheCheck(Cache::get($fixture) === null && Redis::connection('default')->get($fixture) === null
+            && file_exists($fixturePath) === false, 'fresh persistence fixtures');
         apacheCheck(preg_match('/<meta name="csrf-token" content="([^"]+)"/', (string) $dashboard->getBody(), $csrf) === 1, 'authenticated CSRF');
         $response = $client->put($api, [
             'headers' => [...$headers, 'X-CSRF-TOKEN' => $csrf[1]],
@@ -186,12 +188,14 @@ if ($persistence !== 'none') {
         apacheCheck(is_resource($handle), 'exclusive synthetic storage fixture');
         apacheCheck(fwrite($handle, $value) === strlen($value), 'persist storage fixture');
         fclose($handle);
-        apacheCheck(Cache::store('redis')->put($fixture, $value, 1800), 'persist Redis fixture');
+        apacheCheck(Cache::store('redis')->put($fixture, $value, 1800), 'persist Redis DB1 cache fixture');
+        apacheCheck((string) Redis::connection('default')->setex($fixture, 1800, $value) === 'OK', 'persist Redis DB0 fixture');
         echo "STAGING_RECREATION_FIXTURES_SEEDED_OK (SYNTHETIC_ONLY)\n";
     } else {
         $value = file_get_contents($fixturePath);
         apacheCheck(is_string($value) && preg_match('/\\A[a-f0-9]{64}\\z/', $value) === 1
-            && Cache::store('redis')->get($fixture) === $value, 'matching original Redis and storage fixtures');
+            && Cache::store('redis')->get($fixture) === $value
+            && Redis::connection('default')->get($fixture) === $value, 'matching original Redis DB0/DB1 and storage fixtures');
         $response = $client->get($api, ['headers' => $headers]);
         apacheCheck($response->getStatusCode() === 200, 'persistent draft API');
         $result = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
