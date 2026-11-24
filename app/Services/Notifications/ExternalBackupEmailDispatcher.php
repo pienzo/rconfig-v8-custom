@@ -33,7 +33,7 @@ final class ExternalBackupEmailDispatcher
 
         $message = $this->messages->render($run, 'email');
         $prepared = $this->transport->prepare($message['title'], $message['body']);
-        $deliveryId = $this->ledger->reconcile($runId, 'email', $prepared['destination']);
+        $deliveryId = $this->ledger->reconcile($runId, 'email', $prepared['destination'], singleDestination: true);
 
         if ($deliveryId === null) {
             return 'skipped';

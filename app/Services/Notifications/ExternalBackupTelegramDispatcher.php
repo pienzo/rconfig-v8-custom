@@ -37,7 +37,7 @@ final class ExternalBackupTelegramDispatcher
 
         $message = $this->messages->render($run, 'telegram')['formatted_text'];
         $destination = $this->transport->automaticDestinationKey($message);
-        $deliveryId = $this->ledger->reconcile($runId, 'telegram', $destination);
+        $deliveryId = $this->ledger->reconcile($runId, 'telegram', $destination, singleDestination: true);
 
         if ($deliveryId === null) {
             return 'skipped';

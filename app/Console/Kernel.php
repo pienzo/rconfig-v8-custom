@@ -10,6 +10,7 @@ use App\Jobs\TaskDownloadRun;
 use App\Models\ExternalBackupRule;
 use App\Models\MonitoredScheduledTaskLogItems;
 use App\Models\Task;
+use App\Services\Notifications\ExternalBackupNotificationReconciler;
 use App\Traits\LogsTaskActivity;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
@@ -92,6 +93,12 @@ class Kernel extends ConsoleKernel
             $schedule->job(new ExternalBackupExpirePendingJob, 'ExternalBackupChecks', 'redis_external_backups')
                 ->name('f02-expire-pending')
                 ->everyMinute();
+        }
+
+        if (config('custom-backup-notifications.enabled', false) === true) {
+            $schedule->call(static function (): void {
+                app(ExternalBackupNotificationReconciler::class)->enqueue();
+            })->name('f03-reconcile-external-backup-notifications')->everyMinute()->withoutOverlapping(2);
         }
 
         $schedule->command(RunHealthChecksCommand::class)->everyFiveMinutes();

@@ -5,8 +5,14 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** F02 #110/#112 merged, F01 #98 and F02 #109 merged, F02 flags OFF. F03 ledger #115 and single-attempt #116 merged (9/9 each); explicit Telegram #117 and isolated SMTP #118 merged (5/5 each, `5d5caae2`, `0cf7c034`). Automatic dispatch still OFF and not wired to scheduler or native outcomes. Core write-status defect #119 is under repair; new native notification integration must not mistake job completion or a stale nonempty file for successful current backup. Secure SMTP real TLS/auth, recipient review, F02 finalized upload/activation and Docker/staging/release gates remain open. `main` and VM unchanged.
+**Current gate:** F01 #98, F02 #110/#112 and F03 #115–#118 merged; Core write-status #120 merged 5/5. F02 scheduled notification reconciliation candidate under review (#113). All runtime/automatic delivery gates remain OFF. Native Core outcome dispatch, finalization/activation F02, real TLS/auth, authorized integrations and full Docker/release gates remain open. `main` and VM unchanged.
 
+
+## 2026-11-24 — F02 automatic notification reconciliation candidate (#113)
+
+- PR #120 merged at `6fc2fb47fea87df44b205cb582d490b91bfa4eca`, CI run 45290585212 5/5, 1,790 passed, 8 skipped, 8,274 assertions plus existing native/crash/Redis regressions; issue #119 closed. The Core write-status fix is not an atomic overwrite fix.
+- Candidate scheduler selects at most 100 eligible terminal F02 occurrences per enabled channel per minute; dedicated Redis queue BackupNotifications, Horizon timeout 60s and retry_after 120s. Job rechecks eligibility, only occurrence ID/channel in payload. No provider call in backup transactions. Claimed/uncertain/accepted deliveries excluded, pending intents recoverable. Unique job lock reduces queue duplicates; durable ledger is decisive. Existing intents cannot silently change destination.
+- Global and channel gates remain OFF; explicit RCONFIG_F02_NOTIFICATIONS_FROM_UTC is blank by default. Set a new approved UTC activation floor on initial activation or recipient/APP_KEY rotation; never lower it without an explicit replay review. Old runs scheduled before that floor are excluded. Preflight failures remain eligible and may delay later rows under sustained errors; monitor sanitized warnings and backlog before activation. Worker timeout, Redis recovery, backlog and actual transport security need staging validation. Native Core notifications are not yet wired. No VM or production action.
 
 ## 2026-11-24 — F03 transport merges and native write-status audit
 

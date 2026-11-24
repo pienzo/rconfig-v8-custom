@@ -113,6 +113,77 @@ function isDormantExternalBackupQueue(?string $queue): bool
         && str_contains($horizonSource, 'RCONFIG_F02_QUEUE_ENABLED');
 }
 
+/**
+ * Load the actual Horizon config with the notification gate enabled, then
+ * restore the process environment. No worker or Redis connection is started.
+ */
+function enabledBackupNotificationSupervisors(): array
+{
+    $key = 'RCONFIG_CUSTOM_BACKUP_NOTIFICATIONS_ENABLED';
+    $previousEnv = $_ENV[$key] ?? null;
+    $previousServer = $_SERVER[$key] ?? null;
+    $_ENV[$key] = 'true';
+    $_SERVER[$key] = 'true';
+
+    try {
+        $settings = require config_path('horizon.php');
+
+        return $settings['environments'];
+    } finally {
+        if ($previousEnv === null) {
+            unset($_ENV[$key]);
+        } else {
+            $_ENV[$key] = $previousEnv;
+        }
+
+        if ($previousServer === null) {
+            unset($_SERVER[$key]);
+        } else {
+            $_SERVER[$key] = $previousServer;
+        }
+    }
+}
+
+function isDormantBackupNotificationQueue(?string $queue): bool
+{
+    if ($queue !== 'BackupNotifications'
+        || config('custom-backup-notifications.enabled', false) !== false
+        || config('queue.connections.redis_backup_notifications.queue') !== $queue
+        || config('queue.connections.redis_backup_notifications.driver') !== 'redis'
+        || config('queue.connections.redis_backup_notifications.after_commit') !== true) {
+        return false;
+    }
+
+    $environments = enabledBackupNotificationSupervisors();
+    if ($environments === [] || array_keys($environments) !== array_keys(config('horizon.environments'))) {
+        return false;
+    }
+
+    foreach ($environments as $supervisors) {
+        $worker = $supervisors['HorizonBackupNotifications'] ?? [];
+        if (($worker['queue'] ?? []) !== [$queue]
+            || ($worker['connection'] ?? null) !== 'redis_backup_notifications'
+            || ($worker['minProcesses'] ?? 0) < 1
+            || ($worker['tries'] ?? null) !== 1
+            || ($worker['timeout'] ?? 0) < 1
+            || $worker['timeout'] >= config('queue.connections.redis_backup_notifications.retry_after')) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+test('optional notification supervisor is absent by default and works every environment when enabled', function () {
+    expect(config('custom-backup-notifications.enabled'))->toBeFalse();
+    expect(horizonWorkedQueues())->not->toContain('BackupNotifications');
+    expect(isDormantBackupNotificationQueue('BackupNotifications'))->toBeTrue();
+    expect(isDormantBackupNotificationQueue('default'))->toBeFalse();
+
+    config()->set('queue.connections.redis_backup_notifications.retry_after', 60);
+    expect(isDormantBackupNotificationQueue('BackupNotifications'))->toBeFalse();
+});
+
 test('Horizon works rConfigDefault in every environment', function () {
     expect(horizonWorkedQueues())->toContain('rConfigDefault');
 });
@@ -136,7 +207,7 @@ test('every queued job sets a queue that Horizon works', function () {
     foreach (queueableJobClasses() as $class) {
         $queue = pinnedQueue(new ReflectionClass($class));
 
-        if ($queue === null || (! in_array($queue, $worked, true) && ! isDormantExternalBackupQueue($queue))) {
+        if ($queue === null || (! in_array($queue, $worked, true) && ! isDormantExternalBackupQueue($queue) && ! isDormantBackupNotificationQueue($queue))) {
             $offenders[] = $class . ' -> ' . ($queue ?? 'no queue set (lands on "default")');
         }
     }
@@ -164,7 +235,7 @@ test('every onQueue() call in app/ names a queue that Horizon works', function (
 
             if (preg_match_all('/onQueue\(\s*[\'"]([^\'"]+)[\'"]\s*\)/', $line, $matches)) {
                 foreach ($matches[1] as $queue) {
-                    if (! in_array($queue, $worked, true) && ! isDormantExternalBackupQueue($queue)) {
+                    if (! in_array($queue, $worked, true) && ! isDormantExternalBackupQueue($queue) && ! isDormantBackupNotificationQueue($queue)) {
                         $offenders[] = $file->getRelativePathname() . ':' . ($number + 1) . ' -> ' . $queue;
                     }
                 }
