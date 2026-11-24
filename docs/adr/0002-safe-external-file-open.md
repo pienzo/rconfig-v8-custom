@@ -130,3 +130,7 @@ PR #182 accepted two actual SFTP device receipts and replay through the same exi
 ## F02/F03 terminal outcome email integration (#185)
 
 PR #184 validated independent terminal success and failure with real elapsed deadline. Candidate #185 passes these exact committed rows to a separate hosted-only probe, enables only email in memory, verifies no unrelated eligible outcomes, uses the actual F03 named scheduler event and Redis queue with real one-shot workers. Local ephemeral TLS SMTP listener validates authentication and the two device/status-specific messages. Accepted ledger rows and queue replay checked, terminal evidence unchanged. No real recipients or provider activation; no Telegram/WhatsApp or parallel-worker claim. Existing F02 and TLS negative probes remain.
+
+## F03 Telegram and F04 stored template integration (#187)
+
+PR #186 accepted local TLS email for actual F02 mixed outcomes. Candidate #187 reuses the same rows in a fresh guarded process, enables only Telegram in memory, stores and removes synthetic templates, uses actual scheduler/Redis/one-shot workers with an exact fake Bot API endpoint and stray HTTP requests prohibited. Validate escaped HTML and allowlisted metadata, two requests only, accepted SUCCESS and uncertain FAILED on simulated HTTP 503, no replay and unchanged email ledger and terminal evidence. HTTP boundary is simulated, not real TLS/API or delivery evidence; no operational activation.
