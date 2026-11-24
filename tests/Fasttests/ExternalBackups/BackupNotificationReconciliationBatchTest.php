@@ -7,9 +7,15 @@ use Illuminate\Support\Facades\DB;
 beforeEach(function () {
     $this->beginTransaction();
     config()->set('cache.default', 'array');
+    foreach (['native-config:telegram', 'native-config:email', 'external-file:telegram'] as $identity) {
+        Cache::forget('custom-backup-notification-scan:v1:' . $identity);
+    }
 });
 
 afterEach(function () {
+    foreach (['native-config:telegram', 'native-config:email', 'external-file:telegram'] as $identity) {
+        Cache::forget('custom-backup-notification-scan:v1:' . $identity);
+    }
     $this->rollBackTransaction();
 });
 

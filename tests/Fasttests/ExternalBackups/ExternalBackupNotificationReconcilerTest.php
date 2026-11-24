@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Queue;
 beforeEach(function () {
     $this->beginTransaction();
     config()->set('cache.default', 'array');
+    Cache::forget('custom-backup-notification-scan:v1:external-file:telegram');
     Queue::fake();
     config()->set('rConfig.is_demo', false);
     config()->set('external-backups.runtime_enabled', true);
@@ -25,6 +26,7 @@ beforeEach(function () {
     config()->set('custom-backup-notifications.f02_from_utc', '2026-01-01 00:00:00');
     config()->set('rconfig-telegram.enabled', true);
     config()->set('rconfig-backup-email.enabled', false);
+    config()->set('rconfig-whatsapp.enabled', false);
     $device = Device::factory()->create();
     $task = Task::factory()->create(['task_command' => 'rconfig:check-external-backup']);
     $this->rule = ExternalBackupRule::create([
@@ -48,6 +50,7 @@ beforeEach(function () {
 });
 
 afterEach(function () {
+    Cache::forget('custom-backup-notification-scan:v1:external-file:telegram');
     $this->rollBackTransaction();
 });
 
