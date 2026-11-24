@@ -10,14 +10,14 @@ use App\Models\ExternalBackupCheckRun;
 use App\Services\Notifications\ExternalBackupNotificationReconciler;
 use App\Services\Notifications\ExternalBackupTerminalOutcome;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Queue;
 
 function mixedTelegramCheck(bool $ok, string $stage): void
 {
-    if (! $ok) {
+    if ($ok === false) {
         throw new RuntimeException('F03 mixed telegram probe failed: ' . $stage);
     }
 }
@@ -61,7 +61,7 @@ mixedTelegramCheck($app->environment('testing') && config('database.default') ==
     && (string) config('database.redis.default.database') === '7'
     && (string) config('database.redis.cache.database') === '8'
     && config('cache.default') === 'redis' && config('mail.default') === 'log'
-    && ! config('rConfig.is_demo', false), 'disposable database and cache');
+    && config('rConfig.is_demo', false) === false, 'disposable database and cache');
 foreach (['custom-backup-notifications.enabled', 'rconfig-native-backup-notifications.enabled',
     'rconfig-telegram.enabled', 'rconfig-whatsapp.enabled', 'rconfig-backup-email.enabled'] as $flag) {
     mixedTelegramCheck(config($flag) === false, 'initial notification gates off');
@@ -83,7 +83,7 @@ sort($ids);
 $eligible = ExternalBackupTerminalOutcome::query()->where('runs.scheduled_at_utc', '>=', $cutoff)
     ->orderBy('runs.id')->pluck('runs.id')->map(static fn ($id): int => (int) $id)->all();
 mixedTelegramCheck($eligible === $ids, 'no unrelated eligible outcomes');
-mixedTelegramCheck(! CustomBackupNotificationTemplate::where('channel', 'telegram')->exists(), 'empty synthetic template scope');
+mixedTelegramCheck(CustomBackupNotificationTemplate::where('channel', 'telegram')->exists() === false, 'empty synthetic template scope');
 $allDeliveries = static fn () => DB::table('custom_backup_notification_deliveries')
     ->where('source_type', 'external-file')->whereIn('source_id', $ids);
 $emailRows = $allDeliveries()->where('channel', 'email')->orderBy('source_id')->get()->all();
@@ -164,7 +164,7 @@ try {
     }
     echo "F04_TELEGRAM_STORED_TEMPLATE_PAYLOAD_OK (SYNTHETIC_ONLY)\n";
     $reconciler = app(ExternalBackupNotificationReconciler::class);
-    mixedTelegramCheck(! $reconciler->eligible($successId, 'telegram') && ! $reconciler->eligible($failureId, 'telegram'), 'accepted and uncertain not eligible');
+    mixedTelegramCheck($reconciler->eligible($successId, 'telegram') === false && $reconciler->eligible($failureId, 'telegram') === false, 'accepted and uncertain not eligible');
     $event->run($app);
     mixedTelegramCheck($queue->size('BackupNotifications') === 0 && $deliveries()->get()->all() == $rows->all()
         && $allDeliveries()->where('channel', 'email')->orderBy('source_id')->get()->all() == $emailRows
