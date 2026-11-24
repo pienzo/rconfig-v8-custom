@@ -34,6 +34,10 @@ final class ExternalBackupOccurrenceClaimService
             }
 
             $instant = $utc->format('Y-m-d H:i:s');
+            $activation = $rule->getRawOriginal('activated_at_utc');
+            if ($activation !== null && $instant < $activation) {
+                throw new DomainException('Occurrence predates the current rule activation.');
+            }
 
             $existing = ExternalBackupCheckRun::query()
                 ->where('rule_id', $rule->id)

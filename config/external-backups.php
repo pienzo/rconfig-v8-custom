@@ -8,6 +8,7 @@ return [
     'receipt_acceptance_enabled' => (bool) env('RCONFIG_F02_RECEIPT_ACCEPTANCE_ENABLED', false),
     'receipt_hmac_key' => env('RCONFIG_F02_RECEIPT_HMAC_KEY', ''),
     // Dormant until receipt acceptance and a reviewed staging deployment.
+    'finalization_approved' => env('RCONFIG_F02_FINALIZATION_APPROVED', false),
     'runtime_enabled' => (bool) env('RCONFIG_F02_RUNTIME_ENABLED', false),
     'queue_enabled' => (bool) env('RCONFIG_F02_QUEUE_ENABLED', false),
     // Built into the custom image. Not configurable by an API user.
