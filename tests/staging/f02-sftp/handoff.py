@@ -325,7 +325,8 @@ def locked_manifest_accept(grant, used, checkpoint=None):
                 record = {"version": 1, "device": int(DEVICE), "nonce": grant["nonce"],
                           "filename": value["filename"], "size": value["size"],
                           "sha256": value["sha256"], "dev": st.st_dev,
-                          "ino": st.st_ino, "mtime_ns": st.st_mtime_ns}
+                          "ino": st.st_ino, "mtime_ns": st.st_mtime_ns,
+                          "start": grant["start"], "deadline": grant["deadline"]}
                 data = json.dumps(record, sort_keys=True, separators=(",", ":")).encode()
                 require(os.write(fd, data) == len(data), "complete persisted claim")
                 os.fsync(fd)
@@ -456,14 +457,16 @@ for name in expected:
 
 
 
-def claim_inspection(nonce):
-    # Read-only fresh-process reconciliation. Never trust quarantine again
-    # and never publish, delete, consume another grant or declare SUCCESS.
+def claim_inspection(nonce, recover=False):
+    # Fresh-process reconciliation. Default is read-only. An explicit
+    # synthetic recovery request may only promote a verified private inode.
+    # Never read quarantine, consume another grant or declare SUCCESS.
     require(os.environ.get("F02_SFTP_MANIFEST_CRASH") == "1"
             and os.environ.get("F02_SFTP_MANIFEST") == "1"
             and os.environ.get("F02_SFTP_LIVE_LOCK") == "1"
             and not SECOND and DEVICE == "123" and PUBLISHED == ROOT / "published",
             "inspection fixture contract")
+    require(not recover or os.environ.get("F02_SFTP_RECOVERY_PROBE") == "1", "explicit recovery fixture")
     require(re.fullmatch(r"[0-9a-f]{32}", nonce) is not None, "inspection nonce")
     directory = ROOT / "completion-claims"
     st = directory.lstat()
@@ -498,13 +501,14 @@ def claim_inspection(nonce):
             record = json.loads(raw.decode("utf-8"), object_pairs_hook=strict_object)
             require(type(record) is dict and set(record) == {
                 "version", "device", "nonce", "filename", "size", "sha256",
-                "dev", "ino", "mtime_ns"
+                "dev", "ino", "mtime_ns", "start", "deadline"
             }, "inspection record schema")
-            require(all(type(record[k]) is int for k in ("version", "device", "size", "dev", "ino", "mtime_ns"))
+            require(all(type(record[k]) is int for k in ("version", "device", "size", "dev", "ino", "mtime_ns", "start", "deadline"))
                     and record["version"] == 1 and record["device"] == int(DEVICE)
                     and record["nonce"] == nonce and record["filename"] == "backup.cfg"
                     and 0 < record["size"] <= MAX_BYTES and record["dev"] >= 0
                     and record["ino"] > 0 and record["mtime_ns"] > 0
+                    and 0 < record["start"] < record["deadline"]
                     and type(record["sha256"]) is str
                     and re.fullmatch(r"[0-9a-f]{64}", record["sha256"]) is not None,
                     "inspection record fields")
@@ -522,14 +526,43 @@ def claim_inspection(nonce):
             require((st.st_dev, st.st_ino, st.st_mtime_ns, st.st_size, hashlib.sha256(data).hexdigest())
                     == (record["dev"], record["ino"], record["mtime_ns"], record["size"], record["sha256"]),
                     "inspection descriptor mismatch")
-            return state
+            if not recover:
+                return state
+            if state == "published_evidence_only":
+                return "already_published"
+            if not record["start"] <= int(time.time()) < record["deadline"]:
+                return "expired_or_not_due"
+            # Both directories are protected and all fixture publishers use
+            # this lock. Never overwrite or fall back to copying.
+            src = os.open(PRIVATE, os.O_DIRECTORY | os.O_NOFOLLOW | os.O_RDONLY)
+            try:
+                dst = os.open(FINAL, os.O_DIRECTORY | os.O_NOFOLLOW | os.O_RDONLY)
+                try:
+                    require(os.fstat(src).st_dev == os.fstat(dst).st_dev, "recovery same filesystem")
+                    require(identity(os.stat(".pending", dir_fd=src, follow_symlinks=False))
+                            == identity(st), "recovery pending identity")
+                    require(not os.listdir(dst) and os.listdir(src) == [".pending"],
+                            "recovery fresh destination")
+                    require(record["start"] <= int(time.time()) < record["deadline"], "recovery window")
+                    os.rename(".pending", "backup.cfg", src_dir_fd=src, dst_dir_fd=dst)
+                    os.fsync(dst)
+                    os.fsync(src)
+                finally:
+                    os.close(dst)
+            finally:
+                os.close(src)
+            return "recovered_evidence_only"
         except (OSError, RuntimeError, ValueError, UnicodeError, RecursionError):
             return "ambiguous"
 
 
-def inspect_fresh(nonce, expected_state):
+def inspect_fresh(nonce, expected_state, recover=False):
     # New interpreter, only nonce and fixed fixture paths; no in-memory grant.
     env = dict(os.environ, F02_SFTP_JOURNAL_INSPECT=nonce)
+    if recover:
+        env["F02_SFTP_JOURNAL_RECOVER"] = "1"
+    else:
+        env.pop("F02_SFTP_JOURNAL_RECOVER", None)
     result = subprocess.run([sys.executable, "-I", __file__], env=env,
                             capture_output=True, text=True, timeout=15)
     require(result.returncode == 0 and result.stdout.strip() == expected_state,
@@ -629,6 +662,57 @@ def manifest_crash_probe():
             require(identity(pending.lstat()) == before and not final.exists(),
                     "pre-rename replay unchanged")
             print("F02_SFTP_CLAIM_CRASH_BEFORE_RENAME_REFUSED_OK (SYNTHETIC_ONLY)")
+            if os.environ.get("F02_SFTP_RECOVERY_PROBE") == "1":
+                # Explicit test-controller authorization. The recovery process
+                # is independent and receives only the existing claim nonce.
+                original_claim = used.read_bytes()
+                original_pending = pending.lstat()
+                inspect_fresh(secrets.token_hex(16), "ambiguous", recover=True)
+                # Conflict must not overwrite a final-looking file.
+                final.write_bytes(b"SYNTHETIC-CONFLICT")
+                conflict = identity(final.lstat())
+                inspect_fresh(grant["nonce"], "ambiguous", recover=True)
+                require(identity(final.lstat()) == conflict
+                        and identity(pending.lstat()) == identity(original_pending),
+                        "conflict recovery unchanged")
+                final.unlink()
+                # Test expiry with a separate protected synthetic record,
+                # not a modification of the real consumed claim.
+                expired_nonce = secrets.token_hex(16)
+                expired = used_dir / expired_nonce
+                record = json.loads(original_claim)
+                record.update(nonce=expired_nonce, start=1, deadline=2)
+                fd = os.open(expired, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                try:
+                    data = json.dumps(record).encode()
+                    require(os.write(fd, data) == len(data), "expired test claim")
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+                inspect_fresh(expired_nonce, "expired_or_not_due", recover=True)
+                expired.unlink()
+                require(not list(FINAL.iterdir()) and identity(pending.lstat()) == identity(original_pending),
+                        "expired recovery unchanged")
+                print("F02_SFTP_RECOVERY_INVALID_REFUSED_OK (SYNTHETIC_ONLY)")
+                # Reconnect and overwrite only the untrusted source.
+                manifest_batch("put /sandbox/partial /incoming/backup.cfg\n")
+                require((SOURCE / "backup.cfg").read_bytes() != expected, "quarantine changed")
+                inspect_fresh(grant["nonce"], "recovered_evidence_only", recover=True)
+                require(not list(PRIVATE.iterdir()) and list(FINAL.iterdir()) == [final]
+                        and final.read_bytes() == expected
+                        and final.lstat().st_ino == original_pending.st_ino
+                        and final.lstat().st_dev == original_pending.st_dev
+                        and used.read_bytes() == original_claim, "same verified inode recovered")
+                before = identity(final.lstat())
+                inspect_fresh(grant["nonce"], "already_published", recover=True)
+                inspect_fresh(grant["nonce"], "published_evidence_only")
+                assert_replay_refused(grant, used)
+                require(identity(final.lstat()) == before and used.read_bytes() == original_claim,
+                        "recovery replay unchanged")
+                verify_published()
+                print("F02_SFTP_RECOVERY_VERIFIED_INODE_OK (SYNTHETIC_ONLY)")
+                print("F02_SFTP_RECOVERY_IDEMPOTENT_OK (SYNTHETIC_ONLY)")
+                return
             # Explicit fixture operator discard, never an automatic recovery.
             # Keep the spent nonce; do not promote the pending file.
             pending.unlink()
@@ -723,7 +807,8 @@ def main():
     require(private_stat.st_gid == 0 and stat.S_IMODE(private_stat.st_mode) == 0o700
             and private_stat.st_dev == FINAL.lstat().st_dev, "private publisher boundary")
     if "F02_SFTP_JOURNAL_INSPECT" in os.environ:
-        print(claim_inspection(os.environ["F02_SFTP_JOURNAL_INSPECT"]))
+        print(claim_inspection(os.environ["F02_SFTP_JOURNAL_INSPECT"],
+                               recover=os.environ.get("F02_SFTP_JOURNAL_RECOVER") == "1"))
         return
     if os.environ.get("F02_SFTP_MANIFEST_PROBE") == "1":
         if os.environ.get("F02_SFTP_MANIFEST_CRASH") == "1":

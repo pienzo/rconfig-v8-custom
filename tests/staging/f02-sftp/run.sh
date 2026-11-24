@@ -12,6 +12,9 @@ multi="${F02_SFTP_MULTI_DEVICE:-0}"
 abort="${F02_SFTP_INTERRUPTED:-0}"
 manifest="${F02_SFTP_MANIFEST:-0}"
 crash="${F02_SFTP_MANIFEST_CRASH:-0}"
+recover="${F02_SFTP_RECOVERY_PROBE:-0}"
+case "$recover" in 0|1) ;; *) exit 2 ;; esac
+if test "$recover" = 1; then test "$crash" = 1; fi
 case "$crash" in 0|1) ;; *) exit 2 ;; esac
 if test "$crash" = 1; then test "$manifest" = 1; fi
 case "$manifest" in 0|1) ;; *) exit 2 ;; esac
