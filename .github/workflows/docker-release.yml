@@ -8,7 +8,9 @@ on:
 
 permissions:
   contents: read
-  packages: write
+
+# This inherited workflow targets upstream's official registries only.
+# Custom releases require a separately reviewed workflow and approval.
 
 env:
   DOCKERHUB_IMAGE: docker.io/rconfig/rconfig
@@ -20,6 +22,7 @@ jobs:
   # version ships an image whose reported version disagrees with its tag. This
   # has happened: core-8.2.13 was tagged with VERSION still reading 8.2.12.
   verify-version:
+    if: github.repository == 'rconfig/rconfig'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -67,7 +70,11 @@ jobs:
   # Each job pushes an untagged, digest-addressed image. The merge job below
   # assembles those digests into the tagged manifest lists.
   build:
+    if: github.repository == 'rconfig/rconfig'
     needs: verify-version
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -131,7 +138,11 @@ jobs:
   # Assembles the per-architecture digests into one tagged manifest list per
   # registry. Tag selection is unchanged from the previous workflow.
   merge:
+    if: github.repository == 'rconfig/rconfig'
     needs: build
+    permissions:
+      contents: read
+      packages: write
     runs-on: ubuntu-latest
     steps:
       - name: Download digests
@@ -236,6 +247,7 @@ jobs:
   #
   # Runs after merge so the release never appears before its images exist.
   github-release:
+    if: github.repository == 'rconfig/rconfig'
     needs: merge
     runs-on: ubuntu-latest
     permissions:
