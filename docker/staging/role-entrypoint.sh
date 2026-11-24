@@ -41,6 +41,24 @@ bootstrap_marker=$storage/.staging-bootstrap-complete
 mode_bits=$(stat -c '%a' "$env_file") || fail 'cannot inspect env mode'
 [ $((0$mode_bits & 0027)) -eq 0 ] || fail 'runtime .env permissions too open'
 
+# This launcher accepts only the provisioner's simple, single-line format.
+# Reject alternative dotenv assignments, interpolation and duplicate keys.
+# Never print the file or any secret on failure.
+LC_ALL=C awk '
+    /^$/ { next }
+    /^#/ { next }
+    /^[A-Z_][A-Z0-9_]*=([A-Za-z0-9_.\/:@+=-]*|"[A-Za-z0-9 _.\/:@+=-]*")$/ {
+        split($0, parts, "=")
+        if (seen[parts[1]]++) exit 1
+        next
+    }
+    { exit 1 }
+' "$env_file" || fail 'runtime .env is not canonical or contains duplicate settings'
+
+# A Laravel config cache can override the reviewed dotenv contract.
+[ ! -e "$app_dir/bootstrap/cache/config.php" ] && [ ! -L "$app_dir/bootstrap/cache/config.php" ] || fail 'cached Laravel configuration forbidden'
+[ -z "${APP_CONFIG_CACHE+x}" ] || fail 'APP_CONFIG_CACHE override forbidden'
+
 # Validate the *file* without sourcing an untrusted .env as shell code or
 # displaying application key/password contents. An external provisioner must
 # supply an independent, stable key and matching DB/Redis credentials.
@@ -69,6 +87,36 @@ require_exact_line 'QUEUE_CONNECTION=redis'
 require_exact_line 'CACHE_DRIVER=redis'
 require_exact_line 'SESSION_DRIVER=redis'
 require_exact_line 'RCONFIG_F02_QUEUE_ENABLED=false'
+
+# Optional custom gates were added after the original provisioner. An absent
+# key retains the reviewed disabled default; a present key must be literal
+# false in the file and in any ambient environment override.
+for key in \
+    RCONFIG_F02_RUNTIME_ENABLED \
+    RCONFIG_F02_QUEUE_ENABLED \
+    RCONFIG_F02_RECEIPT_ACCEPTANCE_ENABLED \
+    RCONFIG_F02_FINALIZATION_APPROVED \
+    RCONFIG_CUSTOM_BACKUP_NOTIFICATIONS_ENABLED \
+    RCONFIG_NATIVE_BACKUP_NOTIFICATIONS_ENABLED \
+    RCONFIG_TELEGRAM_ENABLED \
+    RCONFIG_BACKUP_EMAIL_ENABLED \
+    RCONFIG_WHATSAPP_ENABLED \
+    RCONFIG_WHATSAPP_POLICY_APPROVED
+do
+    if grep -q "^$key=" "$env_file"; then
+        require_exact_line "$key=false"
+    fi
+    if value=$(printenv "$key"); then
+        [ "$value" = false ] || fail "feature environment override forbidden: $key"
+    fi
+done
+
+# Even with the runtime disabled, on-demand preview must not read an
+# external intake directory in this synthetic-only role.
+if grep -q '^RCONFIG_EXTERNAL_BACKUP_INTAKE_ROOT=' "$env_file"; then
+    require_exact_line 'RCONFIG_EXTERNAL_BACKUP_INTAKE_ROOT='
+fi
+[ -z "${RCONFIG_EXTERNAL_BACKUP_INTAKE_ROOT:-}" ] || fail 'external intake override forbidden'
 require_pattern '^APP_KEY=base64:[A-Za-z0-9+/]{43}=$' 'APP_KEY'
 require_pattern '^DB_PASSWORD=[[:xdigit:]]{64}$' 'DB_PASSWORD'
 require_pattern '^REDIS_PASSWORD=[[:xdigit:]]{64}$' 'REDIS_PASSWORD'
@@ -78,7 +126,6 @@ require_pattern '^REDIS_PASSWORD=[[:xdigit:]]{64}$' 'REDIS_PASSWORD'
 [ -z "${APP_KEY:-}" ] || fail 'APP_KEY environment override forbidden'
 [ -z "${DB_PASSWORD:-}" ] || fail 'DB_PASSWORD environment override forbidden'
 [ -z "${REDIS_PASSWORD:-}" ] || fail 'REDIS_PASSWORD environment override forbidden'
-[ "${RCONFIG_F02_QUEUE_ENABLED:-false}" = false ] || fail 'F02 environment override forbidden'
 [ "${APP_DEBUG:-false}" = false ] || fail 'debug environment override forbidden'
 [ -z "${MAIL_MAILER+x}" ] || fail 'mail transport environment override forbidden'
 [ "${APP_ENV:-production}" = production ] || fail 'APP_ENV environment override forbidden'
@@ -90,6 +137,8 @@ require_pattern '^REDIS_PASSWORD=[[:xdigit:]]{64}$' 'REDIS_PASSWORD'
 [ "${DB_USERNAME:-rconfig_staging}" = rconfig_staging ] || fail 'DB_USERNAME environment override forbidden'
 [ "${DB_CONNECTION:-mysql}" = mysql ] || fail 'DB_CONNECTION environment override forbidden'
 [ "${QUEUE_CONNECTION:-redis}" = redis ] || fail 'QUEUE_CONNECTION environment override forbidden'
+[ "${CACHE_DRIVER:-redis}" = redis ] || fail 'CACHE_DRIVER environment override forbidden'
+[ "${SESSION_DRIVER:-redis}" = redis ] || fail 'SESSION_DRIVER environment override forbidden'
 
 if [ "$mode" = '--check' ]; then
     printf 'staging role preflight passed: %s (no service started)\n' "$role"
