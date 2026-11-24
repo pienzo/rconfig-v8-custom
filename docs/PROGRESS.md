@@ -5,8 +5,14 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** F02 admin activation #125 merged 9/9; approved-template WhatsApp preflight #126 merged 5/5. WhatsApp scheduled dispatch candidate under #113; combined CI pending. All runtime and notification gates remain OFF. Trusted finalized upload, operational staging, provider approval and real transport/recovery tests, WhatsApp mapping UI, and release gates remain open. `main` and VM unchanged.
+**Current gate:** #127 and #128 merged 5/5; functional implementation F01–F04 on custom. Combined CI and real MySQL synthetic notification claim/crash probe candidate #129. All operational activation gates remain OFF; trusted finalized upload, full Docker/browser staging, real provider authorization/tests, retention/recovery, upstream integration trial and release approval remain open. `main` and VM unchanged.
 
+
+## 2026-11-24 — WhatsApp dispatch and draft editor merged; combined collaudo
+
+- #127 merged at `c3cf912ea5c1d57b8ff334cc14dfe1c2533456a5`, 5/5 corrected CI, 1,809 PHP tests passed, 8 skipped, 8,375 assertions. #128 merged at `781848b364df9120cf8b8640d93ca6b85fa799f9`, 5/5, 1,809 tests passed, 8 skipped, 8,382 assertions. Independent diffs do not overlap. Combined CI pending.
+- #129 adds hosted-only true concurrent delivery claim and SIGKILL probe against ephemeral local MySQL: two separate processes compete for one pending intent, then a separate process is interrupted after a committed claim and synthetic provider effect. Replacement process must skip; stranded sending requires operator review. No real SMTP/Telegram/Meta calls or Redis worker proof for F03. CI pending.
+- All four initial features have code in custom, not release acceptance. F02 actual finalized handoff and F03 actual provider delivery and operations still require approval and tests.
 
 ## 2026-11-24 — F02 activation and WhatsApp preflight accepted
 
