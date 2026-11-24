@@ -18,7 +18,7 @@ use Illuminate\Support\Env;
 
 function apacheCheck(bool $ok, string $label): void
 {
-    if (! $ok) {
+    if ($ok === false) {
         file_put_contents('php://stderr', 'Staging Apache integration failed: ' . $label . PHP_EOL);
         exit(1);
     }
@@ -83,7 +83,7 @@ foreach ([
 
 $state = new StagingBootstrapStateService;
 $secret = '/run/secrets/staging_admin_password';
-apacheCheck(is_file($secret) && ! is_link($secret)
+apacheCheck(is_file($secret) && is_link($secret) === false
     && fileowner($secret) === 0 && filegroup($secret) === 33
     && (fileperms($secret) & 0777) === 0640, 'protected synthetic admin secret');
 $password = file_get_contents($secret);
@@ -98,7 +98,7 @@ if ($phase === 'bootstrap') {
     apacheCheck($state->isFresh(), 'fresh SQL and Redis state');
     apacheCheck($coordinator->run(storage_path(), $stages), 'actual strict Core bootstrap');
     apacheCheck($state->isSealed($password), 'administrator sealed');
-    apacheCheck(! $coordinator->run(storage_path(), $stages), 'bootstrap replay refused');
+    apacheCheck($coordinator->run(storage_path(), $stages) === false, 'bootstrap replay refused');
     echo "STAGING_STRICT_DOCKER_BOOTSTRAP_OK (SYNTHETIC_ONLY)\n";
 
     exit(0);
