@@ -8,7 +8,14 @@ import restapiDocsRoutes from "../restapidocs";
 describe("settings routes", () => {
 	it("exports the full set of settings routes", () => {
 		expect(Array.isArray(settingsRoutes)).toBe(true);
-		expect(settingsRoutes).toHaveLength(15);
+		expect(settingsRoutes).toHaveLength(16);
+	});
+
+	it("registers the notification template editor with the settings RBAC view", () => {
+		const route = settingsRoutes.find((r: any) => r.name === "settings-notification-templates");
+		expect(route.path).toBe("/settings/notification-templates");
+		expect(route.meta.rbacViewName).toBe("Setting");
+		expect(typeof route.component).toBe("function");
 	});
 
 	it("nests the imported rest api doc routes under the docs parent", () => {
