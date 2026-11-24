@@ -27,7 +27,7 @@ function combinedCheck(bool $ok, string $label): void
 $root = '/var/www/html/rconfig';
 $phase = getenv('RCONFIG_COMBINED_ROLE_PHASE');
 combinedCheck(getenv('GITHUB_ACTIONS') === 'true' && getenv('IS_DOCKER') === 'true'
-    && in_array($phase, ['baseline', 'live'], true)
+    && in_array($phase, ['baseline', 'live', 'stopped'], true)
     && posix_geteuid() === 1000 && posix_getegid() === 33
     && getcwd() === $root, 'hosted synthetic identity');
 combinedCheck(is_file($root . '/.env') && is_link($root . '/.env') === false
@@ -130,6 +130,24 @@ if ($phase === 'baseline') {
     exit(0);
 }
 
+if ($phase === 'stopped') {
+    $oldHeartbeat = $heartbeatStore->get($heartbeatKey);
+    combinedCheck(is_int($oldHeartbeat) || (is_string($oldHeartbeat) && ctype_digit($oldHeartbeat)), 'old scheduler heartbeat retained');
+    $expires = hrtime(true) + 45_000_000_000;
+    do {
+        if ($masters->all() === [] && $supervisors->all() === []) {
+            combinedCheck($heartbeatStore->get($heartbeatKey) === $oldHeartbeat, 'stopped scheduler did not update heartbeat');
+            echo "STAGING_OLD_HORIZON_LEASES_EXPIRED_OK (SYNTHETIC_ONLY)\n";
+
+            exit(0);
+        }
+        sleep(1);
+    } while (hrtime(true) < $expires);
+    combinedCheck(false, 'old Horizon leases did not expire');
+}
+
+$lifecycle = getenv('RCONFIG_COMBINED_LIFECYCLE');
+combinedCheck(in_array($lifecycle, ['initial', 'recreate'], true), 'role lifecycle mode');
 $started = getenv('RCONFIG_COMBINED_ROLE_STARTED_AT');
 combinedCheck(is_string($started) && ctype_digit($started), 'launch timestamp format');
 $started = (int) $started;
@@ -173,6 +191,9 @@ do {
     $heartbeatTimestamp = is_int($heartbeat) || (is_string($heartbeat) && ctype_digit($heartbeat))
         ? (int) $heartbeat : 0;
     $freshHeartbeat = $heartbeatTimestamp >= $started && $heartbeatTimestamp <= time();
+    if ($lifecycle === 'recreate') {
+        $freshHeartbeat = $heartbeatTimestamp > $started && $heartbeatTimestamp <= time();
+    }
 
     $horizonReady = $workersReady && $names === $expected;
     // Only fixed labels, counts and booleans: never dump Redis payloads or names.

@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #154 strict bootstrap and actual Apache accepted 6/6; #155 simultaneous role candidate. All feature activation/deployment gates OFF. Trusted uploader, actual providers, operational policies, scheduled upstream reporting and release approval remain open. `main` and VM unchanged.
+**Current gate:** #156 three simultaneous roles accepted 7/7; #157 role recreation candidate. All feature activation/deployment gates OFF; `main` and VM unchanged. Trusted uploader, actual providers, operational policy and release remain open.
 
+
+## 2026-11-24 — Three roles accepted; recreation candidate
+
+- #156 merged at `9bfc45200dc7b88cdb4d6cf28591f287bca04755`, head `99e5253f`, 7/7 CI (45395225744 / 45395225761). Actual master, three native supervisors, six workers, real scheduled heartbeat, UID/GID, HTTP and disabled feature gates confirmed. #155 closed.
+- #157 candidate preserves standalone Apache and simultaneous roles jobs; additional hosted-only recreation test seeds an unapproved local draft via authenticated API and matched random Redis/storage fixtures, stops/removes exact role containers, waits for old Horizon leases to expire naturally, recreates roles with same infra and mounts, requires distinct IDs, new scheduled heartbeat, same sealed admin and draft/cache/storage persistence. No DB/Redis restart or deployment; CI pending.
 
 ## 2026-11-24 — Apache accepted; simultaneous roles candidate
 

@@ -87,18 +87,22 @@ combined_roles_verify_processes() {
 }
 
 combined_roles_start_and_verify() {
-    local started role
+    local started role lifecycle="${1:-initial}"
     test "$GITHUB_ACTIONS" = true
     test "$RUNNER_ENVIRONMENT" = github-hosted
     [[ "$project" =~ ^rconfig-apache-ci-[0-9]+-[0-9]+$ ]]
     test "$app" = "$project-app"
     test "$(docker network inspect --format '{{.Internal}}' "$network")" = true
     # No admin secret in this probe, only the protected common application mounts.
-    docker run --rm -i --name "$project-observer" --network "$network" \
-        "${common[@]}" "${identity[@]}" --env RCONFIG_COMBINED_ROLE_PHASE=baseline \
-        --entrypoint php "$image" < tests/staging/integration/docker-combined-roles.php \
-        | tee "$RUNNER_TEMP/$project-roles-baseline.log"
-    grep -Fxq 'STAGING_COMBINED_ROLE_BASELINE_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/$project-roles-baseline.log"
+    if [[ "$lifecycle" == initial ]]; then
+        docker run --rm -i --name "$project-observer" --network "$network" \
+            "${common[@]}" "${identity[@]}" --env RCONFIG_COMBINED_ROLE_PHASE=baseline \
+            --entrypoint php "$image" < tests/staging/integration/docker-combined-roles.php \
+            | tee "$RUNNER_TEMP/$project-roles-baseline.log"
+        grep -Fxq 'STAGING_COMBINED_ROLE_BASELINE_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/$project-roles-baseline.log"
+    else
+        test "$lifecycle" = recreate
+    fi
 
     started="$(date +%s)"
     for role in horizon scheduler; do
@@ -110,11 +114,21 @@ combined_roles_start_and_verify() {
     compose exec -T redis redis-cli ping 2>&1 | grep -Fx 'NOAUTH Authentication required.' >/dev/null
     docker run --rm -i --name "$project-observer" --network "$network" \
         "${common[@]}" "${identity[@]}" --env RCONFIG_COMBINED_ROLE_PHASE=live \
-        --env "RCONFIG_COMBINED_ROLE_STARTED_AT=$started" \
+        --env "RCONFIG_COMBINED_ROLE_STARTED_AT=$started" --env "RCONFIG_COMBINED_LIFECYCLE=$lifecycle" \
         --entrypoint php "$image" < tests/staging/integration/docker-combined-roles.php \
         | tee "$RUNNER_TEMP/$project-roles-live.log"
     grep -Fxq 'STAGING_COMBINED_HORIZON_WORKERS_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/$project-roles-live.log"
     grep -Fxq 'STAGING_COMBINED_SCHEDULER_HEARTBEAT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/$project-roles-live.log"
     combined_roles_verify_layout
     combined_roles_verify_processes
+}
+
+combined_roles_observe() {
+    local phase="$1"
+    test "$phase" = stopped
+    docker run --rm -i --name "$project-observer" --network "$network" \
+        "${common[@]}" "${identity[@]}" --env RCONFIG_COMBINED_ROLE_PHASE=stopped \
+        --entrypoint php "$image" < tests/staging/integration/docker-combined-roles.php \
+        | tee "$RUNNER_TEMP/$project-roles-baseline.log"
+    grep -Fxq 'STAGING_OLD_HORIZON_LEASES_EXPIRED_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/$project-roles-baseline.log"
 }
