@@ -95,12 +95,11 @@ combined_roles_start_and_verify() {
     test "$(docker network inspect --format '{{.Internal}}' "$network")" = true
     # No admin secret in this probe, only the protected common application mounts.
     if [[ "$lifecycle" == initial ]]; then
-    docker run --rm -i --name "$project-observer" --network "$network" \
-        "${common[@]}" "${identity[@]}" --env RCONFIG_COMBINED_ROLE_PHASE=baseline \
-        --entrypoint php "$image" < tests/staging/integration/docker-combined-roles.php \
-        | tee "$RUNNER_TEMP/$project-roles-baseline.log"
-    grep -Fxq 'STAGING_COMBINED_ROLE_BASELINE_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/$project-roles-baseline.log"
-
+        docker run --rm -i --name "$project-observer" --network "$network" \
+            "${common[@]}" "${identity[@]}" --env RCONFIG_COMBINED_ROLE_PHASE=baseline \
+            --entrypoint php "$image" < tests/staging/integration/docker-combined-roles.php \
+            | tee "$RUNNER_TEMP/$project-roles-baseline.log"
+        grep -Fxq 'STAGING_COMBINED_ROLE_BASELINE_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/$project-roles-baseline.log"
     else
         test "$lifecycle" = recreate
     fi

@@ -109,17 +109,17 @@ rm -f "$RUNNER_TEMP/$project-bootstrap.log"
 
 # Start Apache first, without bootstrap secret or host port.
 start_apache() {
-docker run -d --name "$app" --network "$network" \
-    "${common[@]}" \
-    --tmpfs /run/apache2:rw,nosuid,nodev,mode=0755 \
-    --tmpfs /run/lock/apache2:rw,nosuid,nodev,mode=0755 \
-    --entrypoint /usr/local/bin/staging-role-entrypoint.sh "$image" app >/dev/null
-test "$(docker inspect --format '{{len .HostConfig.PortBindings}}' "$app")" = 0
-test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$app")" = true
-if ! test "$(docker inspect --format '{{.State.Running}}' "$app")" = true; then
-    docker logs "$app" 2>&1 | grep -E '^staging role refused:|^AH[0-9]+:' | tail -n 10 || true
-    exit 1
-fi
+    docker run -d --name "$app" --network "$network" \
+        "${common[@]}" \
+        --tmpfs /run/apache2:rw,nosuid,nodev,mode=0755 \
+        --tmpfs /run/lock/apache2:rw,nosuid,nodev,mode=0755 \
+        --entrypoint /usr/local/bin/staging-role-entrypoint.sh "$image" app >/dev/null
+    test "$(docker inspect --format '{{len .HostConfig.PortBindings}}' "$app")" = 0
+    test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$app")" = true
+    if ! test "$(docker inspect --format '{{.State.Running}}' "$app")" = true; then
+        docker logs "$app" 2>&1 | grep -E '^staging role refused:|^AH[0-9]+:' | tail -n 10 || true
+        exit 1
+    fi
 }
 start_apache
 # In combined mode, require live native Horizon workers and a genuine
@@ -131,17 +131,23 @@ fi
 # reads the bootstrap-only secret locally and never mounts it into Apache.
 verify_apache_http() {
     local persistence="${1:-none}"
-docker run --rm -i --name "$probe" --network "container:$app" \
-    "${common[@]}" "${admin[@]}" "${identity[@]}" \
-    --env RCONFIG_ROLE_PROBE_PHASE=http --env "RCONFIG_ROLE_PERSISTENCE=$persistence" \
-    --entrypoint php "$image" < tests/staging/integration/docker-apache.php | tee "$RUNNER_TEMP/$project-http.log"
-grep -Fxq "STAGING_APACHE_AUTHENTICATED_HTTP_OK (SYNTHETIC_ONLY)" "$RUNNER_TEMP/$project-http.log"
-rm -f "$RUNNER_TEMP/$project-http.log"
-test "$(docker inspect --format '{{.State.Running}}' "$app")" = true
-# Docker needs a PID column to identify container processes. Consume all rows
-# so pipefail cannot mistake a successful early match for SIGPIPE.
-docker top "$app" -eo pid,comm | awk '$1 ~ /^[0-9]+$/ && $2 == "apache2" { found = 1 } END { exit !found }'
-printf '%s\n' 'STAGING_ACTUAL_APACHE_ROLE_OK (SYNTHETIC_ONLY)'
+    docker run --rm -i --name "$probe" --network "container:$app" \
+        "${common[@]}" "${admin[@]}" "${identity[@]}" \
+        --env RCONFIG_ROLE_PROBE_PHASE=http --env "RCONFIG_ROLE_PERSISTENCE=$persistence" \
+        --entrypoint php "$image" < tests/staging/integration/docker-apache.php | tee "$RUNNER_TEMP/$project-http.log"
+    grep -Fxq "STAGING_APACHE_AUTHENTICATED_HTTP_OK (SYNTHETIC_ONLY)" "$RUNNER_TEMP/$project-http.log"
+    case "$persistence" in
+        seed) grep -Fxq 'STAGING_RECREATION_FIXTURES_SEEDED_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/$project-http.log" ;;
+        verify) grep -Fxq 'STAGING_RECREATION_FIXTURES_PERSISTED_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/$project-http.log" ;;
+        none) ;;
+        *) exit 2 ;;
+    esac
+    rm -f "$RUNNER_TEMP/$project-http.log"
+    test "$(docker inspect --format '{{.State.Running}}' "$app")" = true
+    # Docker needs a PID column to identify container processes. Consume all rows
+    # so pipefail cannot mistake a successful early match for SIGPIPE.
+    docker top "$app" -eo pid,comm | awk '$1 ~ /^[0-9]+$/ && $2 == "apache2" { found = 1 } END { exit !found }'
+    printf '%s\n' 'STAGING_ACTUAL_APACHE_ROLE_OK (SYNTHETIC_ONLY)'
 }
 if [[ "$mode" == --recreate ]]; then verify_apache_http seed; else verify_apache_http; fi
 if [[ "$mode" != --apache-only ]]; then
