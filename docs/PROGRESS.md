@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #158 role recreation accepted 8/8; #159 controlled infrastructure restart candidate. All feature activation/deployment gates OFF; `main` and VM unchanged. Trusted uploader, actual providers, operational policy and release remain open.
+**Current gate:** #160 controlled infrastructure restart accepted 9/9; #161 isolated real SFTP handoff candidate. All runtime gates OFF; `main` and VM unchanged. Actual uploader trust, scheduler integration with SFTP, operational policies, providers and release approval remain open.
 
+
+## 2026-11-24 — Infrastructure restart accepted; real SFTP handoff candidate
+
+- #160 merged at `bb5524a15ad2fb5851c5181042a1332f730e7d55`, head `44d231fc`, 9/9 CI (45399005538 / 45399005443). Job 138462360399 confirmed orderly shutdown, same DB/Redis volumes and authenticated AOF, new workers/heartbeat and SQL/Redis DB0/DB1/storage persistence. #159 closed. No abrupt crash or live service outage test.
+- #161 (refs #105/ADR-0002): disposable OpenSSH internal-sftp on Docker loopback with no network or published ports, ephemeral keys, chroot, distinct uploader/reader identity. Partial and renamed files remain in quarantine; listener stopped and uploader processes absent before bounded descriptor copy into a protected root-owned final directory. Refuse unsafe inputs; real native helper verifies synthetic bytes as descriptor-only evidence. This is NOT a live publisher or operational finalization approval. No F02 receipt/SUCCESS, runtime activation, VM operation or actual backup; CI pending. Next integrate real SFTP handoff with scheduler/Horizon and validate deployed trust model separately.
 
 ## 2026-11-24 — Role recreation accepted; infrastructure restart candidate
 
