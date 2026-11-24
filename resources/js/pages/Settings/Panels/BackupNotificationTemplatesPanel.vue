@@ -1,6 +1,7 @@
 <script setup>
 import axios from "axios";
 import { computed, onMounted, ref } from "vue";
+import WhatsAppTemplateDraftsPanel from "./WhatsAppTemplateDraftsPanel.vue";
 
 const templates = ref([]);
 const variables = ref([]);
@@ -130,7 +131,7 @@ onMounted(load);
         <h3 class="text-xl font-semibold">Template notifiche backup</h3>
         <p class="text-sm text-muted-foreground">Oggetto/titolo e corpo email o Telegram. L'anteprima usa solo dati sintetici.</p>
         <p class="text-sm text-amber-600 dark:text-amber-400">
-            Editor disponibile. L'invio tramite questi template non è ancora collegato ai canali di notifica.
+            I template Email e Telegram sono collegati al sistema automatico; l'attivazione richiede la configurazione del server.
         </p>
         <label class="block text-sm">Canale ed evento
             <select v-model="key" class="mt-1 block w-full rounded border bg-background p-2" @change="selectTemplate">
@@ -164,5 +165,6 @@ onMounted(load);
             <p class="my-2 font-semibold whitespace-pre-wrap">{{ preview.title }}</p>
             <pre class="font-sans whitespace-pre-wrap break-all">{{ preview.body }}</pre>
         </div>
+        <WhatsAppTemplateDraftsPanel />
     </section>
 </template>
