@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #188 Telegram/F04 accepted 5/5 corrected CI; #189 WhatsApp policy/mapping integration candidate. Operational gates OFF; `main` and VM unchanged. Operational handoff, staging and provider approval remain open.
+**Current gate:** #190 WhatsApp/F04 accepted 5/5 CI; #191 scanner load and release gate inventory candidate. Operational gates OFF; no release approved. Next operator gate #75 remains read-only and separately scoped.
 
+
+## 2026-11-24 — Three-channel integration accepted; scanner load candidate
+
+- #190 merged at `7a6d83bb8fcf3456811ba76113351fe50599f3b7`, head `3357cdbe`, 5/5 CI (45453736175). Job 138657466487 emitted all four WhatsApp policy/cutoff, scheduler, draft isolation and replay markers, prior email/Telegram markers, 1819 PHP tests/8475 assertions/8 skips. #189 closed. Fake Telegram/Meta HTTP, actual local SMTP TLS; no real provider approval.
+- #191 candidate: metadata-only load probe on 33 numeric device directories, 26,384 synthetic files, 66 glob/regex scans, 52,768 observed entries, exact metadata and isolation, 10,000 entries/1,000 matches boundary, precise over-limit refusal. Existing scanner bounds unchanged; elapsed/p95/max and PHP peak allocation delta recorded. Hosted runner only, no throughput claim for deployed storage. See [TEST_PLAN.md](TEST_PLAN.md) for MASTER G1–G6 inventory and next staging gates. CI pending; rollback revert test/docs PR.
 
 ## 2026-11-24 — Telegram/F04 accepted; WhatsApp integration candidate
 
