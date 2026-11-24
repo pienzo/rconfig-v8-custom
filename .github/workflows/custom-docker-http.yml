@@ -1,0 +1,133 @@
+name: Custom Docker first-install and HTTP integration
+
+on:
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'app/**'
+      - 'config/**'
+      - 'bootstrap/**'
+      - 'database/migrations/**'
+      - 'resources/**'
+      - 'routes/**'
+      - 'composer.*'
+      - 'package*.json'
+      - 'tests/staging/integration/docker-http.php'
+      - '.github/workflows/custom-docker-http.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-http:
+    name: Docker Core bootstrap and authenticated HTTP integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout tested source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Build local image
+        run: docker build --build-arg "SOURCE_REVISION=$(git rev-parse HEAD)" -t rconfig-custom-ci:http .
+
+      - name: Run disposable first-install and HTTP probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = true
+          tmp="$(mktemp -d "$RUNNER_TEMP/rconfig-http.XXXXXXXX")"
+          chmod 700 "$tmp"
+          suffix="$(basename "$tmp" | tr '.' '-')"
+          network="$suffix-net"
+          db="$suffix-db"
+          redis="$suffix-redis"
+          app="$suffix-app"
+          storage="$suffix-storage"
+          cleanup() {
+            docker rm -f -v "$app" "$db" "$redis" >/dev/null 2>&1 || true
+            docker volume rm "$storage" >/dev/null 2>&1 || true
+            docker network rm "$network" >/dev/null 2>&1 || true
+            rm -f "$tmp/db.env" "$tmp/app.env"
+            rmdir "$tmp"
+          }
+          trap cleanup EXIT
+
+          umask 077
+          password="$(openssl rand -hex 32)"
+          root_password="$(openssl rand -hex 32)"
+          key="$(openssl rand -base64 32)"
+          {
+            printf 'MARIADB_ROOT_PASSWORD=%s\n' "$root_password"
+            printf 'MARIADB_PASSWORD=%s\n' "$password"
+            printf 'MARIADB_DATABASE=rconfig_ci_http\nMARIADB_USER=rconfig_ci_http\n'
+          } > "$tmp/db.env"
+          {
+            printf 'APP_KEY=base64:%s\nDB_PASSWORD=%s\n' "$key" "$password"
+            cat <<'ENV'
+          RCONFIG_DOCKER_HTTP_CI=disposable-v1
+          APP_ENV=production
+          APP_DEBUG=false
+          APP_URL=http://127.0.0.1:8080
+          APP_DIR_PATH=/var/www/html/rconfig
+          DB_CONNECTION=mysql
+          DB_HOST=db
+          DB_PORT=3306
+          DB_DATABASE=rconfig_ci_http
+          DB_USERNAME=rconfig_ci_http
+          REDIS_HOST=redis
+          REDIS_PORT=6379
+          REDIS_DB=0
+          REDIS_CACHE_DB=1
+          CACHE_DRIVER=redis
+          CACHE_STORE=redis
+          SESSION_DRIVER=redis
+          QUEUE_CONNECTION=redis
+          MAIL_MAILER=log
+          HEALTHCHECK_OFFLINE_MODE=true
+          HEALTHCHECK_AIR_GAPPED=true
+          SECURITY_CHECK_SCHEDULE=false
+          RCONFIG_F02_RUNTIME_ENABLED=false
+          RCONFIG_F02_QUEUE_ENABLED=false
+          RCONFIG_F02_RECEIPT_ACCEPTANCE_ENABLED=false
+          RCONFIG_F02_FINALIZATION_APPROVED=false
+          RCONFIG_CUSTOM_BACKUP_NOTIFICATIONS_ENABLED=false
+          RCONFIG_NATIVE_BACKUP_NOTIFICATIONS_ENABLED=false
+          RCONFIG_TELEGRAM_ENABLED=false
+          RCONFIG_BACKUP_EMAIL_ENABLED=false
+          RCONFIG_WHATSAPP_ENABLED=false
+          RCONFIG_WHATSAPP_POLICY_APPROVED=false
+          ENV
+          } > "$tmp/app.env"
+          unset password root_password key
+
+          docker network create --internal "$network" >/dev/null
+          docker volume create "$storage" >/dev/null
+          docker run -d --name "$db" --network "$network" --network-alias db \
+            --env-file "$tmp/db.env" mariadb:10.11 >/dev/null
+          docker run -d --name "$redis" --network "$network" --network-alias redis \
+            redis:7-alpine redis-server --appendonly yes >/dev/null
+
+          ready=false
+          for attempt in $(seq 1 90); do
+            if docker exec "$db" healthcheck.sh --connect --innodb_initialized >/dev/null 2>&1 \
+              && docker exec "$redis" redis-cli ping | grep -qx PONG; then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" = true
+          test "$(docker network inspect --format '{{.Internal}}' "$network")" = true
+
+          docker run --rm -i --name "$app" --network "$network" \
+            --user 1000:33 --cap-drop ALL --security-opt no-new-privileges \
+            --read-only --env-file "$tmp/app.env" \
+            --mount "type=volume,source=$storage,target=/var/www/html/rconfig/storage" \
+            --tmpfs /tmp:rw,nosuid,nodev,mode=1777 \
+            --tmpfs /var/www/html/rconfig/bootstrap/cache:rw,nosuid,nodev,uid=1000,gid=33,mode=0770 \
+            --entrypoint php rconfig-custom-ci:http \
+            < tests/staging/integration/docker-http.php
