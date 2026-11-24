@@ -365,6 +365,10 @@ jobs:
           grep -Fxq 'F03_TELEGRAM_SCHEDULE_QUEUE_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
           grep -Fxq 'F04_TELEGRAM_STORED_TEMPLATE_PAYLOAD_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
           grep -Fxq 'F03_TELEGRAM_ACCEPTED_UNCERTAIN_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
+          grep -Fxq 'F03_WHATSAPP_POLICY_CUTOFF_REFUSED_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
+          grep -Fxq 'F03_WHATSAPP_SCHEDULE_QUEUE_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
+          grep -Fxq 'F04_WHATSAPP_DRAFT_ISOLATED_MAPPING_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
+          grep -Fxq 'F03_WHATSAPP_ACCEPTED_UNCERTAIN_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
 
       - name: Test F03 actual implicit TLS SMTP and mandatory AUTH (hosted only)
         # Local loopback fixture, ephemeral test CA, no relay or real provider.
