@@ -4,6 +4,10 @@
 
 `compose.staging.yaml` is intentionally **not** named `compose.yaml`, and both services are under the explicit `infra` profile. Neither database nor Redis publishes a host port. The only network is an isolated Docker internal bridge. This is a **personal synthetic test** setup, not a company deployment definition.
 
+### Synthetic role activation boundary (issue #151)
+
+The opt-in role launcher refuses any enabled custom F02, native outcome capture or notification channel/policy flag, including process environment overrides. Missing optional flags retain disabled defaults; present values must be literal false. The original required F02 queue flag remains mandatory. The launcher also refuses a configured external backup intake root, cached Laravel configuration and alternate dotenv assignment syntax or duplicate keys. The provisioner emits the supported single-line literal format. This is a synthetic-only staging guard, not a production role configuration or a substitute for independent egress and filesystem isolation. The default Core startup is unchanged. No existing VM environment is rewritten.
+
 ### Existing private `.env`: review-only migration helper (issue #60)
 
 `docker/staging/enable-log-mailer.py` is a **new, separately reviewed operator tool**, not an image entrypoint, cron, CI deployment, or an automatic task. On the personal synthetic staging VM it must **not** be run until its PR passes CI and the operator has independently confirmed the existing protected `.env`/secrets contract. Python 3 and a Linux local filesystem supporting `flock`, `fsync`, and hard links are required. There is no need to re-run `provision-env.sh --create`.
