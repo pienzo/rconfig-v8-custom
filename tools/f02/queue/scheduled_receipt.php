@@ -354,7 +354,9 @@ try {
         // A fresh guarded process enables only synthetic loopback email.
         $notification = new Process(['python3', $root . '/tools/f03/mixed_outcome_smtp.py',
             (string) $success->id, (string) $pending->id], $root, null, null, 90);
-        $notification->mustRun();
+        $notification->run();
+        scheduledReceiptCheck($notification->isSuccessful(), 'mixed notification child exit');
+        scheduledReceiptCheck(DB::table('custom_backup_notification_deliveries')->count() === $deliveryCount + 2, 'exactly two new synthetic deliveries');
         foreach (['F03_MIXED_SCHEDULE_QUEUE_OK (SYNTHETIC_ONLY)',
             'F03_MIXED_EMAIL_LEDGER_REPLAY_OK (SYNTHETIC_ONLY)',
             'F03_MIXED_REAL_TLS_MESSAGES_OK (SYNTHETIC_ONLY)'] as $marker) {

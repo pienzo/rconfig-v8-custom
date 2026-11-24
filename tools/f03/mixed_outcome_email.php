@@ -121,7 +121,8 @@ for ($index = 0; $index < 2; $index++) {
 }
 mixedEmailCheck($queue->size('BackupNotifications') === 0, 'notification queue acknowledged');
 $rows = $deliveries()->get();
-mixedEmailCheck($rows->count() === 2, 'two persisted deliveries');
+mixedEmailCheck($rows->count() === 2
+    && $rows->pluck('source_id')->map(static fn ($id): int => (int) $id)->all() === $ids, 'two distinct persisted deliveries');
 foreach ($rows as $row) {
     mixedEmailCheck($row->channel === 'email' && $row->status === 'accepted'
         && $row->event_type === ((int) $row->source_id === $successId ? 'backup.success' : 'backup.failed')
