@@ -72,11 +72,22 @@ docker run --rm --name "$preflight" --network "$network" \
     "${common[@]}" "${admin[@]}" "${identity[@]}" \
     --env RCONFIG_STAGING_BOOTSTRAP=core-synthetic-v1 \
     --entrypoint /usr/local/bin/staging-bootstrap-container-entrypoint.sh "$image" --check
+# A deliberately injected ambient value must fail before any migration.
+if docker run --rm -i --network "$network" \
+    "${common[@]}" "${admin[@]}" "${identity[@]}" \
+    --env RCONFIG_STAGING_BOOTSTRAP=core-synthetic-v1 \
+    --env RCONFIG_ROLE_PROBE_PHASE=bootstrap --env DB_HOST=db \
+    --entrypoint php "$image" < tests/staging/integration/docker-apache.php; then
+    echo 'Ambient override was not refused' >&2
+    exit 1
+fi
 docker run --rm -i --name "$bootstrap" --network "$network" \
     "${common[@]}" "${admin[@]}" "${identity[@]}" \
     --env RCONFIG_STAGING_BOOTSTRAP=core-synthetic-v1 \
     --env RCONFIG_ROLE_PROBE_PHASE=bootstrap \
-    --entrypoint php "$image" < tests/staging/integration/docker-apache.php
+    --entrypoint php "$image" < tests/staging/integration/docker-apache.php | tee "$RUNNER_TEMP/$project-bootstrap.log"
+grep -Fxq "STAGING_STRICT_DOCKER_BOOTSTRAP_OK (SYNTHETIC_ONLY)" "$RUNNER_TEMP/$project-bootstrap.log"
+rm -f "$RUNNER_TEMP/$project-bootstrap.log"
 
 # Only the app role; no bootstrap secret, Horizon, scheduler or host port.
 docker run -d --name "$app" --network "$network" \
@@ -86,12 +97,18 @@ docker run -d --name "$app" --network "$network" \
     --entrypoint /usr/local/bin/staging-role-entrypoint.sh "$image" app >/dev/null
 test "$(docker inspect --format '{{len .HostConfig.PortBindings}}' "$app")" = 0
 test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$app")" = true
+if ! test "$(docker inspect --format '{{.State.Running}}' "$app")" = true; then
+    docker logs "$app" 2>&1 | grep -E '^staging role refused:|^AH[0-9]+:' | tail -n 10 || true
+    exit 1
+fi
 # The separate unprivileged client shares the app's network namespace,
 # reads the bootstrap-only secret locally and never mounts it into Apache.
 docker run --rm -i --name "$probe" --network "container:$app" \
     "${common[@]}" "${admin[@]}" "${identity[@]}" \
     --env RCONFIG_ROLE_PROBE_PHASE=http \
-    --entrypoint php "$image" < tests/staging/integration/docker-apache.php
+    --entrypoint php "$image" < tests/staging/integration/docker-apache.php | tee "$RUNNER_TEMP/$project-http.log"
+grep -Fxq "STAGING_APACHE_AUTHENTICATED_HTTP_OK (SYNTHETIC_ONLY)" "$RUNNER_TEMP/$project-http.log"
+rm -f "$RUNNER_TEMP/$project-http.log"
 test "$(docker inspect --format '{{.State.Running}}' "$app")" = true
 docker top "$app" -eo comm | grep -qx apache2
 printf '%s\n' 'STAGING_ACTUAL_APACHE_ROLE_OK (SYNTHETIC_ONLY)'

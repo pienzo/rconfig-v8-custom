@@ -14,11 +14,13 @@ use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ConnectException;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Env;
 
 function apacheCheck(bool $ok, string $label): void
 {
     if (! $ok) {
-        throw new RuntimeException('Staging Apache integration failed: ' . $label);
+        fwrite(STDERR, 'Staging Apache integration failed: ' . $label . PHP_EOL);
+        exit(1);
     }
 }
 
@@ -29,9 +31,37 @@ apacheCheck(getenv('GITHUB_ACTIONS') === 'true' && getenv('IS_DOCKER') === 'true
     && posix_geteuid() === 1000 && posix_getegid() === 33
     && getcwd() === $root, 'disposable identity');
 
+// Reject ambient configuration before Laravel reads the protected file.
+// Disable only Dotenv's putenv writer in this one-shot CLI process: the
+// strict gate must still distinguish original process overrides from .env.
+foreach ([
+    'APP_KEY', 'APP_ENV', 'APP_DEBUG', 'DB_CONNECTION', 'DB_HOST',
+    'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD', 'DB_SOCKET',
+    'REDIS_HOST', 'REDIS_PORT', 'REDIS_PASSWORD', 'REDIS_DB', 'REDIS_CACHE_DB',
+    'QUEUE_CONNECTION', 'CACHE_DRIVER', 'SESSION_DRIVER', 'MAIL_MAILER',
+    'APP_CONFIG_CACHE', 'APP_BASE_PATH',
+    'RCONFIG_F02_RUNTIME_ENABLED', 'RCONFIG_F02_QUEUE_ENABLED',
+    'RCONFIG_F02_RECEIPT_ACCEPTANCE_ENABLED', 'RCONFIG_F02_FINALIZATION_APPROVED',
+    'RCONFIG_CUSTOM_BACKUP_NOTIFICATIONS_ENABLED', 'RCONFIG_NATIVE_BACKUP_NOTIFICATIONS_ENABLED',
+    'RCONFIG_TELEGRAM_ENABLED', 'RCONFIG_BACKUP_EMAIL_ENABLED',
+    'RCONFIG_WHATSAPP_ENABLED', 'RCONFIG_WHATSAPP_POLICY_APPROVED',
+    'RCONFIG_EXTERNAL_BACKUP_INTAKE_ROOT',
+] as $key) {
+    apacheCheck(getenv($key) === false && ! array_key_exists($key, $_ENV)
+        && ! array_key_exists($key, $_SERVER), 'ambient override ' . $key);
+}
+
 require $root . '/vendor/autoload.php';
+Env::disablePutenv();
 $app = require $root . '/bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
+// Laravel's CLI exception renderer may otherwise exit zero outside Artisan.
+set_exception_handler(static function (Throwable $error): never {
+    fwrite(STDERR, 'Staging Apache unexpected exception: ' . get_class($error) . PHP_EOL);
+    exit(1);
+});
+apacheCheck(! $app->configurationIsCached() && $app->environmentFile() === '.env', 'protected dotenv selected');
+apacheCheck(getenv('DB_PASSWORD') === false && getenv('APP_KEY') === false, 'dotenv did not populate process overrides');
 
 apacheCheck(config('app.env') === 'production' && config('app.debug') === false
     && config('database.default') === 'mysql'
@@ -64,7 +94,8 @@ if ($phase === 'bootstrap') {
     $gate = new StagingBootstrapContainerGate;
     $stages = new LaravelStagingBootstrapStages($state, new SealDefaultAdminService, $gate);
     $coordinator = new StagingBootstrapCoordinator;
-    apacheCheck($gate->permitted() && $state->isFresh(), 'actual strict runtime gate and fresh state');
+    apacheCheck($gate->permitted(), 'actual strict runtime gate');
+    apacheCheck($state->isFresh(), 'fresh SQL and Redis state');
     apacheCheck($coordinator->run(storage_path(), $stages), 'actual strict Core bootstrap');
     apacheCheck($state->isSealed($password), 'administrator sealed');
     apacheCheck(! $coordinator->run(storage_path(), $stages), 'bootstrap replay refused');
