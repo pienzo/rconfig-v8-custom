@@ -13,8 +13,8 @@ use App\Services\Staging\StagingBootstrapStateService;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ConnectException;
 use Illuminate\Contracts\Console\Kernel;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Env;
+use Illuminate\Support\Facades\DB;
 
 function apacheCheck(bool $ok, string $label): void
 {
