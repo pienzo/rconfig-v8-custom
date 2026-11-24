@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #186 F02/F03 loopback TLS email accepted 5/5 applicable CI; #187 Telegram/F04 stored template candidate. Operational gates OFF; `main` and VM unchanged. Operational handoff, staging and provider approval remain open.
+**Current gate:** #188 Telegram/F04 accepted 5/5 corrected CI; #189 WhatsApp policy/mapping integration candidate. Operational gates OFF; `main` and VM unchanged. Operational handoff, staging and provider approval remain open.
 
+
+## 2026-11-24 — Telegram/F04 accepted; WhatsApp integration candidate
+
+- #188 merged at `ef562ed15ba6acea9efe0801aa4d0ec7c3e97b39`, corrected head `5a7f7246`, 5/5 CI (45450631852). Original 45449337710 failed Pint only; functional markers passed. Corrected job 138646427033 repeated all Telegram and email markers, 1819 PHP tests/8475 assertions/8 skips. #187 closed.
+- #189 candidate: exact mixed F02 outcomes, prior email/Telegram rows unchanged, real scheduler/Redis/one-shot workers with fake exact Graph endpoint and stray HTTP prevented. Policy false, invalid cutoff and post-occurrence cutoff refuse both scheduler and direct dispatcher. Local draft deliberately differs from configured positional mapping; exact template-only payload, accepted/uncertain and no resend. Synthetic attestation only, no live provider approval or policy/pricing verification. CI pending; rollback revert test-only PR.
 
 ## 2026-11-24 — F03 email accepted; Telegram/F04 candidate
 

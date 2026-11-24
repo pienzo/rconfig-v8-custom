@@ -374,6 +374,18 @@ try {
             echo $marker . PHP_EOL;
         }
         scheduledReceiptCheck(DB::table('custom_backup_notification_deliveries')->count() === $deliveryCount + 4, 'exactly four synthetic deliveries across two channels');
+        $whatsapp = new Process([PHP_BINARY, $root . '/tools/f03/mixed_outcome_whatsapp.php',
+            (string) $success->id, (string) $pending->id], $root, ['F03_SYNTHETIC_MIXED_WHATSAPP' => '1'], null, 45);
+        $whatsapp->run();
+        scheduledReceiptCheck($whatsapp->isSuccessful(), 'mixed WhatsApp child exit');
+        foreach (['F03_WHATSAPP_POLICY_CUTOFF_REFUSED_OK (SYNTHETIC_ONLY)',
+            'F03_WHATSAPP_SCHEDULE_QUEUE_OK (SYNTHETIC_ONLY)',
+            'F04_WHATSAPP_DRAFT_ISOLATED_MAPPING_OK (SYNTHETIC_ONLY)',
+            'F03_WHATSAPP_ACCEPTED_UNCERTAIN_REPLAY_OK (SYNTHETIC_ONLY)'] as $marker) {
+            scheduledReceiptCheck(in_array($marker, explode("\n", $whatsapp->getOutput()), true), 'mixed WhatsApp marker');
+            echo $marker . PHP_EOL;
+        }
+        scheduledReceiptCheck(DB::table('custom_backup_notification_deliveries')->count() === $deliveryCount + 6, 'exactly six synthetic deliveries across three channels');
         scheduledReceiptCheck($success->fresh()->getRawOriginal() === $successSnapshot
             && $receipt->fresh()->getRawOriginal() === $receiptSnapshot
             && $pending->fresh()->getRawOriginal() === $receiptIds[2][0], 'notifications leave terminal evidence unchanged');
