@@ -1,8 +1,8 @@
 <?php
 
 /**
- * Hosted CI only. Select one actual scheduler event, then let real Horizon
- * consume it and its delayed follow-up. No production or provider access.
+ * Hosted CI only. Select actual scheduler events, then let real Horizon
+ * consume them and their delayed follow-ups. No production or provider access.
  */
 
 use App\Models\Device;
@@ -225,7 +225,7 @@ try {
             && rename($folder . '/upload.tmp', $file), 'synthetic closed-file publish');
     }
 
-    $ruleIds = array_map(static fn ($rule): int => (int) $rule->id, $rules);
+    $ruleIds = array_values(array_map(static fn ($rule): int => (int) $rule->id, $rules));
     foreach ($events as $event) {
         $event->run($app);
     }

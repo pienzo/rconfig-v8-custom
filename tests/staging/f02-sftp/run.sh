@@ -27,7 +27,9 @@ case "$live" in 0|1) ;; *) exit 2 ;; esac
 export_multi="${F02_SFTP_MULTI_EXPORT:-0}"
 case "$export_multi" in 0|1) ;; *) exit 2 ;; esac
 if test "$export_multi" = 1; then
-    test "${F02_SFTP_EXPORT:-0}" = 1 && test "$live" = 1 && test "$multi" = 1
+    test "${F02_SFTP_EXPORT:-0}" = 1
+    test "$live" = 1
+    test "$multi" = 1
 elif test "$live" = 1; then
     test "${F02_SFTP_EXPORT:-0}" = 0
 fi
