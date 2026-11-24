@@ -287,3 +287,7 @@ jobs:
             RCONFIG_CUSTOM_BACKUP_NOTIFICATIONS_ENABLED=false RCONFIG_NATIVE_BACKUP_NOTIFICATIONS_ENABLED=false \
             RCONFIG_TELEGRAM_ENABLED=false RCONFIG_BACKUP_EMAIL_ENABLED=false RCONFIG_WHATSAPP_ENABLED=false \
             php tools/f02/queue/scheduled_receipt.php
+
+      - name: Test F03 actual implicit TLS SMTP and mandatory AUTH (hosted only)
+        # Local loopback fixture, ephemeral test CA, no relay or real provider.
+        run: F03_SYNTHETIC_SMTP_TLS=1 python3 tools/f03/smtp_tls_probe.py

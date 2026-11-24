@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\Notifications\AuthenticatedBackupSmtpTransport;
 use App\Services\Notifications\SecureBackupEmailTransport;
 use Symfony\Component\Mailer\Transport\Smtp\Stream\SocketStream;
 
@@ -21,6 +22,7 @@ test('isolated SMTP transport requires implicit TLS and peer verification', func
     $transport = $this->transport->buildTransport();
     $stream = $transport->getStream();
 
+    expect($transport)->toBeInstanceOf(AuthenticatedBackupSmtpTransport::class);
     expect($stream)->toBeInstanceOf(SocketStream::class);
     expect($stream->isTLS())->toBeTrue();
     expect($transport->isTlsRequired())->toBeTrue();
@@ -62,5 +64,10 @@ test('disabled and unencrypted or incomplete configurations are refused during p
 test('unsafe subject and invalid recipient are rejected before any delivery', function () {
     expect(fn () => $this->transport->prepare("Demo\r\nBcc: other@example.test", 'Body'))->toThrow(InvalidArgumentException::class);
     config()->set('rconfig-backup-email.recipient', 'one@example.test,two@example.test');
+    expect(fn () => $this->transport->prepare('Demo', 'Body'))->toThrow(RuntimeException::class);
+});
+
+test('SMTP username cannot be a value skipped by the Symfony authentication handler', function () {
+    config()->set('rconfig-backup-email.username', '0');
     expect(fn () => $this->transport->prepare('Demo', 'Body'))->toThrow(RuntimeException::class);
 });

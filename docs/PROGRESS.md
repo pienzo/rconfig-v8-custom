@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #138 real selected F02 scheduler event/Horizon/native receipt passed 5/5; #140 UI interaction tests and Docker regression passed 7/7. #141 terminal outcome notification consistency candidate. All deployment and notification gates OFF; trusted upload handoff, real browser/Apache staging, provider tests, retention/recovery and upstream/release approval remain open. `main` and VM unchanged.
+**Current gate:** #142 F02 terminal notification consistency passed 7/7. #143 mandatory SMTP AUTH and actual local TLS probe candidate. All deployment and notification gates OFF; real browser/Apache, trusted upload handoff, provider authorization/test, notification backlog/recovery, upstream integration and release approval remain open. `main` and VM unchanged.
 
+
+## 2026-11-24 — Terminal notification consistency accepted
+
+- #142 merged at `5b5f9a36d8d9b33164f1fbc24a191123beff2dc1`, 7/7; 1,816 PHP tests, 8,459 assertions, 8 skipped; 384 frontend tests, actual F02 Horizon receipt and F03 concurrent claim/crash, both Docker checks passed.
+- #143 candidate guards automatic email SMTP greeting against omitted AUTH or HELO fallback, based on locked Symfony Mailer 8.1.7 (`8783380ecdafa23d36fc90c5873fd44b635c6e10`). Real loopback implicit TLS probe uses a private ephemeral CA and synthetic credentials; no provider delivery, external connection or Core mailer change. CI pending. Overall job deadline, approved production SMTP/provider settings and operational staging remain separate gates.
 
 ## 2026-11-24 — Horizon receipt and UI regressions accepted
 
