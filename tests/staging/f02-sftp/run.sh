@@ -9,6 +9,9 @@ test ! -e /sandbox
 umask 077
 live="${F02_SFTP_LIVE_LOCK:-0}"
 multi="${F02_SFTP_MULTI_DEVICE:-0}"
+abort="${F02_SFTP_INTERRUPTED:-0}"
+case "$abort" in 0|1) ;; *) exit 2 ;; esac
+if test "$abort" = 1; then test "$live" = 1; test "$multi" = 0; fi
 case "$multi" in 0|1) ;; *) exit 2 ;; esac
 if test "$multi" = 1; then test "$live" = 1; fi
 case "$live" in 0|1) ;; *) exit 2 ;; esac
@@ -176,6 +179,17 @@ test "$ready" = 1
 stage=partial-upload
 printf '%s\n' 'SYNTHETIC-PARTIAL' > /sandbox/partial
 printf '%s\n' 'SYNTHETIC-F02-FINAL-CONTENT' > /sandbox/complete
+if test "$abort" = 1; then
+    stage=interrupted-transfer
+    F02_SFTP_ABORT_PROBE=1 python3 /usr/local/bin/f02-handoff.py
+    kill -0 "$listener"
+    # Remove only the known synthetic aborted entry over a new SFTP session.
+    printf 'rm /incoming/backup.cfg\n' | sftp_batch
+    test ! -e /sandbox/quarantine/incoming/backup.cfg
+    test -z "$(ls -A "$published/$device")"
+    printf '%s\n' 'F02_SFTP_ABORT_RECONNECT_OK (SYNTHETIC_ONLY)'
+fi
+stage=partial-upload
 printf 'put /sandbox/partial /incoming/upload.part\n' | sftp_batch
 test -s /sandbox/quarantine/incoming/upload.part
 test -z "$(ls -A "$published/$device")"
@@ -299,7 +313,7 @@ if test "$multi" = 1; then
         printf x > alias.cfg
         ln alias.cfg hardlink.cfg
     '
-    F02_SFTP_SECOND_DEVICE=1 F02_SFTP_DEVICE=124 python3 /usr/local/bin/f02-handoff.py
+    F02_SFTP_BATCH_CONFIRMED=1 F02_SFTP_SECOND_DEVICE=1 F02_SFTP_DEVICE=124 python3 /usr/local/bin/f02-handoff.py
     before_b="$(stat -c '%d:%i:%s:%y:%z' "$published/124/backup.cfg")"
     flock -u 6
     exec 6<&-
@@ -309,7 +323,7 @@ if test "$multi" = 1; then
     test -z "$(ls -A "$published/$device")"
 fi
 stage=protected-publication
-python3 /usr/local/bin/f02-handoff.py
+F02_SFTP_BATCH_CONFIRMED=1 python3 /usr/local/bin/f02-handoff.py
 if test "$live" = 1; then
     before="$(stat -c '%d:%i:%s:%y:%z' "$published/$device/backup.cfg")"
     flock -u 7
@@ -335,6 +349,9 @@ if test "$live" = 1; then
         runuser -u f02read -- test ! -x /sandbox/quarantine-b/incoming
         printf '%s\n' 'F02_SFTP_MULTI_DEVICE_ISOLATED_PUBLICATION_OK (SYNTHETIC_ONLY)'
     fi
+fi
+if test "$abort" = 1; then
+    printf '%s\n' 'F02_SFTP_ABORT_RECOVERY_PUBLICATION_OK (SYNTHETIC_ONLY)'
 fi
 stage=final-permissions
 runuser -u f02read -- test -r "$published/$device/backup.cfg"

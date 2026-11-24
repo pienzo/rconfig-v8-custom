@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #166 live-listener single-device exclusion accepted 6/6; #167 concurrent-device isolation candidate. Operational runtime gates OFF; `main` and VM unchanged. Trusted completion, interrupted transfer handling, operational staging and release remain open.
+**Current gate:** #168 concurrent device isolation accepted 6/6; #169 interrupted SFTP recovery candidate. Operational gates OFF; `main` and VM unchanged. Trusted completion protocol, multi-device receipts, staging and release remain open.
 
+
+## 2026-11-24 — Multi-device exclusion accepted; interrupted SFTP candidate
+
+- #168 merged at `bc13dbec786062b317b7dafe13c4ce57a82f4fb6`, head `a5abccf3`, 6/6 CI (45411903635 / 45411903499). Job 138507648378 confirmed independent transfer, two native descriptors and isolated publication; job 138507650318 confirmed existing actual scheduled receipt and fail-closed preflight. #167 closed.
+- #169 candidate adds isolated authenticated SFTP v3 OPEN/acknowledged WRITE and client SIGKILL before CLOSE for partial and complete-looking synthetic bytes. Require held then released lock, no output, refusal without explicit controller-known batch completion, and content-oracle rejection before publication even if completion flag true for partial. Reconnect and valid existing transfer/publisher path, same live listener. Original checks retained. No production completion proof, no runtime or VM changes. CI pending; rollback revert test-only PR.
 
 ## 2026-11-24 — Live listener accepted; multi-device exclusion candidate
 
