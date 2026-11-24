@@ -10,6 +10,7 @@ import select
 import signal
 import stat
 import struct
+import sys
 import subprocess
 import time
 
@@ -23,6 +24,7 @@ PUBLISHED = Path(os.environ["F02_SFTP_PUBLISHED"])
 DEVICE = os.environ["F02_SFTP_DEVICE"]
 READER_GID = int(os.environ["F02_SFTP_READER_GID"])
 FINAL = PUBLISHED / DEVICE
+PRIVATE = PUBLISHED / (".publisher-private-" + DEVICE)
 MAX_BYTES = 1024 * 1024
 
 
@@ -43,9 +45,15 @@ def publish(name, completion_confirmed=False, expected_digest=None, claim=None, 
         require(completion_confirmed, "synthetic completion not confirmed")
     src_dir = os.open(SOURCE, os.O_DIRECTORY | os.O_NOFOLLOW | os.O_RDONLY)
     dst_dir = os.open(FINAL, os.O_DIRECTORY | os.O_NOFOLLOW | os.O_RDONLY)
+    pending_dir = os.open(PRIVATE, os.O_DIRECTORY | os.O_NOFOLLOW | os.O_RDONLY)
     temp = ".pending"
     created = False
     try:
+        private_stat = os.fstat(pending_dir)
+        require(private_stat.st_uid == 0 and private_stat.st_gid == 0
+                and stat.S_IMODE(private_stat.st_mode) == 0o700
+                and private_stat.st_dev == os.fstat(dst_dir).st_dev,
+                "private same-filesystem publisher directory")
         fd = os.open(name, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW, dir_fd=src_dir)
         try:
             before = os.fstat(fd)
@@ -54,7 +62,7 @@ def publish(name, completion_confirmed=False, expected_digest=None, claim=None, 
             require(identity(os.stat(name, dir_fd=src_dir, follow_symlinks=False))
                     == identity(before), "source identity")
             out = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-                          0o600, dir_fd=dst_dir)
+                          0o600, dir_fd=pending_dir)
             created = True
             try:
                 total = 0
@@ -87,23 +95,35 @@ def publish(name, completion_confirmed=False, expected_digest=None, claim=None, 
                 os.fsync(out)
             finally:
                 os.close(out)
-            require(not (FINAL / name).exists(), "fresh final path")
+            # Persist the private directory entry before consuming a claim.
+            os.fsync(pending_dir)
+            try:
+                os.stat(name, dir_fd=dst_dir, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise RuntimeError("F02 handoff failed: fresh final path")
+            if checkpoint is not None:
+                checkpoint("copied_before_claim")
             if claim is not None:
                 claim()
             if checkpoint is not None:
                 checkpoint("claimed_before_rename")
             # The final directory is exclusively writable by the trusted
             # publisher; this test has exactly one publisher and no reader yet.
-            os.rename(temp, name, src_dir_fd=dst_dir, dst_dir_fd=dst_dir)
+            os.rename(temp, name, src_dir_fd=pending_dir, dst_dir_fd=dst_dir)
             created = False
             os.fsync(dst_dir)
+            os.fsync(pending_dir)
             if checkpoint is not None:
                 checkpoint("published_before_ack")
         finally:
             os.close(fd)
     finally:
         if created:
-            os.unlink(temp, dir_fd=dst_dir)
+            os.unlink(temp, dir_fd=pending_dir)
+            os.fsync(pending_dir)
+        os.close(pending_dir)
         os.close(src_dir)
         os.close(dst_dir)
 
@@ -187,7 +207,7 @@ def expect_refusal(confirmed, label):
         require(str(error) == "F02 handoff failed: " + label, "exact refusal reason")
     else:
         raise RuntimeError("F02 interrupted file accepted")
-    require(not list(FINAL.iterdir()), "refused candidate left no output")
+    require(not list(FINAL.iterdir()) and not list(PRIVATE.iterdir()), "refused candidate left no output")
 
 
 def aborted_probe():
@@ -351,7 +371,8 @@ def manifest_probe():
             require(str(error) == "F02 handoff failed: " + label, "exact manifest refusal")
         else:
             raise RuntimeError("F02 invalid manifest accepted")
-        require(not used.exists() and not list(FINAL.iterdir()), "manifest refusal left output or claim")
+        require(not used.exists() and not list(FINAL.iterdir())
+                and not list(PRIVATE.iterdir()), "manifest refusal left output or claim")
 
     manifest_batch("put /sandbox/complete /incoming/upload.part\n"
                    "rename /incoming/upload.part /incoming/backup.cfg\n")
@@ -393,6 +414,38 @@ def manifest_probe():
 
 
 
+
+def verify_reader_view(names):
+    # Actual OS identity, not a root-side os.access check. Enumerate all
+    # children (including dot names) and match permissive basename patterns.
+    # The PHP scanner is independently audited, not executed by this probe.
+    code = """import fnmatch, os, re, sys
+from pathlib import Path
+final, private = map(Path, sys.argv[1:3])
+expected = sys.argv[3:]
+assert os.geteuid() == 2002
+entries = sorted(os.listdir(final))
+assert entries == expected
+assert sorted(n for n in entries if fnmatch.fnmatchcase(n, '*')) == expected
+assert sorted(n for n in entries if re.fullmatch(r'.*', n)) == expected
+for operation in (lambda: os.listdir(private), lambda: (private / '.pending').open('rb')):
+    try:
+        result = operation()
+    except PermissionError:
+        pass
+    else:
+        if hasattr(result, 'close'):
+            result.close()
+        raise RuntimeError('private staging visible to reader')
+for name in expected:
+    with (final / name).open('rb') as stream:
+        assert stream.read(1)
+"""
+    result = subprocess.run(["runuser", "-u", "f02read", "--", "python3", "-I", "-c", code,
+                             str(FINAL), str(PRIVATE), *names], timeout=10, capture_output=True)
+    require(result.returncode == 0, "reader view or private directory access")
+
+
 def manifest_crash_probe():
     # One disposable listener, two independently granted synthetic occurrences.
     # The parent models explicit operator reconciliation, never auto-retry.
@@ -405,7 +458,7 @@ def manifest_crash_probe():
     used_dir.mkdir(mode=0o700)
     expected = EXPECTED.read_bytes()
     spent = []
-    pending = FINAL / ".pending"
+    pending = PRIVATE / ".pending"
     final = FINAL / "backup.cfg"
 
     def assert_replay_refused(grant, used):
@@ -420,7 +473,8 @@ def manifest_crash_probe():
         grant = {"device": 123, "nonce": secrets.token_hex(16), "start": int(time.time()) - 1,
                  "deadline": int(time.time()) + 90}
         used = used_dir / grant["nonce"]
-        require(used not in spent and not list(FINAL.iterdir()), "fresh synthetic occurrence")
+        require(used not in spent and not list(FINAL.iterdir())
+                and not list(PRIVATE.iterdir()), "fresh synthetic occurrence")
         manifest_batch("put /sandbox/complete /incoming/upload.part\n"
                        "rename /incoming/upload.part /incoming/backup.cfg\n")
         value = {"version": 1, "device": 123, "nonce": grant["nonce"], "filename": "backup.cfg",
@@ -428,11 +482,17 @@ def manifest_crash_probe():
         send_manifest(json.dumps(value).encode())
 
         def checkpoint(stage):
+            if stage == "copied_before_claim":
+                require(pending.is_file() and not used.exists(), "private copy before claim")
+                verify_reader_view([])
+                print("F02_SFTP_PRIVATE_PENDING_BEFORE_CLAIM_OK (SYNTHETIC_ONLY)", flush=True)
             if stage == boundary:
                 os.kill(os.getpid(), signal.SIGKILL)
 
         # No external processes or real files are targeted. Only this forked
         # synthetic publisher is terminated at the selected checkpoint.
+        sys.stdout.flush()
+        sys.stderr.flush()
         pid = os.fork()
         if pid == 0:
             try:
@@ -463,12 +523,15 @@ def manifest_crash_probe():
         assert_replay_refused(grant, used)
 
         if boundary == "claimed_before_rename":
-            require(not final.exists() and list(FINAL.iterdir()) == [pending],
+            require(not final.exists() and not list(FINAL.iterdir())
+                    and list(PRIVATE.iterdir()) == [pending],
                     "pre-rename crash left no final basename")
             st = pending.lstat()
             require(stat.S_ISREG(st.st_mode) and st.st_uid == 0 and st.st_gid == READER_GID
                     and stat.S_IMODE(st.st_mode) == 0o440 and st.st_nlink == 1
                     and pending.read_bytes() == expected, "protected pending evidence")
+            verify_reader_view([])
+            print("F02_SFTP_PRIVATE_PENDING_AFTER_CRASH_OK (SYNTHETIC_ONLY)")
             before = identity(st)
             assert_replay_refused(grant, used)
             require(identity(pending.lstat()) == before and not final.exists(),
@@ -477,16 +540,17 @@ def manifest_crash_probe():
             # Explicit fixture operator discard, never an automatic recovery.
             # Keep the spent nonce; do not promote the pending file.
             pending.unlink()
-            directory = os.open(FINAL, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            directory = os.open(PRIVATE, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             try:
                 os.fsync(directory)
             finally:
                 os.close(directory)
-            require(not list(FINAL.iterdir()) and used.exists(), "operator discard retains spent claim")
+            require(not list(FINAL.iterdir()) and not list(PRIVATE.iterdir())
+                    and used.exists(), "operator discard retains spent claim")
             assert_replay_refused(grant, used)
             print("F02_SFTP_CLAIM_CRASH_OPERATOR_DISCARD_OK (SYNTHETIC_ONLY)")
         else:
-            require(not pending.exists() and list(FINAL.iterdir()) == [final],
+            require(not list(PRIVATE.iterdir()) and list(FINAL.iterdir()) == [final],
                     "post-rename crash retained final")
             before = identity(final.lstat())
             verify_published()
@@ -509,10 +573,13 @@ def main():
     require(not SECOND or (DEVICE == "124" and PUBLISHED == ROOT / "published"
                            and READER_GID == 2002 and os.environ.get("F02_SFTP_MULTI_DEVICE") == "1"),
             "second synthetic device contract")
-    for parent in [Path("/"), ROOT, JAIL, PUBLISHED, FINAL]:
+    for parent in [Path("/"), ROOT, JAIL, PUBLISHED, FINAL, PRIVATE]:
         st = parent.lstat()
         require(stat.S_ISDIR(st.st_mode) and st.st_uid == 0 and st.st_mode & 0o022 == 0,
                 "protected ancestor")
+    private_stat = PRIVATE.lstat()
+    require(private_stat.st_gid == 0 and stat.S_IMODE(private_stat.st_mode) == 0o700
+            and private_stat.st_dev == FINAL.lstat().st_dev, "private publisher boundary")
     if os.environ.get("F02_SFTP_MANIFEST_PROBE") == "1":
         if os.environ.get("F02_SFTP_MANIFEST_CRASH") == "1":
             manifest_crash_probe()
@@ -526,7 +593,7 @@ def main():
         try:
             publish(name)
         except (OSError, RuntimeError):
-            require(not list(FINAL.iterdir()), "negative candidate left no output")
+            require(not list(FINAL.iterdir()) and not list(PRIVATE.iterdir()), "negative candidate left no output")
         else:
             raise RuntimeError("F02 handoff accepted unsafe candidate")
     publish("backup.cfg", completion_confirmed=os.environ.get("F02_SFTP_BATCH_CONFIRMED") == "1")
@@ -534,6 +601,8 @@ def main():
 
 
 def verify_published():
+    require(not list(PRIVATE.iterdir()), "no pending artifact after publication")
+    verify_reader_view(["backup.cfg"])
     require([p.name for p in FINAL.iterdir()] == ["backup.cfg"], "one published file")
     final = FINAL / "backup.cfg"
     st = final.lstat()
