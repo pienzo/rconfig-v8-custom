@@ -67,18 +67,36 @@ async function main() {
         await editor.getByLabel("Canale ed evento").selectOption("email:backup.success");
         assert.equal(await editor.getByLabel("Oggetto / titolo").inputValue(), "Browser synthetic email");
 
-        stage = "WhatsApp local draft";
+        stage = "WhatsApp select event";
         const draft = page.getByRole("region", { name: "Bozze template WhatsApp" });
-        await draft.getByLabel("Evento", { exact: true }).selectOption("backup.failed");
+        // The implicit label also contains option text; scope the unique
+        // native combobox to the draft region instead of exact label text.
+        await draft.getByRole("combobox").selectOption("backup.failed");
+        stage = "WhatsApp fill draft";
         await draft.getByLabel("Intestazione statica").fill("Browser synthetic WhatsApp");
         await draft.getByLabel("Corpo della bozza").fill("Browser {{backup.status}}");
-        await draft.getByRole("button", { name: "Anteprima", exact: true }).click();
+        stage = "WhatsApp preview API";
+        const [previewResponse] = await Promise.all([
+            page.waitForResponse((response) => response.url() === origin + "/api/settings/whatsapp-template-drafts/preview"
+                && response.request().method() === "POST"),
+            draft.getByRole("button", { name: "Anteprima", exact: true }).click(),
+        ]);
+        assert.equal(previewResponse.status(), 200);
+        stage = "WhatsApp rendered preview";
         await draft.getByText("Browser {{1}}", { exact: true }).waitFor();
         await draft.getByText("Browser FAILED", { exact: true }).waitFor();
-        await draft.getByRole("button", { name: "Salva bozza", exact: true }).click();
+        stage = "WhatsApp save API";
+        const [saveResponse] = await Promise.all([
+            page.waitForResponse((response) => response.url() === origin + "/api/settings/whatsapp-template-drafts"
+                && response.request().method() === "PUT"),
+            draft.getByRole("button", { name: "Salva bozza", exact: true }).click(),
+        ]);
+        assert.equal(saveResponse.status(), 200);
+        stage = "WhatsApp saved confirmation";
         await draft.getByText("Bozza salvata, non approvata né attivata.", { exact: true }).waitFor();
+        stage = "WhatsApp reload persistence";
         await page.reload();
-        await draft.getByLabel("Evento", { exact: true }).selectOption("backup.failed");
+        await draft.getByRole("combobox").selectOption("backup.failed");
         assert.equal(await draft.getByLabel("Intestazione statica").inputValue(), "Browser synthetic WhatsApp");
 
         stage = "F02 filename pattern preview";
