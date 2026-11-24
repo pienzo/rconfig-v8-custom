@@ -309,7 +309,7 @@ jobs:
             rmdir -- "$context"
             sudo find "$inbox" -xdev -mindepth 1 -maxdepth 2 -delete
             sudo rmdir -- "$inbox"
-            rm -f -- "$RUNNER_TEMP/f02-sftp-receipt.log" "$RUNNER_TEMP/f02-sftp-negative.log"
+            rm -f -- "$RUNNER_TEMP/f02-sftp-receipt.log" "$RUNNER_TEMP/f02-sftp-negative.log" "$RUNNER_TEMP/f02-sftp-multi-receipt.log"
           }
           trap cleanup EXIT
           sudo chown "0:$(id -g)" "$inbox"
@@ -318,8 +318,9 @@ jobs:
           cp tools/f02/linux/f02_safe_digest.c "$context/"
           docker build -t rconfig-f02-sftp-ci "$context"
           run_sftp_probe() {
-            F02_SYNTHETIC_SFTP_RECEIPT=1 F02_SYNTHETIC_HORIZON=1 REDIS_DB=11 REDIS_CACHE_DB=12 \
-            HORIZON_PREFIX=f02_sftp_ci: CACHE_PREFIX=f02_sftp_ci \
+            F02_SYNTHETIC_SFTP_RECEIPT=1 F02_SYNTHETIC_HORIZON=1 REDIS_DB="${1:-11}" REDIS_CACHE_DB="${2:-12}" \
+            F02_SYNTHETIC_MULTI_RECEIPT="${3:-0}" \
+            HORIZON_PREFIX="f02_sftp_ci_${3:-0}:" CACHE_PREFIX="f02_sftp_ci_${3:-0}" \
             QUEUE_CONNECTION=redis CACHE_DRIVER=redis CACHE_STORE=redis MAIL_MAILER=log \
             RCONFIG_F02_RUNTIME_ENABLED=true RCONFIG_F02_QUEUE_ENABLED=true \
             RCONFIG_F02_RECEIPT_ACCEPTANCE_ENABLED=true RCONFIG_F02_FINALIZATION_APPROVED=true \
@@ -343,6 +344,14 @@ jobs:
           grep -Fxq 'F02_SFTP_PUBLISHED_INODE_READY (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-receipt.log"
           grep -Fxq 'F02_REAL_SFTP_SCHEDULE_HORIZON_RECEIPT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-receipt.log"
           grep -Fxq 'F02 REAL_SCHEDULE_EVENT_HORIZON_NATIVE_RECEIPT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-receipt.log"
+          # Only the disposable root created above; first worker has stopped.
+          sudo find "$inbox" -xdev -mindepth 1 -maxdepth 2 -delete
+          test -z "$(ls -A "$inbox")"
+          run_sftp_probe 9 10 1 | tee "$RUNNER_TEMP/f02-sftp-multi-receipt.log"
+          grep -Fxq 'F02_MULTI_DEVICE_EVENTS_QUEUED_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-multi-receipt.log"
+          grep -Fxq 'F02_MULTI_DEVICE_EXACT_RECEIPTS_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-multi-receipt.log"
+          grep -Fxq 'F02_MULTI_DEVICE_RECEIPT_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-multi-receipt.log"
+          grep -Fxq 'F02 REAL_SCHEDULE_EVENT_HORIZON_NATIVE_RECEIPT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-multi-receipt.log"
 
       - name: Test F03 actual implicit TLS SMTP and mandatory AUTH (hosted only)
         # Local loopback fixture, ephemeral test CA, no relay or real provider.

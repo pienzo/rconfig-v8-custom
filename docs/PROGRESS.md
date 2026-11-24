@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #178 persisted claim restart classification accepted 6/6; #179 explicit pending recovery candidate. Operational gates OFF; `main` and VM unchanged. Durable operational recovery, device compatibility, multi-device receipts and staging remain open.
+**Current gate:** #180 explicit pending recovery accepted 6/6; #181 multi-device actual scheduled receipt candidate. Operational gates OFF; `main` and VM unchanged. Operational recovery, device compatibility, staging and release remain open.
 
+
+## 2026-11-24 — Explicit recovery accepted; multi-device receipt candidate
+
+- #180 merged at `d1465bab67d2783af0db892977661bea58aee6a8`, head `8845da61`, 6/6 CI (45439537949 / 45439538110). Job 138606475535 confirmed invalid refusal, same verified inode recovery, idempotence and live listener; job 138606473926 retained scheduled receipt. #179 closed.
+- #181 candidate extends actual SFTP export with two distinct real synthetic device IDs and a shared live listener. Two actual scheduler events queued before Horizon, exact receipt tokens and device IDs, replay both, no notifications, native fixture digest and unchanged inodes. Separate Redis DB9/10; existing single-device test retained. Existing one-worker supervisor, no parallel-worker or production approval. CI pending; rollback revert test-only PR.
 
 ## 2026-11-24 — Persisted claim accepted; explicit recovery candidate
 
