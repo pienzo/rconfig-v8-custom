@@ -52,7 +52,7 @@ final class ExternalBackupNotificationMessage
         $taskName = DB::table('tasks')->where('id', $taskId)->value('task_name');
         // Only explicitly selected metadata; no device IP, credentials,
         // configuration contents, filesystem paths, digest or raw exceptions.
-        return ['event' => $event, 'values' => [
+        $values = [
             'device.name' => $this->safeText($device?->device_name),
             'backup.status' => strtoupper((string) $run->status),
             'backup.source' => 'external-file',
@@ -63,7 +63,9 @@ final class ExternalBackupNotificationMessage
             'task.id' => is_numeric($taskId) ? (string) $taskId : null,
             'event.id' => 'external-file:' . $run->id,
             'event.timestamp' => $instant . ' UTC',
-        ]];
+        ];
+
+        return ['event' => $event, 'values' => $values];
     }
 
     private function safeFilename(mixed $value): ?string
