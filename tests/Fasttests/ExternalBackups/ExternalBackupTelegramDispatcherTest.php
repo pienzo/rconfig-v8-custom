@@ -7,6 +7,7 @@ use App\Models\ExternalBackupFileReceipt;
 use App\Models\ExternalBackupRule;
 use App\Models\Task;
 use App\Services\Notifications\ExternalBackupTelegramDispatcher;
+use App\Services\Notifications\ExternalBackupWhatsAppDispatcher;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -44,6 +45,9 @@ beforeEach(function () {
 });
 
 afterEach(function () {
+    config()->set('rconfig-whatsapp.enabled', false);
+    config()->set('rconfig-whatsapp.policy_approved', false);
+    config()->set('rconfig-whatsapp.from_utc', '');
     config()->set('custom-backup-notifications.enabled', false);
     config()->set('rconfig-telegram.enabled', false);
     config()->set('rconfig-telegram.bot_token', '');
@@ -114,4 +118,66 @@ test('mutable username destination is refused before creating an intent', functi
     expect(fn () => $this->dispatcher->dispatch($this->run->id))->toThrow(RuntimeException::class);
     expect(DB::table('custom_backup_notification_deliveries')->where('source_type', 'external-file')->where('source_id', $this->run->id)->count())->toBe(0);
     Http::assertNothingSent();
+});
+
+test('external WhatsApp dispatch selects failure template and never retries an uncertain outcome', function () {
+    config()->set('rconfig-whatsapp.enabled', true);
+    config()->set('rconfig-whatsapp.policy_approved', true);
+    config()->set('rconfig-whatsapp.from_utc', '2026-01-01 00:00:00');
+    config()->set('rconfig-whatsapp.access_token', 'EAA' . str_repeat('x', 55));
+    config()->set('rconfig-whatsapp.phone_number_id', '123456789012345');
+    config()->set('rconfig-whatsapp.recipient', '15550100123');
+    config()->set('rconfig-whatsapp.graph_version', 'v26.0');
+    config()->set('rconfig-whatsapp.template_language', 'it');
+    config()->set('rconfig-whatsapp.template_success', 'backup_success_alert');
+    config()->set('rconfig-whatsapp.template_failed', 'backup_failed_alert');
+    config()->set('rconfig-whatsapp.body_fields_success', 'backup.status,event.id');
+    config()->set('rconfig-whatsapp.body_fields_failed', 'backup.status,event.id');
+    config()->set('external-backups.runtime_enabled', true);
+    config()->set('external-backups.queue_enabled', true);
+    config()->set('custom-backup-notifications.f02_from_utc', '2026-01-01 00:00:00');
+    Http::fake(['graph.facebook.com/*' => Http::response(['error' => ['message' => 'synthetic']], 503)]);
+    $dispatcher = app(ExternalBackupWhatsAppDispatcher::class);
+
+    expect($dispatcher->dispatch($this->run->id))->toBe('uncertain');
+    expect($dispatcher->dispatch($this->run->id))->toBe('skipped');
+    Http::assertSentCount(1);
+    Http::assertSent(fn (Request $request): bool => $request['type'] === 'template'
+        && $request['template']['name'] === 'backup_failed_alert'
+        && $request['template']['components'][0]['parameters'][0]['text'] === 'FAILED');
+});
+
+test('external WhatsApp success requires a matching receipt', function () {
+    config()->set('rconfig-whatsapp.enabled', true);
+    config()->set('rconfig-whatsapp.policy_approved', true);
+    config()->set('rconfig-whatsapp.from_utc', '2026-01-01 00:00:00');
+    config()->set('rconfig-whatsapp.access_token', 'EAA' . str_repeat('x', 55));
+    config()->set('rconfig-whatsapp.phone_number_id', '123456789012345');
+    config()->set('rconfig-whatsapp.recipient', '15550100123');
+    config()->set('rconfig-whatsapp.graph_version', 'v26.0');
+    config()->set('rconfig-whatsapp.template_language', 'it');
+    config()->set('rconfig-whatsapp.template_success', 'backup_success_alert');
+    config()->set('rconfig-whatsapp.template_failed', 'backup_failed_alert');
+    config()->set('rconfig-whatsapp.body_fields_success', 'backup.status,event.id');
+    config()->set('rconfig-whatsapp.body_fields_failed', 'backup.status,event.id');
+    Http::fake(['graph.facebook.com/*' => Http::response(['messages' => [['id' => 'wamid.SYNTHETIC']]], 200)]);
+    config()->set('external-backups.runtime_enabled', true);
+    config()->set('external-backups.queue_enabled', true);
+    config()->set('custom-backup-notifications.f02_from_utc', '2026-01-01 00:00:00');
+    $this->run->update(['status' => 'success', 'reason' => 'verified_file_receipt', 'matched_filename' => 'demo.cfg']);
+    $dispatcher = app(ExternalBackupWhatsAppDispatcher::class);
+    expect($dispatcher->dispatch($this->run->id))->toBe('skipped');
+    Http::assertNothingSent();
+
+    ExternalBackupFileReceipt::create([
+        'check_run_id' => $this->run->id,
+        'device_id' => $this->run->device_id,
+        'verified_file_token' => str_repeat('c', 64),
+        'accepted_at_utc' => '2026-11-23 20:01:00',
+    ]);
+    expect($dispatcher->dispatch($this->run->id))->toBe('accepted');
+    expect($dispatcher->dispatch($this->run->id))->toBe('skipped');
+    Http::assertSentCount(1);
+    Http::assertSent(fn (Request $request): bool => $request['template']['name'] === 'backup_success_alert'
+        && $request['template']['components'][0]['parameters'][0]['text'] === 'SUCCESS');
 });
