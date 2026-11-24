@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-24  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #170 interrupted SFTP recovery accepted 6/6; #171 optional managed-sender completion manifest candidate. Operational gates OFF; `main` and VM unchanged. Ordinary device compatibility, durable completion claims, multi-device receipts, staging and release remain open.
+**Current gate:** #172 optional completion manifest accepted 6/6; #173 publisher crash boundary candidate. Operational gates OFF; `main` and VM unchanged. Durable recovery, ordinary device compatibility, multi-device receipts, staging and release remain open.
 
+
+## 2026-11-24 — Completion manifest accepted; publisher crash candidate
+
+- #172 merged at `aba663dd735da4915e88d0c9a583b6471c50985a`, head `02234645`, 6/6 CI (45422462546 / 45422462494). Job 138545378106 emitted invalid/refused/replay/native/publication/live-listener markers; job 138545380009 retained scheduled receipt. #171 closed.
+- #173 candidate: actual SFTP manifest, forked test publisher SIGKILL after fsynced one-use claim before rename and after rename+directory fsync before ack, spent claims retained, replay refused, explicit fixture operator discard of pending artifact and separate fresh occurrence, native evidence for unchanged final. No automatic recovery, no transactional journal or power-loss guarantee. Test-only pending layout requires operational isolation from reader before any deployment. CI pending; rollback revert test-only PR.
 
 ## 2026-11-24 — Interrupted SFTP accepted; completion manifest candidate
 

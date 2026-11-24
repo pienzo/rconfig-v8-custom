@@ -11,6 +11,9 @@ live="${F02_SFTP_LIVE_LOCK:-0}"
 multi="${F02_SFTP_MULTI_DEVICE:-0}"
 abort="${F02_SFTP_INTERRUPTED:-0}"
 manifest="${F02_SFTP_MANIFEST:-0}"
+crash="${F02_SFTP_MANIFEST_CRASH:-0}"
+case "$crash" in 0|1) ;; *) exit 2 ;; esac
+if test "$crash" = 1; then test "$manifest" = 1; fi
 case "$manifest" in 0|1) ;; *) exit 2 ;; esac
 if test "$manifest" = 1; then test "$live" = 1; test "$multi" = 0; test "$abort" = 0; fi
 case "$abort" in 0|1) ;; *) exit 2 ;; esac
