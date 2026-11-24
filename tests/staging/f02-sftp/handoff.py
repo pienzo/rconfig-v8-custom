@@ -648,6 +648,21 @@ def manifest_crash_probe():
                     "post-rename crash retained final")
             before = identity(final.lstat())
             inspect_fresh(grant["nonce"], "published_evidence_only")
+            assert_replay_refused(grant, used)
+            require(identity(final.lstat()) == before, "original post-crash replay unchanged")
+            # Missing and torn claim evidence must never be treated as valid.
+            unknown = secrets.token_hex(16)
+            invalid = used_dir / unknown
+            require(not invalid.exists(), "fresh invalid claim fixture")
+            inspect_fresh(unknown, "ambiguous")
+            fd = os.open(invalid, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            try:
+                require(os.write(fd, b"{") == 1, "torn claim fixture")
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            inspect_fresh(unknown, "ambiguous")
+            invalid.unlink()
             # Negative: same bytes in a second path are not a valid state.
             # Root-only synthetic fixture, no mutation of the final inode.
             pending.write_bytes(expected)
@@ -659,14 +674,22 @@ def manifest_crash_probe():
             substitute.write_bytes(expected)
             os.chown(substitute, 0, READER_GID)
             substitute.chmod(0o440)
+            original_stat = final.lstat()
+            os.utime(substitute, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+            replacement_stat = substitute.lstat()
+            require(replacement_stat.st_dev == original_stat.st_dev
+                    and replacement_stat.st_ino != original_stat.st_ino
+                    and replacement_stat.st_mtime_ns == original_stat.st_mtime_ns
+                    and replacement_stat.st_size == original_stat.st_size
+                    and substitute.read_bytes() == expected, "same bytes and mtime, different inode")
             os.rename(final, pending)
             os.rename(substitute, final)
-            # Both paths present is ambiguous. Remove the original from the
-            # inspected locations temporarily without losing its inode.
-            os.rename(pending, ROOT / "saved-original")
+            # Isolate the inode mismatch from the conflicting-path case.
+            # Move the original into the root-only claim directory temporarily.
+            os.rename(pending, used_dir / "saved-original")
             inspect_fresh(grant["nonce"], "ambiguous")
             final.unlink()
-            os.rename(ROOT / "saved-original", final)
+            os.rename(used_dir / "saved-original", final)
             # Rename changes ctime; capture restored identity for replay check.
             before = identity(final.lstat())
             inspect_fresh(grant["nonce"], "published_evidence_only")
