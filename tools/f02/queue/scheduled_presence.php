@@ -156,16 +156,18 @@ function presenceTransactionCrashProbe(string $root, string $fixture, string $ph
     $redis = Redis::connection('default');
     $reservedKey = 'queues:LocalBackupPresence:reserved';
     $marker = $fixture . '/transaction-barrier';
+    $timeoutMarker = $fixture . '/timeout-event';
     $failedBefore = DB::table('failed_jobs')->count();
     $before = $run->fresh()->getRawOriginal();
     presenceCheck(config('queue.connections.redis_local_backup_presence.retry_after') === 120
-        && $queue->size('LocalBackupPresence') === 1 && ! file_exists($marker), 'transaction crash preflight');
+        && $queue->size('LocalBackupPresence') === 1 && ! file_exists($marker) && ! file_exists($timeoutMarker), 'transaction crash preflight');
 
     $workers = [];
     $command = [PHP_BINARY, $root . '/tools/f02/queue/presence_transaction_worker.php'];
     try {
         $child = new Process([...$command, $phase, (string) $run->id], $root, null, null, 40);
         $workers[] = $child;
+        $started = hrtime(true);
         $child->start();
         $until = microtime(true) + 15;
         while (! is_file($marker) || trim((string) file_get_contents($marker)) !== $phase) {
@@ -181,7 +183,7 @@ function presenceTransactionCrashProbe(string $root, string $fixture, string $ph
             && is_numeric($lease) && (int) $lease > time() && (int) $lease <= time() + 120, 'original retry lease');
 
         $visible = $run->fresh();
-        if ($phase === 'precommit') {
+        if (in_array($phase, ['precommit', 'timeout'], true)) {
             presenceCheck($visible->getRawOriginal() === $before, 'uncommitted observation not visible to separate connection');
         } else {
             presenceCheck($visible->status === 'present' && $visible->reason === 'matching_file_observed'
@@ -190,14 +192,29 @@ function presenceTransactionCrashProbe(string $root, string $fixture, string $ph
         }
 
         $snapshot = $visible->getRawOriginal();
-        $child->signal(SIGKILL);
-        $child->wait();
-        presenceCheck(! $child->isSuccessful(), 'owned transaction worker interrupted');
+        if ($phase === 'timeout') {
+            // The worker's own Laravel alarm must fire; never signal it here.
+            while ($child->isRunning()) {
+                presenceCheck((hrtime(true) - $started) / 1000000000 < 40, 'worker self-termination deadline');
+                usleep(100000);
+            }
+            $elapsed = (hrtime(true) - $started) / 1000000000;
+            presenceCheck(! $child->isSuccessful() && $elapsed >= 29 && $elapsed < 40
+                && is_file($timeoutMarker)
+                && trim((string) file_get_contents($timeoutMarker)) === $original['uuid'] . ':1', 'real JobTimedOut and autonomous worker exit');
+            printf("F02_PRESENCE_TIMEOUT_METRICS elapsed_seconds=%.3f\\n", $elapsed);
+        } else {
+            $child->signal(SIGKILL);
+            $child->wait();
+            presenceCheck(! $child->isSuccessful(), 'owned transaction worker interrupted');
+        }
         presenceCheck($run->fresh()->getRawOriginal() === $snapshot
             && $queue->size('LocalBackupPresence') === 1 && count($redis->zrange($reservedKey, 0, -1)) === 1, 'database and reserved job survive interruption');
-        echo $phase === 'precommit'
-            ? "F02_PRESENCE_PRECOMMIT_ROLLBACK_OK (SYNTHETIC_ONLY)\n"
-            : "F02_PRESENCE_POSTCOMMIT_PREACK_OK (SYNTHETIC_ONLY)\n";
+        echo match ($phase) {
+            'precommit' => "F02_PRESENCE_PRECOMMIT_ROLLBACK_OK (SYNTHETIC_ONLY)\n",
+            'timeout' => "F02_PRESENCE_WORKER_TIMEOUT_ROLLBACK_OK (SYNTHETIC_ONLY)\n",
+            default => "F02_PRESENCE_POSTCOMMIT_PREACK_OK (SYNTHETIC_ONLY)\n",
+        };
 
         presenceCheck(unlink($marker), 'remove owned barrier');
         $until = microtime(true) + 125;
@@ -224,17 +241,21 @@ function presenceTransactionCrashProbe(string $root, string $fixture, string $ph
         $snapshot = $final->getRawOriginal();
         $dispatch->run($app);
         presenceCheck($queue->size('LocalBackupPresence') === 0 && $run->fresh()->getRawOriginal() === $snapshot, 'transaction crash terminal replay unchanged');
-        echo $phase === 'precommit'
-            ? "F02_PRESENCE_PRECOMMIT_REDELIVERY_OK (SYNTHETIC_ONLY)\n"
-            : "F02_PRESENCE_POSTCOMMIT_REDELIVERY_OK (SYNTHETIC_ONLY)\n";
+        echo match ($phase) {
+            'precommit' => "F02_PRESENCE_PRECOMMIT_REDELIVERY_OK (SYNTHETIC_ONLY)\n",
+            'timeout' => "F02_PRESENCE_WORKER_TIMEOUT_REDELIVERY_OK (SYNTHETIC_ONLY)\n",
+            default => "F02_PRESENCE_POSTCOMMIT_REDELIVERY_OK (SYNTHETIC_ONLY)\n",
+        };
     } finally {
         foreach ($workers as $worker) {
             if ($worker->isRunning()) {
                 $worker->stop(1, SIGKILL);
             }
         }
-        if (is_file($marker)) {
-            unlink($marker);
+        foreach ([$marker, $timeoutMarker] as $ownedMarker) {
+            if (is_file($ownedMarker)) {
+                unlink($ownedMarker);
+            }
         }
     }
 }
@@ -247,12 +268,12 @@ if (getenv('GITHUB_ACTIONS') !== 'true' || getenv('RUNNER_ENVIRONMENT') !== 'git
 }
 
 $mode = getenv('F02_PRESENCE_LOAD');
-if ($mode !== false && ! in_array($mode, ['0', '1', '2', '3', '4'], true)) {
+if ($mode !== false && ! in_array($mode, ['0', '1', '2', '3', '4', '5'], true)) {
     exit(2);
 }
 $load = $mode === '1';
 $crash = $mode === '2';
-$transactionCrash = in_array($mode, ['3', '4'], true);
+$transactionCrash = in_array($mode, ['3', '4', '5'], true);
 $count = $load ? 100 : ($crash || $transactionCrash ? 1 : 2);
 
 $failClosed = static function (Throwable $exception): never {
@@ -395,7 +416,12 @@ try {
     if ($crash) {
         presenceCrashProbe($root, $rules[1], $runs[1], $dispatch, $app);
     } elseif ($transactionCrash) {
-        presenceTransactionCrashProbe($root, $fixture, $mode === '3' ? 'precommit' : 'postcommit', $rules[1], $runs[1], $dispatch, $app);
+        $phase = match ($mode) {
+            '3' => 'precommit',
+            '4' => 'postcommit',
+            default => 'timeout',
+        };
+        presenceTransactionCrashProbe($root, $fixture, $phase, $rules[1], $runs[1], $dispatch, $app);
     } else {
         $master = new Process([PHP_BINARY, 'artisan', 'horizon', '--environment=production'], $root, null, null, 150);
         $workerStart = hrtime(true);
