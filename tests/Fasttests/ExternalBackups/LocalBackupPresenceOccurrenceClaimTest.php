@@ -8,7 +8,10 @@ use App\Models\LocalBackupPresenceRun;
 use App\Models\Task;
 use App\Services\ExternalBackups\ExternalBackupFilenameMatcher;
 use App\Services\ExternalBackups\LocalBackupPresenceOccurrenceClaim;
+use App\Services\ExternalBackups\LocalBackupPresenceSchedulePlanner;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Log;
 
 beforeEach(function () {
     $this->beginTransaction();
@@ -44,6 +47,7 @@ beforeEach(function () {
 });
 
 afterEach(function () {
+    CarbonImmutable::setTestNow();
     $this->rollBackTransaction();
 });
 
@@ -144,4 +148,89 @@ test('a legacy schema-only occurrence cannot be retroactively assigned criteria'
     ]);
     expect(fn () => $this->service->claim($this->rule->id, $this->instant))->toThrow(DomainException::class);
     expect($this->rule->runs()->first()->criteria_snapshot)->toBeNull();
+});
+
+test('scheduler reserves only due UTC occurrences using application cron timezone without dispatch', function () {
+    config([
+        'local-backup-presence.queue_enabled' => true,
+        'local-backup-presence.scheduler_enabled' => true,
+        'app.timezone' => 'Europe/Rome',
+    ]);
+    $this->task->update(['task_cron' => '0 7 * * *']);
+    Bus::fake();
+    $planner = app(LocalBackupPresenceSchedulePlanner::class);
+    CarbonImmutable::setTestNow($this->instant->subMinute());
+    $planner->reserveDue();
+    expect($this->rule->runs()->count())->toBe(0);
+
+    CarbonImmutable::setTestNow($this->instant->addSeconds(20));
+    $planner->reserveDue();
+    $planner->reserveDue();
+    $run = $this->rule->runs()->sole();
+    expect($run->status)->toBe('pending');
+    expect($run->getRawOriginal('scheduled_at_utc'))->toBe('2026-11-25 06:00:00');
+    expect($run->getRawOriginal('last_observed_at_utc'))->toBeNull();
+    expect($run->criteria_snapshot['timezone'])->toBe('Europe/Rome');
+
+    CarbonImmutable::setTestNow($this->instant->addDay()->addMinute());
+    $planner->reserveDue();
+    expect($this->rule->runs()->count())->toBe(1);
+    Bus::assertNothingDispatched();
+});
+
+test('scheduler refuses incomplete gates demo and paused or disabled tasks', function () {
+    CarbonImmutable::setTestNow($this->instant);
+    $planner = app(LocalBackupPresenceSchedulePlanner::class);
+    expect(config('local-backup-presence.scheduler_enabled'))->toBeFalse();
+    config(['local-backup-presence.queue_enabled' => true]);
+    $planner->reserveDue();
+    config(['local-backup-presence.scheduler_enabled' => true, 'local-backup-presence.runtime_enabled' => false]);
+    $planner->reserveDue();
+    config(['local-backup-presence.runtime_enabled' => true, 'rConfig.is_demo' => true]);
+    $planner->reserveDue();
+    config(['rConfig.is_demo' => false, 'local-backup-presence.queue_enabled' => false]);
+    $planner->reserveDue();
+    config(['local-backup-presence.queue_enabled' => true]);
+    $this->task->update(['is_paused' => 1]);
+    $planner->reserveDue();
+    $this->task->update(['is_paused' => 0]);
+    $this->rule->enabled = false;
+    $this->rule->save();
+    $planner->reserveDue();
+    expect($this->rule->runs()->count())->toBe(0);
+});
+
+test('scheduler refuses overcapacity without partial reservation and isolates an invalid rule', function () {
+    config([
+        'local-backup-presence.queue_enabled' => true,
+        'local-backup-presence.scheduler_enabled' => true,
+        'local-backup-presence.max_rules_per_tick' => 1,
+    ]);
+    CarbonImmutable::setTestNow($this->instant);
+    $task = Task::factory()->create([
+        'task_command' => LocalBackupPresenceOccurrenceClaim::TASK_COMMAND,
+        'task_devices' => 1,
+        'task_categories' => 0,
+        'task_tags' => 0,
+        'is_system' => 0,
+        'is_paused' => 0,
+        'task_cron' => '0 6 * * *',
+    ]);
+    $task->device()->attach($this->device->id);
+    $other = $this->rule->replicate();
+    $other->task_id = $task->id;
+    $other->save();
+    $this->rule->update(['quiet_seconds' => 3600]);
+    Log::spy();
+    $planner = app(LocalBackupPresenceSchedulePlanner::class);
+    $planner->reserveDue();
+    expect($this->rule->runs()->count())->toBe(0);
+    expect($other->runs()->count())->toBe(0);
+    Log::shouldHaveReceived('warning')->with('Local backup presence scheduler capacity exceeded.', ['limit' => 1])->once();
+
+    config(['local-backup-presence.max_rules_per_tick' => 2]);
+    $planner->reserveDue();
+    expect($this->rule->runs()->count())->toBe(0);
+    expect($other->runs()->count())->toBe(1);
+    Log::shouldHaveReceived('warning')->with('Local backup presence scheduler refused a rule.', ['rule_id' => $this->rule->id])->once();
 });

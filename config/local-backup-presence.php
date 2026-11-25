@@ -5,5 +5,7 @@ return [
     // Deliberately no environment variable or request-controlled binding.
     'runtime_enabled' => false,
     'queue_enabled' => false,
+    'scheduler_enabled' => false,
+    'max_rules_per_tick' => 100,
     'roots' => [],
 ];

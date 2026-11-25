@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #213 observer accepted (15/15); #215 worker CI corrected; repeat CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #213 observer accepted (15/15); #215 worker accepted (11/11); #216 current-minute scheduler reservation candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Isolated worker accepted; durable scheduling candidate
+
+- #215 corrected head `af938573` passed all 11 checks (four workflows), PHP 1912 passed / 8755 assertions / 8 skips (CI 45611897516, job 139197290524); all downstream regression probes passed. Merged at `1823d4133dc59f634b538780354fe4b7649f0d23`. Actual new presence Horizon execution, concurrency and timeout remain unproven; no activation or deployment.
+- #216 candidate adds a single every-minute scheduler callback with a third OFF-by-default scheduler gate, schema presence checks and overlap guard. Trusted current UTC minute, app-timezone cron, prefilter active task/rule, existing transactional claim and unique immutable occurrence. No dispatch, scanning or providers; the database row precedes future Redis handoff. Configurable candidate cap 1–100 eligible rules (default 100); fail closed on overcapacity with warning, no arbitrary partial list. Invalid rule isolated with sanitized ID-only diagnostic. This is a provisional limit, not a production capacity claim. No missed-tick backfill, durable pending reconciliation, load/fairness or worker timeout evidence yet; required before activation. No new migration or staging change; rollback code-only before activation. CI pending.
 
 ## 2026-11-25 — Isolated worker CI correction
 
