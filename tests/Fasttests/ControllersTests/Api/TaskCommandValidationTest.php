@@ -2,10 +2,13 @@
 
 use App\Models\Category;
 use App\Models\Device;
+use App\Models\ExternalBackupRule;
+use App\Models\LocalBackupPresenceRule;
 use App\Models\RestApiToken;
 use App\Models\Tag;
 use App\Models\Task;
 use App\Models\User;
+use Illuminate\Support\Facades\Bus;
 
 beforeEach(function () {
     $this->beginTransaction();
@@ -95,3 +98,64 @@ test('accepts every supported task command on create and update', function (stri
     'rconfig:download-tag',
     'rconfig:download-task',
 ]);
+
+dataset('managed file check commands', [
+    'strict receipt' => ['rconfig:check-external-backup'],
+    'local presence' => ['rconfig:check-local-backup-presence'],
+]);
+
+test('managed F02 commands cannot be created or assigned through Core task routes', function (string $command) {
+    $task = Task::factory()->create(['task_command' => 'rconfig:download-device']);
+    $payload = taskCommandValidationPayload($command);
+    $this->postJson('/api/tasks', $payload)->assertUnprocessable()->assertJsonValidationErrors(['task_command']);
+    $this->postJson('/api/tasks/validate-task', $payload)->assertUnprocessable()->assertJsonValidationErrors(['task_command']);
+    $this->patchJson('/api/tasks/' . $task->id, $payload + ['id' => $task->id])->assertUnprocessable()->assertJsonValidationErrors(['task_command']);
+    expect($task->fresh()->task_command)->toBe('rconfig:download-device');
+})->with('managed file check commands');
+
+test('managed F02 tasks refuse valid native edits pause delete manual dispatch and mixed bulk deletion', function (string $command) {
+    Bus::fake();
+    $device = Device::factory()->create();
+    $task = Task::factory()->create([
+        'task_command' => $command,
+        'is_paused' => 1,
+        'is_system' => 0,
+        'task_devices' => 1,
+        'task_categories' => 0,
+        'task_tags' => 0,
+    ]);
+    $task->device()->attach($device->id);
+    $attributes = [
+        'task_id' => $task->id,
+        'device_id' => $device->id,
+        'pattern_mode' => 'glob',
+        'filename_pattern' => 'backup_*.cfg',
+    ];
+    $rule = $command === 'rconfig:check-local-backup-presence'
+        ? LocalBackupPresenceRule::create($attributes + ['directory_alias' => 'synthetic', 'relative_directory' => 'device'])
+        : ExternalBackupRule::create($attributes + ['quiet_seconds' => 30, 'deadline_seconds' => 180, 'enabled' => false]);
+    $native = Task::factory()->create(['task_command' => 'rconfig:download-device']);
+    $before = $task->fresh()->getRawOriginal();
+    $ruleBefore = $rule->fresh()->getRawOriginal();
+
+    $this->patchJson('/api/tasks/' . $task->id, taskCommandValidationPayload('rconfig:download-device', ['id' => $task->id]))->assertStatus(409);
+    $this->getJson('/api/tasks/toggle-pause-task/' . $task->id)->assertStatus(409);
+    $this->deleteJson('/api/tasks/' . $task->id)->assertStatus(409);
+    $this->postJson('/api/tasks/run-manual-task', ['id' => $task->id])->assertStatus(409);
+    $this->postJson('/api/tasks/delete-many', ['ids' => [$native->id, $task->id]])->assertStatus(409);
+    $this->postJson('/api/tasks/delete-many', ['ids' => [$task->id]])->assertStatus(409);
+
+    expect($task->fresh()->getRawOriginal())->toBe($before);
+    expect($rule->fresh()->getRawOriginal())->toBe($ruleBefore);
+    expect($task->device()->pluck('devices.id')->all())->toBe([$device->id]);
+    $this->assertDatabaseHas('tasks', ['id' => $native->id]);
+    Bus::assertNothingDispatched();
+})->with('managed file check commands');
+
+test('native tasks can still be deleted in bulk', function () {
+    $tasks = Task::factory(2)->create(['task_command' => 'rconfig:download-device']);
+    $this->postJson('/api/tasks/delete-many', ['ids' => $tasks->pluck('id')->all()])->assertOk();
+    foreach ($tasks as $task) {
+        $this->assertDatabaseMissing('tasks', ['id' => $task->id]);
+    }
+});

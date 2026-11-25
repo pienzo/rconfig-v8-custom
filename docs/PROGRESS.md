@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load accepted (5/5); #227 real Redis crash/concurrency accepted (5/5); #229 transaction crash accepted (5/5); #230 actual worker timeout candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load accepted (5/5); #227 real Redis crash/concurrency accepted (5/5); #229 transaction crash accepted (5/5); #231 actual worker timeout accepted (5/5); #232 managed Core task boundary candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Actual worker timeout accepted; Core task boundary candidate
+
+- #231 corrected head `34016291` passed 5/5 (CI 45644627717, PHP job 139312160327: 1925 passed / 8824 assertions / 8 skips). Actual Laravel timeout 30.246s, rollback and original Redis attempt-two redelivery passed. Repeat 100-rule load 496.47ms reserve / 138.70ms dispatch / 3836.54ms drain; all prior crash and mixed outcomes passed. Merge connector initially timed out; subsequent read verified merged at `83df21a3732a5d23c4722c7e46e8e18eda83f138`, custom matches. No VM change.
+- #232 first candidate protects both managed F02 task commands in Core TaskController update/delete/pause and manual run; inherited v1 mutation routes share guard. Override task bulk deletion only, validate flat IDs, lock selected rows in ID order, refuse entire selection before deleting if any managed command present. Preserve native bulk deletion and native command whitelist; tests for both commands, rule/task/pivot immutability, manual queue refusal, mixed bulk and token API. No new API, activation, migration or default change. Command-based boundary only; device deletion/history, corrupt linkage, guarded lifecycle/activation, checkpoint resets, admin/demo policy and API remain separate gates. CI pending; no staging changes.
 
 ## 2026-11-25 — Transaction crash accepted; actual worker timeout candidate
 
