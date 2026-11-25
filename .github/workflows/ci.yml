@@ -377,7 +377,7 @@ jobs:
           grep -Fxq 'F04_WHATSAPP_DRAFT_ISOLATED_MAPPING_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
           grep -Fxq 'F03_WHATSAPP_ACCEPTED_UNCERTAIN_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
 
-      - name: Test actual F02 local presence mixed outcomes and 100-rule Horizon load (hosted only)
+      - name: Test actual F02 local presence mixed outcomes, 100-rule load and Redis crash recovery (hosted only)
         # Static operator config is changed only in this disposable checkout.
         # No production mapping, secrets, provider calls or privileged access.
         shell: bash
@@ -429,6 +429,12 @@ jobs:
           grep -Fxq 'F02_PRESENCE_100_RULE_HORIZON_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
           grep -Fxq 'F02_PRESENCE_100_RULE_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
           grep -Eq '^F02_PRESENCE_LOAD_METRICS rules=100 files=2500 reserve_ms=[0-9.]+ dispatch_ms=[0-9.]+ drain_ms=[0-9.]+$' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
+          run_presence_probe 2 | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_PREOBSERVATION_CRASH_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_REAL_REDELIVERY_CONCURRENT_RESERVATIONS_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_CRASH_CONCURRENCY_TERMINAL_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_CRASH_CONCURRENCY_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
 
       - name: Test F02 bounded metadata scanner load (hosted only)
         run: |

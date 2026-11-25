@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load workflow syntax corrected; repeat CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load accepted (5/5); #226 real Redis crash/concurrency candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — 100-rule benchmark accepted; real crash/concurrency candidate
+
+- #225 corrected head `42039d63` passed all 5 jobs (CI 45629667855, PHP job 139259140857: 1925 passed / 8824 assertions / 8 skips). Actual log metrics: 100 rules / 2500 files, reserve 640.23ms, dispatch 164.26ms, Horizon startup/drain 4232.47ms; all 100 correct present results, terminal replay and file integrity passed. Merged at `f598e712014706effbc80b1bc3ab879328f56097`. Synthetic immediate matching workload with no quiet interval, one worker, MySQL 8/Redis 7, not proof of worst-case or sustained performance.
+- #226 candidate adds separate guarded mode to existing hosted probe, with actual rule/run, scheduler reservation, Redis lease and queue:work children. Parent locks rule, verifies actual reserved payload, SIGKILLs only its own child, verifies original row and message unchanged; waits real 120s retry_after; adds intentional duplicate and verifies distinct worker processes with concurrent reservations (same original UUID attempt 2 and distinct UUID attempt 1) before releasing lock. Both acknowledge, exact single present result, no failed jobs, no file/receipt/provider side effects; terminal replay. No runtime config changes, no new migration or staging. Pre-observation crash only: mid-scan/commit boundary, timeout, guarded activation and missed-tick integration remain open. CI pending.
 
 ## 2026-11-25 — 100-rule benchmark workflow repair
 
