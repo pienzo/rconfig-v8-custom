@@ -1,7 +1,7 @@
-# Explicit bootstrap-only, read-only service overlay for synthetic staging.
-# Must be combined with compose.staging.yaml. No default service, migration,
-# installer, HTTP listener or background worker is started by this file.
-# This first increment accepts --check ONLY; --apply is deliberately absent.
+# Explicit bootstrap-only service overlay for synthetic staging.
+# Must be combined with compose.staging.yaml. The default command is --check.
+# An explicit --apply invocation additionally requires the reviewed approval
+# token; no HTTP listener or background worker is started by this service.
 name: rconfig-v8-custom-staging
 
 services:

@@ -109,6 +109,9 @@ done
 printf 'staging bootstrap container preflight passed (no files or database changed)\n'
 
 if [ "$action" = '--apply' ]; then
+    [ ! -e "$storage/.staging-bootstrap-attempt" ] &&
+        [ ! -L "$storage/.staging-bootstrap-attempt" ] ||
+        fail 'previous bootstrap attempt exists; recovery required'
     cd /var/www/html/rconfig || fail 'application directory unavailable'
     exec php /var/www/html/rconfig/docker/staging/bootstrap-apply.php --apply
 fi

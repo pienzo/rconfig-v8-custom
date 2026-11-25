@@ -81,8 +81,8 @@ ENV;
         '/^APP_KEY=base64:[A-Za-z0-9+\/]{43}=$/m',
         '/^DB_PASSWORD=[0-9a-fA-F]{64}$/m',
         '/^REDIS_PASSWORD=[0-9a-fA-F]{64}$/m',
-    ], ['APP_KEY=<protected>', 'DB_PASSWORD=<protected>', 'REDIS_PASSWORD=<protected>'], $dotenv);
-    bootstrapRequire($masked === $expected . "\n", 'unexpected synthetic dotenv layout');
+    ], ['APP_KEY=<protected>', 'DB_PASSWORD=<protected>', 'REDIS_PASSWORD=<protected>'], $dotenv, -1, $replacements);
+    bootstrapRequire($replacements === 3 && $masked === $expected . "\n", 'unexpected synthetic dotenv layout');
     unset($dotenv, $masked);
 
     // Refuse ambient overrides before Laravel can load service providers.

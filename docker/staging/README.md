@@ -4,6 +4,10 @@
 
 `compose.staging.yaml` is intentionally **not** named `compose.yaml`, and both services are under the explicit `infra` profile. Neither database nor Redis publishes a host port. The only network is an isolated Docker internal bridge. This is a **personal synthetic test** setup, not a company deployment definition.
 
+### Operator bootstrap candidate (issue #194)
+
+The installed bootstrap entrypoint now has a separately guarded explicit `--apply` action, pending hosted CI and operator review. The original Compose default remains `--check`. Historical sections below describe the initial check-only scaffold, not authorization to execute apply. Use the existing protected credentials and volume, the reviewed image and exact provisioned dotenv; the driver requires an explicit approval token and refuses ambient configuration overrides and previous attempts. The token is not proof of a recovery checkpoint. See [OPERATIONS.md](../../docs/OPERATIONS.md) for the independent snapshot, isolation and consent gates. Never run the integrated Core installer or CI-only test driver on staging.
+
 ### Synthetic role activation boundary (issue #151)
 
 The opt-in role launcher refuses any enabled custom F02, native outcome capture or notification channel/policy flag, including process environment overrides. Missing optional flags retain disabled defaults; present values must be literal false. The original required F02 queue flag remains mandatory. The launcher also refuses a configured external backup intake root, cached Laravel configuration and alternate dotenv assignment syntax or duplicate keys. The provisioner emits the supported single-line literal format. This is a synthetic-only staging guard, not a production role configuration or a substitute for independent egress and filesystem isolation. The default Core startup is unchanged. No existing VM environment is rewritten.
