@@ -87,25 +87,35 @@ docker run --rm --name "$preflight" --network "$network" \
     "${common[@]}" "${admin[@]}" "${identity[@]}" \
     --env RCONFIG_STAGING_BOOTSTRAP=core-synthetic-v1 \
     --entrypoint /usr/local/bin/staging-bootstrap-container-entrypoint.sh "$image" --check
-# A deliberately injected ambient value must fail before any migration.
-negative_status=0
-docker run --rm -i --network "$network" \
-    "${common[@]}" "${admin[@]}" "${identity[@]}" \
-    --env RCONFIG_STAGING_BOOTSTRAP=core-synthetic-v1 \
-    --env RCONFIG_ROLE_PROBE_PHASE=bootstrap --env DB_HOST=db \
-    --entrypoint php "$image" < tests/staging/integration/docker-apache.php \
-    > "$RUNNER_TEMP/$project-negative.log" 2>&1 || negative_status=$?
-test "$negative_status" -eq 1
-grep -Fxq "Staging Apache integration failed: ambient override DB_HOST" "$RUNNER_TEMP/$project-negative.log"
+# The exact installed operator entrypoint is exercised on disposable CI only.
+# Approval is a simulated invocation token, not evidence of a VM snapshot.
+apply_bootstrap() {
+    docker run --rm --network "$network" \
+        "${common[@]}" "${admin[@]}" "${identity[@]}" \
+        --env RCONFIG_STAGING_BOOTSTRAP=core-synthetic-v1 "$@" \
+        --entrypoint /usr/local/bin/staging-bootstrap-container-entrypoint.sh "$image" --apply
+}
+expect_refusal() {
+    local expected="$1" status=0
+    shift
+    apply_bootstrap "$@" > "$RUNNER_TEMP/$project-negative.log" 2>&1 || status=$?
+    test "$status" -eq 1
+    grep -Fxq "$expected" "$RUNNER_TEMP/$project-negative.log"
+    rm -f "$RUNNER_TEMP/$project-negative.log"
+}
+approval=(--env RCONFIG_STAGING_BOOTSTRAP_APPROVAL=operator-reviewed-v1)
+expect_refusal 'staging bootstrap container refused: explicit operator approval missing'
+expect_refusal 'staging operator bootstrap refused: ambient configuration override' \
+    "${approval[@]}" --env DB_HOST=db
+expect_refusal 'staging operator bootstrap refused: ambient configuration override' \
+    "${approval[@]}" --env RCONFIG_TELEGRAM_ENABLED=true
 printf '%s\n' 'STAGING_AMBIENT_OVERRIDE_REFUSED_OK (SYNTHETIC_ONLY)'
-rm -f "$RUNNER_TEMP/$project-negative.log"
-docker run --rm -i --name "$bootstrap" --network "$network" \
-    "${common[@]}" "${admin[@]}" "${identity[@]}" \
-    --env RCONFIG_STAGING_BOOTSTRAP=core-synthetic-v1 \
-    --env RCONFIG_ROLE_PROBE_PHASE=bootstrap \
-    --entrypoint php "$image" < tests/staging/integration/docker-apache.php | tee "$RUNNER_TEMP/$project-bootstrap.log"
-grep -Fxq "STAGING_STRICT_DOCKER_BOOTSTRAP_OK (SYNTHETIC_ONLY)" "$RUNNER_TEMP/$project-bootstrap.log"
+apply_bootstrap "${approval[@]}" | tee "$RUNNER_TEMP/$project-bootstrap.log"
+grep -Fxq "STAGING_OPERATOR_BOOTSTRAP_OK (SYNTHETIC_ONLY)" "$RUNNER_TEMP/$project-bootstrap.log"
 rm -f "$RUNNER_TEMP/$project-bootstrap.log"
+expect_refusal 'staging bootstrap container refused: bootstrap already completed or unexpected marker exists' \
+    "${approval[@]}"
+printf '%s\n' 'STAGING_STRICT_DOCKER_BOOTSTRAP_OK (SYNTHETIC_ONLY)'
 
 # Start Apache first, without bootstrap secret or host port.
 start_apache() {

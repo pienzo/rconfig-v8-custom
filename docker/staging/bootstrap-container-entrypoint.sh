@@ -1,7 +1,7 @@
 #!/bin/sh
 # Operator-explicit synthetic staging bootstrap IMAGE preflight.
-# This version accepts --check ONLY. It never installs, migrates, starts
-# services, edits secrets, or creates the bootstrap-complete marker.
+# Default --check remains read-only. Explicit --apply delegates to the
+# separate reviewed one-shot driver; never starts web or worker services.
 set -eu
 
 fail() {
@@ -9,14 +9,23 @@ fail() {
     exit 1
 }
 
-[ "$#" -eq 1 ] && [ "$1" = '--check' ] || fail 'expected --check only'
+[ "$#" -eq 1 ] || fail 'expected --check or --apply'
+action=$1
+case "$action" in
+    --check) ;;
+    --apply)
+        [ "${RCONFIG_STAGING_BOOTSTRAP_APPROVAL:-}" = operator-reviewed-v1 ] ||
+            fail 'explicit operator approval missing'
+        ;;
+    *) fail 'expected --check or --apply' ;;
+esac
 
 app_dir=/var/www/html/rconfig
 admin_file=/run/secrets/staging_admin_password
 
-# Synthetic GitHub-hosted test paths. No action can launch or mutate data:
-# there is intentionally no --apply handler in this entrypoint.
+# Synthetic GitHub-hosted test paths are limited to the read-only check.
 if [ -n "${RCONFIG_STAGING_TEST_APP_DIR:-}" ] || [ -n "${RCONFIG_STAGING_TEST_ADMIN_FILE:-}" ]; then
+    [ "$action" = '--check' ] || fail 'test path override forbidden for apply'
     [ "${GITHUB_ACTIONS:-}" = true ] &&
         [ "${RCONFIG_STAGING_TEST_MODE:-}" = synthetic ] ||
         fail 'test path override is restricted to hosted synthetic CI'
@@ -98,3 +107,8 @@ for template in default.yml ios-ssh-enable.yml ios-ssh-noenable.yml \
 done
 
 printf 'staging bootstrap container preflight passed (no files or database changed)\n'
+
+if [ "$action" = '--apply' ]; then
+    cd /var/www/html/rconfig || fail 'application directory unavailable'
+    exec php /var/www/html/rconfig/docker/staging/bootstrap-apply.php --apply
+fi

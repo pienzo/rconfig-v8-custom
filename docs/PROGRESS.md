@@ -2,11 +2,16 @@
 
 **Cross-chat handoff and full roadmap:** [PROJECT_HANDOFF.md](PROJECT_HANDOFF.md) (verified history, all phases, blockers, next steps). See [issue #23](https://github.com/pienzo/rconfig-v8-custom/issues/23) for documentation tracking.
 
-**Checkpoint:** 2026-11-24  
+**Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #192 scanner load accepted 5/5; #75 operator staging attestation pending. No OS access or release approval. All operational gates remain OFF.
+**Current gate:** #75 operator-reported staging image and storage checks passed; #194 explicit bootstrap driver candidate, CI pending. No OS connector, bootstrap or release approval. All operational gates remain OFF.
 
+
+## 2026-11-25 — Operator image smoke and storage readiness; bootstrap candidate
+
+- #193 merged at `ae5c95f151e08626cb16cd25e5251345d4d50f1c`. Operator reports clean fast-forward to that SHA, local source image build 44/44, image ID `sha256:64422de50514cd85890eb4561f9bee61395cf4016e3f94e5ff42d178f4038a9a`, exact OCI revision, offline smoke marker. BuildKit Git metadata capture warning; label is not independent provenance. Existing protected config/secret mapping, empty SQL/Redis and internal network passed; storage root 1000:33/0775, data 0750, 5 exact bundled templates, no attempt/completion marker or files in inspected data dirs, no active storage user. No OS connector; perimeter operator-managed and not independently verified.
+- #194 candidate: explicit one-shot synthetic operator entrypoint, default --check unchanged, strict config and approval, real hosted Docker path acceptance pending. No VM bootstrap, role startup, snapshot or release yet. Before apply: approved image, recheck all mounts/freshness, coherent powered-off hypervisor snapshot and separate operator consent. Clearly flag external-device/user actions and STOP for snapshot. Never paste secrets; rollback via reviewed checkpoint, never delete partial markers.
 
 ## 2026-11-25 — Scanner load accepted; staging attestation next
 
