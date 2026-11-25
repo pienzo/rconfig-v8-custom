@@ -62,7 +62,7 @@ jobs:
         if: ${{ failure() && steps.pint_check.outcome == 'failure' }}
         run: |
           vendor/bin/pint
-          git --no-pager diff --no-ext-diff -- app tests database
+          git --no-pager diff --no-ext-diff
 
   phpstan:
     name: Static Analysis (PHPStan)
@@ -248,6 +248,20 @@ jobs:
         # to APP_ENV=testing and an ephemeral database named v8core_test.
         # Both subprocesses use distinct DB connections; no file receipts or backup success.
         run: F02_SYNTHETIC_CONCURRENCY=1 php tools/f02/concurrency/run.php
+
+      - name: Test F02 real MySQL Local Presence activation contention (hosted only)
+        # Real service, two independent PHP connections and an outer transaction.
+        # No worker, scheduler, filesystem scanner or external provider.
+        shell: bash
+        run: |
+          set -euo pipefail
+          F02_SYNTHETIC_PRESENCE_ADMISSION=1 MAIL_MAILER=log \
+            php tools/f02/concurrency/presence_admission.php | tee "$RUNNER_TEMP/f02-presence-admission.log"
+          grep -Fxq 'F02_PRESENCE_ADMISSION_COMMIT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-admission.log"
+          grep -Fxq 'F02_PRESENCE_ADMISSION_ROLLBACK_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-admission.log"
+          grep -Fxq 'F02_PRESENCE_ADMISSION_SUSPEND_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-admission.log"
+          grep -Fxq 'F02_PRESENCE_ADMISSION_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-admission.log"
+          grep -Fxq 'F02_PRESENCE_ADMISSION_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-admission.log"
 
       - name: Test F02 worker crash rollback and postcommit retry (synthetic only)
         # Only isolated PHP subprocesses on hosted Linux are SIGKILLed.
