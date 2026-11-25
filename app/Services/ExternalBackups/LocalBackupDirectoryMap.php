@@ -22,6 +22,31 @@ final class LocalBackupDirectoryMap
      */
     public function snapshot(string $alias, string $relativeDirectory = ''): array
     {
+        $parts = $this->mappedSegments($alias, $relativeDirectory);
+
+        $path = '';
+        $chain = [];
+        foreach ($parts as $part) {
+            $path .= '/' . $part;
+            $chain[$path] = $this->directoryStat($path);
+        }
+
+        if (! is_readable($path)) {
+            throw new RuntimeException('Approved backup directory is inaccessible.');
+        }
+
+        return $chain;
+    }
+
+    /** Validate the selected operator mapping without touching the filesystem. */
+    public function validateMappedSelection(string $alias, string $relativeDirectory = ''): void
+    {
+        $this->mappedSegments($alias, $relativeDirectory);
+    }
+
+    /** @return list<string> */
+    private function mappedSegments(string $alias, string $relativeDirectory): array
+    {
         self::validateSelection($alias, $relativeDirectory);
 
         if (! isset($this->roots[$alias])) {
@@ -42,18 +67,7 @@ final class LocalBackupDirectoryMap
             throw new InvalidArgumentException('Approved backup directory exceeds path bounds.');
         }
 
-        $path = '';
-        $chain = [];
-        foreach ($parts as $part) {
-            $path .= '/' . $part;
-            $chain[$path] = $this->directoryStat($path);
-        }
-
-        if (! is_readable($path)) {
-            throw new RuntimeException('Approved backup directory is inaccessible.');
-        }
-
-        return $chain;
+        return $parts;
     }
 
     /** @param array<string, array<string|int, int>> $chain */
