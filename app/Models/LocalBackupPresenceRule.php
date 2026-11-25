@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class LocalBackupPresenceRule extends BaseModel
 {
+    protected $hidden = ['scheduler_checked_minute_utc', 'scheduler_revision'];
     protected $fillable = [
         'task_id',
         'device_id',

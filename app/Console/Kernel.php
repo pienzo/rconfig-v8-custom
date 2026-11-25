@@ -107,7 +107,10 @@ class Kernel extends ConsoleKernel
         if (LocalBackupPresenceSchedulePlanner::enabled()
             && Schema::hasTable('tasks')
             && Schema::hasTable('local_backup_presence_rules')
-            && Schema::hasTable('local_backup_presence_runs')) {
+            && Schema::hasTable('local_backup_presence_runs')
+            && (config('local-backup-presence.catchup_enabled', false) !== true
+                || (Schema::hasColumn('local_backup_presence_rules', 'scheduler_checked_minute_utc')
+                    && Schema::hasColumn('local_backup_presence_rules', 'scheduler_revision')))) {
             $schedule->call(static function (): void {
                 app(LocalBackupPresenceSchedulePlanner::class)->reserveDue();
             })->name('f02-local-presence-reserve-due')->everyMinute()->withoutOverlapping(2);

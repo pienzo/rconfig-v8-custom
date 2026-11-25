@@ -9,6 +9,7 @@ use App\Models\Task;
 use App\Services\ExternalBackups\ExternalBackupFilenameMatcher;
 use App\Services\ExternalBackups\LocalBackupPresenceOccurrenceClaim;
 use App\Services\ExternalBackups\LocalBackupPresenceSchedulePlanner;
+use App\Services\ExternalBackups\LocalBackupPresenceRunState;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
@@ -233,4 +234,117 @@ test('scheduler refuses overcapacity without partial reservation and isolates an
     expect($this->rule->runs()->count())->toBe(0);
     expect($other->runs()->count())->toBe(1);
     Log::shouldHaveReceived('warning')->with('Local backup presence scheduler refused a rule.', ['rule_id' => $this->rule->id])->once();
+});
+
+test('catchup restores missed due minutes once and expired runs have no historical evidence', function () {
+    config([
+        'local-backup-presence.queue_enabled' => true,
+        'local-backup-presence.scheduler_enabled' => true,
+        'local-backup-presence.catchup_enabled' => true,
+    ]);
+    $this->task->update(['task_cron' => '* * * * *']);
+    $this->rule->update(['deadline_seconds' => 60, 'quiet_seconds' => null]);
+    Bus::fake();
+    $planner = app(LocalBackupPresenceSchedulePlanner::class);
+    CarbonImmutable::setTestNow($this->instant);
+    $planner->reserveDue();
+    CarbonImmutable::setTestNow($this->instant->addMinutes(3));
+    app(LocalBackupPresenceSchedulePlanner::class)->reserveDue();
+    $planner->reserveDue();
+
+    expect($this->rule->runs()->orderBy('scheduled_at_utc')->get()->map(fn ($run) => $run->getRawOriginal('scheduled_at_utc'))->all())->toBe([
+        '2026-11-25 06:00:00',
+        '2026-11-25 06:01:00',
+        '2026-11-25 06:02:00',
+        '2026-11-25 06:03:00',
+    ]);
+    $rule = $this->rule->fresh();
+    expect($rule->getRawOriginal('scheduler_checked_minute_utc'))->toBe('2026-11-25 06:03:00');
+    expect($rule->toArray())->not->toHaveKey('scheduler_revision');
+    expect($rule->isFillable('scheduler_checked_minute_utc'))->toBeFalse();
+    $run = $rule->runs()->orderBy('scheduled_at_utc')->firstOrFail();
+    expect($run->getRawOriginal('last_observed_at_utc'))->toBeNull();
+    $final = app(LocalBackupPresenceRunState::class)->expire($rule->id, $run->id, $this->instant->addMinutes(3));
+    expect($final->status)->toBe('error');
+    expect($final->reason)->toBe('no_observation_before_deadline');
+    Bus::assertNothingDispatched();
+});
+
+test('catchup bounds long gaps and never moves its checkpoint backwards', function () {
+    config([
+        'local-backup-presence.queue_enabled' => true,
+        'local-backup-presence.scheduler_enabled' => true,
+        'local-backup-presence.catchup_enabled' => true,
+    ]);
+    $this->task->update(['task_cron' => '* * * * *']);
+    Log::spy();
+    $planner = app(LocalBackupPresenceSchedulePlanner::class);
+    CarbonImmutable::setTestNow($this->instant);
+    $planner->reserveDue();
+    CarbonImmutable::setTestNow($this->instant->addMinutes(10));
+    $planner->reserveDue();
+    expect($this->rule->runs()->count())->toBe(6);
+    expect($this->rule->runs()->where('scheduled_at_utc', '2026-11-25 06:05:00')->exists())->toBeFalse();
+    expect($this->rule->runs()->where('scheduled_at_utc', '2026-11-25 06:06:00')->exists())->toBeTrue();
+    Log::shouldHaveReceived('warning')->with('Local backup presence catch-up window exceeded.', [
+        'rule_id' => $this->rule->id,
+        'omitted_from_utc' => '2026-11-25 06:01:00',
+        'omitted_through_utc' => '2026-11-25 06:05:00',
+    ])->once();
+    CarbonImmutable::setTestNow($this->instant->addMinutes(9));
+    $planner->reserveDue();
+    expect($this->rule->fresh()->getRawOriginal('scheduler_checked_minute_utc'))->toBe('2026-11-25 06:10:00');
+    expect($this->rule->runs()->count())->toBe(6);
+});
+
+test('catchup starts at current minute on changed criteria and does not backfill before activation', function () {
+    config([
+        'local-backup-presence.queue_enabled' => true,
+        'local-backup-presence.scheduler_enabled' => true,
+        'local-backup-presence.catchup_enabled' => true,
+    ]);
+    $this->task->update(['task_cron' => '* * * * *']);
+    $planner = app(LocalBackupPresenceSchedulePlanner::class);
+    CarbonImmutable::setTestNow($this->instant);
+    $planner->reserveDue();
+    $this->task->update(['is_paused' => 1]);
+    CarbonImmutable::setTestNow($this->instant->addMinute());
+    $planner->reserveDue();
+    $this->task->update(['is_paused' => 0]);
+    $this->rule->update(['filename_pattern' => 'new_*.cfg']);
+    CarbonImmutable::setTestNow($this->instant->addMinutes(3));
+    $planner->reserveDue();
+    expect($this->rule->runs()->count())->toBe(2);
+    expect($this->rule->runs()->orderByDesc('scheduled_at_utc')->first()->criteria_snapshot['filename_pattern'])->toBe('new_*.cfg');
+
+    $this->rule->activated_at_utc = '2026-11-25 06:05:00';
+    $this->rule->save();
+    CarbonImmutable::setTestNow($this->instant->addMinutes(6));
+    $planner->reserveDue();
+    expect($this->rule->runs()->count())->toBe(3);
+    expect($this->rule->runs()->where('scheduled_at_utc', '2026-11-25 06:05:00')->exists())->toBeFalse();
+});
+
+test('failed catchup reservation does not advance the checkpoint or commit partial claims', function () {
+    config([
+        'local-backup-presence.queue_enabled' => true,
+        'local-backup-presence.scheduler_enabled' => true,
+        'local-backup-presence.catchup_enabled' => true,
+    ]);
+    $this->task->update(['task_cron' => '* * * * *']);
+    $planner = app(LocalBackupPresenceSchedulePlanner::class);
+    CarbonImmutable::setTestNow($this->instant);
+    $planner->reserveDue();
+    // A schema-only occurrence is refused by the claim boundary.
+    LocalBackupPresenceRun::create([
+        'rule_id' => $this->rule->id,
+        'device_id' => $this->device->id,
+        'scheduled_at_utc' => '2026-11-25 06:02:00',
+        'deadline_at_utc' => '2026-11-25 07:02:00',
+    ]);
+    CarbonImmutable::setTestNow($this->instant->addMinutes(3));
+    $planner->reserveDue();
+    expect($this->rule->runs()->count())->toBe(2);
+    expect($this->rule->runs()->where('scheduled_at_utc', '2026-11-25 06:01:00')->exists())->toBeFalse();
+    expect($this->rule->fresh()->getRawOriginal('scheduler_checked_minute_utc'))->toBe('2026-11-25 06:00:00');
 });
