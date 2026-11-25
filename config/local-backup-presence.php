@@ -7,6 +7,7 @@ return [
     'queue_enabled' => false,
     'scheduler_enabled' => false,
     'dispatch_enabled' => false,
+    'catchup_enabled' => false,
     'max_rules_per_tick' => 100,
     'roots' => [],
 ];

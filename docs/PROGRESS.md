@@ -5,8 +5,17 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #218 pending reconciliation candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery candidate, Pint correction published; repeat CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Scheduler recovery formatting correction
+
+- #221 initial head `10fc5c10`, CI 45621847530: Pint job 139231768943 reported one ordered_imports violation across 941 files. PHPStan, ESLint, Vitest and Run Unit + Fasttests step passed; downstream probes and some staging jobs were still running at inspection. Apply exactly the formatter import-order diff in LocalBackupPresenceOccurrenceClaimTest.php. No logic or assertions changed; repeat CI required before merge. No VM changes; user-approved 100-rule cap and five-minute candidate catch-up unchanged.
+
+## 2026-11-25 — Pending reconciliation accepted; bounded missed-minute recovery candidate
+
+- #219 head `d883be83` passed 15/15 checks across seven workflows, PHP 1921 passed / 8803 assertions / 8 skips (CI 45618054588, job 139218513160); downstream regression probes passed. Merged at `ca6729a3b3ff032afd06e124a49ab8148d2f9751`. Direct invocation/faked transport tests are not real Local Presence Horizon execution. User-approved 100-rule cap unchanged.
+- #220 candidate adds OFF-by-default catch-up and per-rule hidden durable UTC checkpoint and fingerprint. Under rule/task locks, current eligible linkage and unchanged configuration permit at most the latest five UTC minutes including current minute; first tick/changed fingerprint starts now; older omitted interval is logged. Cursor and claims share transaction, backward clock refused. No historical observation fabricated; recovered expired runs use existing expiry and report no observation. A current fingerprint does not prove intermediate pause/edit/revert history; guard activation/edit lifecycle and reset checkpoints after deliberate disable/re-enable before activation. Long outages beyond five minutes are not fully recovered; explicit gap diagnostic, not a historical success or absence assertion. At most 500 candidate minute evaluations/claims per tick, real load and queue deadline evidence pending. Additive migration only in CI; quiesce scheduler/workers before rollback (drops recovery checkpoint only). No VM changes. CI pending.
 
 ## 2026-11-25 — Scheduler accepted; persistent pending reconciliation candidate
 

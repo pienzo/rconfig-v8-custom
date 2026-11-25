@@ -12,11 +12,15 @@ use InvalidArgumentException;
 
 /**
  * Reserve current-minute occurrences in the database before any queue handoff.
- * No filesystem IO, dispatch, historical catch-up or user-provided timestamps.
+ * No filesystem IO, dispatch or user-provided timestamps. Optional bounded
+ * catch-up uses a durable checkpoint and a separate explicit gate.
  */
 final class LocalBackupPresenceSchedulePlanner
 {
-    public function __construct(private readonly LocalBackupPresenceOccurrenceClaim $claimer) {}
+    public function __construct(
+        private readonly LocalBackupPresenceOccurrenceClaim $claimer,
+        private readonly LocalBackupPresenceScheduleRecovery $recovery
+    ) {}
 
     public static function enabled(): bool
     {
@@ -59,6 +63,12 @@ final class LocalBackupPresenceSchedulePlanner
 
         foreach ($rules as $rule) {
             try {
+                if (config('local-backup-presence.catchup_enabled', false) === true) {
+                    $this->recovery->reserve($rule->id, $minute);
+
+                    continue;
+                }
+
                 $task = $rule->task;
                 if ($task === null) {
                     continue;
