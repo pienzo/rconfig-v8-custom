@@ -5,8 +5,14 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #207/#211 accepted; #209 run-state lifecycle corrected using actual Pint patch; combined CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #209 accepted (11/11 combined CI); #212 trusted observer candidate. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Lifecycle accepted; trusted filesystem observer candidate
+
+- #209 exact head `3db906c0` passed 11/11 CI, PHP 1896 passed / 8679 assertions / 8 skips (job 138982397719); merged at `16e1f80f8c5a82e752f18c8e1a7b4f4a15fe23d4`. Actual formatter diff resolved last PHPDoc spacing error. Combined #211 regression passed.
+- #212 candidate connects the mapped read-only scanner, frozen occurrence criteria, worker UTC clock, optional two-observation policy and locked state service. Additive nullable directory fingerprint and JSON metadata baseline (hidden from model serialization, cleared at terminal status). Same-second retry no scan; identical early observations retain baseline; changed match set restarts conservative quiet window. Normal arrival allowed, remap refused, sanitized error, no file contents persisted. Expiry only claims absence if last valid negative observation was within 60 seconds before deadline; older/none or scan crossing deadline is monitoring error. This is a proposed final observation window, not proof of exact-deadline absence. Scheduler must ensure a final-minute opportunity and bound workload.
+- Locks held over bounded metadata IO for first implementation; filesystem syscalls can still block beyond PHP's cooperative scan budget, so dedicated worker timeout, concurrency/load/restart and hard failure tests remain required. No request-supplied mapping/time; caller must use trusted operator mapping. No API, queue, environment flag, provider or staging deployment. Migration up/down on synthetic database only; rollback loses temporary baseline, require quiesced worker and reviewed recovery before deployed rollback. CI pending.
 
 ## 2026-11-25 — Directory observation accepted; lifecycle formatter correction
 

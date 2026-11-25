@@ -16,6 +16,9 @@ use InvalidArgumentException;
  */
 final class LocalBackupPresenceRunState
 {
+    // An absence assertion needs a recent observation in the final minute.
+    public const FINAL_OBSERVATION_SECONDS = 60;
+
     private const ABSENCE_REASONS = ['directory_missing', 'no_matching_file', 'no_eligible_file'];
 
     private const ERROR_REASONS = ['scan_failed', 'invalid_configuration', 'directory_identity_changed'];
@@ -25,16 +28,16 @@ final class LocalBackupPresenceRunState
     /** @param  array{status: string, reason: string, filename: string|null}  $result */
     public function record(int $ruleId, int $runId, CarbonImmutable $observedAt, array $result): LocalBackupPresenceRun
     {
-        return $this->transition($ruleId, $runId, $observedAt, $result, false);
+        return $this->transition($ruleId, $runId, $observedAt, $result, false, false);
     }
 
-    public function expire(int $ruleId, int $runId, CarbonImmutable $now): LocalBackupPresenceRun
+    public function expire(int $ruleId, int $runId, CarbonImmutable $now, bool $scanOverran = false): LocalBackupPresenceRun
     {
-        return $this->transition($ruleId, $runId, $now, null, true);
+        return $this->transition($ruleId, $runId, $now, null, true, $scanOverran);
     }
 
     /** @param  array{status: string, reason: string, filename: string|null}|null  $result */
-    private function transition(int $ruleId, int $runId, CarbonImmutable $at, ?array $result, bool $expire): LocalBackupPresenceRun
+    private function transition(int $ruleId, int $runId, CarbonImmutable $at, ?array $result, bool $expire, bool $scanOverran): LocalBackupPresenceRun
     {
         if (config('local-backup-presence.runtime_enabled', false) !== true || config('rConfig.is_demo', false)) {
             throw new DomainException('Local backup presence runtime is not approved.');
@@ -45,7 +48,7 @@ final class LocalBackupPresenceRunState
             throw new InvalidArgumentException('Invalid local backup observation instant or identifier.');
         }
 
-        return DB::transaction(function () use ($ruleId, $runId, $utc, $result, $expire): LocalBackupPresenceRun {
+        return DB::transaction(function () use ($ruleId, $runId, $utc, $result, $expire, $scanOverran): LocalBackupPresenceRun {
             $rule = LocalBackupPresenceRule::query()->whereKey($ruleId)->lockForUpdate()->firstOrFail();
             $run = $rule->runs()->whereKey($runId)->lockForUpdate()->firstOrFail();
             $snapshot = $run->criteria_snapshot;
@@ -91,9 +94,17 @@ final class LocalBackupPresenceRunState
 
                 // An unobserved occurrence is a monitoring error, not proof
                 // that the backup was absent. Do not fabricate an observation.
-                if ($last === null) {
+                if ($scanOverran) {
+                    $run->status = LocalBackupPresenceRun::ERROR;
+                    $run->reason = 'scan_finished_after_deadline';
+                    $run->matched_filename = null;
+                } elseif ($last === null) {
                     $run->status = LocalBackupPresenceRun::ERROR;
                     $run->reason = 'no_observation_before_deadline';
+                } elseif (CarbonImmutable::parse($deadline, 'UTC')->getTimestamp() - CarbonImmutable::parse($last, 'UTC')->getTimestamp() > self::FINAL_OBSERVATION_SECONDS) {
+                    $run->status = LocalBackupPresenceRun::ERROR;
+                    $run->reason = 'observation_gap_before_deadline';
+                    $run->matched_filename = null;
                 } elseif (in_array($run->reason, self::ABSENCE_REASONS, true) || $run->reason === 'stability_wait') {
                     $run->status = LocalBackupPresenceRun::ABSENT;
                     $run->reason = $run->reason === 'stability_wait' ? 'stability_deadline_elapsed' : $run->reason;
@@ -101,6 +112,8 @@ final class LocalBackupPresenceRunState
                     throw new DomainException('Invalid pending observation reason.');
                 }
 
+                $run->directory_identity = null;
+                $run->stability_baseline = null;
                 $run->save();
 
                 return $run->refresh();
@@ -135,6 +148,11 @@ final class LocalBackupPresenceRunState
             $run->last_observed_at_utc = $instant;
             if ($run->getRawOriginal('first_observed_at_utc') === null) {
                 $run->first_observed_at_utc = $instant;
+            }
+
+            if ($status !== LocalBackupPresenceRun::PENDING) {
+                $run->directory_identity = null;
+                $run->stability_baseline = null;
             }
 
             $run->save();

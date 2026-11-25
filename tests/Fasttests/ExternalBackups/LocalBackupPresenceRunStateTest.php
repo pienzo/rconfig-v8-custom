@@ -77,12 +77,12 @@ test('terminal presence survives a later retry and expiry unchanged', function (
 
 test('missing file at deadline becomes absent without inventing a new scan', function () {
     $result = ['status' => 'absent', 'reason' => 'no_eligible_file', 'filename' => null];
-    $this->state->record($this->rule->id, $this->run->id, $this->instant, $result);
+    $this->state->record($this->rule->id, $this->run->id, $this->instant->addMinutes(59), $result);
     expect(fn () => $this->state->expire($this->rule->id, $this->run->id, $this->instant->addSeconds(3599)))->toThrow(DomainException::class);
     $final = $this->state->expire($this->rule->id, $this->run->id, $this->instant->addHour());
     expect($final->status)->toBe('absent');
     expect($final->reason)->toBe('no_eligible_file');
-    expect($final->getRawOriginal('last_observed_at_utc'))->toBe('2026-11-25 06:00:00');
+    expect($final->getRawOriginal('last_observed_at_utc'))->toBe('2026-11-25 06:59:00');
 });
 
 test('no observation by deadline is monitoring error not backup absence', function () {
@@ -93,7 +93,7 @@ test('no observation by deadline is monitoring error not backup absence', functi
 });
 
 test('stability timeout has a distinct reason', function () {
-    $this->state->record($this->rule->id, $this->run->id, $this->instant, [
+    $this->state->record($this->rule->id, $this->run->id, $this->instant->addMinutes(59), [
         'status' => 'pending', 'reason' => 'stability_wait', 'filename' => 'backup_a.cfg',
     ]);
     $final = $this->state->expire($this->rule->id, $this->run->id, $this->instant->addHour());
@@ -153,4 +153,22 @@ test('presence transition creates no strict receipt or run', function () {
         'status' => 'present', 'reason' => 'stable_matching_file_observed', 'filename' => 'backup_a.cfg',
     ]);
     expect([ExternalBackupCheckRun::count(), ExternalBackupFileReceipt::count()])->toBe($before);
+});
+
+test('old negative evidence at deadline is a monitoring gap', function () {
+    $this->state->record($this->rule->id, $this->run->id, $this->instant->addSeconds(3539), [
+        'status' => 'absent', 'reason' => 'no_matching_file', 'filename' => null,
+    ]);
+    $final = $this->state->expire($this->rule->id, $this->run->id, $this->instant->addHour());
+    expect($final->status)->toBe('error');
+    expect($final->reason)->toBe('observation_gap_before_deadline');
+});
+
+test('a scan overrunning deadline is a monitoring error even with recent absence', function () {
+    $this->state->record($this->rule->id, $this->run->id, $this->instant->addMinutes(59), [
+        'status' => 'absent', 'reason' => 'no_matching_file', 'filename' => null,
+    ]);
+    $final = $this->state->expire($this->rule->id, $this->run->id, $this->instant->addHour(), true);
+    expect($final->status)->toBe('error');
+    expect($final->reason)->toBe('scan_finished_after_deadline');
 });
