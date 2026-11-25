@@ -35,7 +35,7 @@ class TaskManualRunController extends Controller
             return $this->failureResponse($e->getMessage());
         }
 
-        if ($task['task_command'] === ExternalBackupRuleController::TASK_COMMAND) {
+        if (in_array($task['task_command'], TaskController::F02_TASK_COMMANDS, true)) {
             return response()->json(['message' => 'F02 file checks are not executable yet.'], 409);
         }
 

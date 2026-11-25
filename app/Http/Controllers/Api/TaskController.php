@@ -6,6 +6,7 @@ use App\Http\Requests\StoreTaskRequest;
 use App\Http\Requests\UpdateTaskRequest;
 use App\Models\MonitoredScheduledTasks;
 use App\Models\Task;
+use App\Services\ExternalBackups\LocalBackupPresenceOccurrenceClaim;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,11 @@ use Spatie\QueryBuilder\QueryBuilder;
 
 class TaskController extends ApiBaseController
 {
+    public const F02_TASK_COMMANDS = [
+        ExternalBackupRuleController::TASK_COMMAND,
+        LocalBackupPresenceOccurrenceClaim::TASK_COMMAND,
+    ];
+
     public function __construct(Task $model, $modelname = 'task')
     {
         $this->model = $model;
@@ -79,7 +85,7 @@ class TaskController extends ApiBaseController
 
     public function update($id, UpdateTaskRequest $request)
     {
-        if (Task::query()->whereKey($id)->where('task_command', ExternalBackupRuleController::TASK_COMMAND)->exists()) {
+        if (Task::query()->whereKey($id)->whereIn('task_command', self::F02_TASK_COMMANDS)->exists()) {
             return response()->json(['message' => 'Edit external file checks from the F02 rules panel.'], 409);
         }
 
@@ -97,7 +103,7 @@ class TaskController extends ApiBaseController
 
     public function destroy($id, $return = 0)
     {
-        if (Task::query()->whereKey($id)->where('task_command', ExternalBackupRuleController::TASK_COMMAND)->exists()) {
+        if (Task::query()->whereKey($id)->whereIn('task_command', self::F02_TASK_COMMANDS)->exists()) {
             return response()->json(['message' => 'Delete external file checks from the F02 rules panel.'], 409);
         }
 
@@ -114,9 +120,34 @@ class TaskController extends ApiBaseController
         return $this->successResponse(Str::ucfirst($this->modelname) . ' deleted successfully!');
     }
 
+    public function deleteMany(Request $request)
+    {
+        $data = $request->validate([
+            'ids' => ['present', 'array'],
+            'ids.*' => ['required', 'integer', 'min:1'],
+        ]);
+
+        // The inherited bulk endpoint deletes model instances directly, not
+        // through destroy(). Refuse the entire selection before any deletion.
+        return DB::transaction(function () use ($data) {
+            $items = Task::query()->whereIn('id', $data['ids'])->orderBy('id')->lockForUpdate()->get();
+            foreach ($items as $item) {
+                if (in_array($item->task_command, self::F02_TASK_COMMANDS, true)) {
+                    return response()->json(['message' => 'Delete external file checks from the F02 rules panel.'], 409);
+                }
+            }
+
+            foreach ($items as $item) {
+                $item->delete();
+            }
+
+            return response()->json(['message' => $this->modelname . 'deleted successfully'], 200);
+        });
+    }
+
     public function togglePauseTask($id)
     {
-        if (Task::query()->whereKey($id)->where('task_command', ExternalBackupRuleController::TASK_COMMAND)->exists()) {
+        if (Task::query()->whereKey($id)->whereIn('task_command', self::F02_TASK_COMMANDS)->exists()) {
             return response()->json(['message' => 'F02 execution is not available yet.'], 409);
         }
 

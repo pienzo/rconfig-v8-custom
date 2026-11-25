@@ -5,8 +5,17 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load accepted (5/5); #227 real Redis crash/concurrency accepted (5/5); #229 transaction crash accepted (5/5); #230 actual worker timeout candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load accepted (5/5); #227 real Redis crash/concurrency accepted (5/5); #229 transaction crash accepted (5/5); #231 actual worker timeout accepted (5/5); #233 managed Core task boundary: REST v1 fixture snapshot corrected, repeat CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Managed task guard test snapshot correction
+
+- #233 initial head `54314204`, CI 45648909884, PHP job 139327624716: 1930 passed / 2 failed / 8 skips / 8875 assertions. Both failures at TasksApiV1Test.php:108, strict receipt and Local Presence dataset cases. Both HTTP 409 assertions passed; raw comparison used factory-created model before SQL round-trip versus freshly loaded MySQL row (integer versus bool, default task_snippet column, key order). Read initial snapshot via fresh() as already done in the passing SPA test. Keep strict full-row equality, both HTTP assertions and all test cases. Pint/PHPStan/ESLint/Vitest and Docker build/first-install passed; staging workflow not complete at inspection. No production logic or configuration changes; full repeat CI required. No VM change.
+
+## 2026-11-25 — Actual worker timeout accepted; Core task boundary candidate
+
+- #231 corrected head `34016291` passed 5/5 (CI 45644627717, PHP job 139312160327: 1925 passed / 8824 assertions / 8 skips). Actual Laravel timeout 30.246s, rollback and original Redis attempt-two redelivery passed. Repeat 100-rule load 496.47ms reserve / 138.70ms dispatch / 3836.54ms drain; all prior crash and mixed outcomes passed. Merge connector initially timed out; subsequent read verified merged at `83df21a3732a5d23c4722c7e46e8e18eda83f138`, custom matches. No VM change.
+- #232 first candidate protects both managed F02 task commands in Core TaskController update/delete/pause and manual run; inherited v1 mutation routes share guard. Override task bulk deletion only, validate flat IDs, lock selected rows in ID order, refuse entire selection before deleting if any managed command present. Preserve native bulk deletion and native command whitelist; tests for both commands, rule/task/pivot immutability, manual queue refusal, mixed bulk and token API. No new API, activation, migration or default change. Command-based boundary only; device deletion/history, corrupt linkage, guarded lifecycle/activation, checkpoint resets, admin/demo policy and API remain separate gates. CI pending; no staging changes.
 
 ## 2026-11-25 — Transaction crash accepted; actual worker timeout candidate
 
