@@ -11,6 +11,8 @@ return [
     // Operator approval after worker mount, permissions and runtime attestation.
     // This does not probe worker health or enable any execution flag.
     'activation_api_enabled' => false,
+    // Separate operator approval for internal diagnostic observations.
+    'manual_probe_enabled' => false,
     'max_rules_per_tick' => 100,
     'roots' => [],
 ];
