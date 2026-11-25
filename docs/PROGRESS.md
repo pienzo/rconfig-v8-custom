@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #209 accepted (11/11 combined CI); #213 observer corrected after CI failure; repeat CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #213 observer accepted (15/15); #214 isolated worker candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Trusted observer accepted; isolated worker candidate
+
+- #213 exact head `836fd83d` passed all 15 checks in seven workflows, PHP 1907 passed / 8724 assertions / 8 skips (CI 45609129042, job 139187736893); all downstream strict F02 and notification probes passed. Merged at `9573704772c6a2c2df417bde6b1417f215749a56`. Quiet-baseline JSON correction and inode replacement regression passed. #212 concurrency/timeout evidence still pending; no deployed migration.
+- #214 candidate introduces a separate Redis queue/connection and one-observation job for existing rule/run IDs, no scan payload or request mapping, trusted config roots only. Runtime and queue switches false with no environment binding; demo refusal; 30-second candidate job timeout below 120-second retry_after, two tries. No Horizon supervisor, automatic dispatch, API or provider changes. Core scheduler explicitly skips the local presence command. Synthetic job invocation tests do not establish actual worker timeout or concurrent behavior. Next: bounded durable due/pending reconciliation, final-minute observation and expiry, backpressure, dedicated supervisor and real Redis/Horizon crash/timeout tests. Staging unchanged; rollback code-only before activation. CI pending.
 
 ## 2026-11-25 — Trusted observer CI correction
 

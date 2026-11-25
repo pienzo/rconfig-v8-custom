@@ -81,6 +81,16 @@ return [
             'after_commit' => true,
         ],
 
+        // Isolated local-presence observation worker; not automatically supervised.
+        'redis_local_backup_presence' => [
+            'driver' => 'redis',
+            'connection' => 'default',
+            'queue' => 'LocalBackupPresence',
+            'retry_after' => 120,
+            'block_for' => null,
+            'after_commit' => true,
+        ],
+
         'redis_external_backups' => [
             'driver' => 'redis',
             'connection' => 'default',

@@ -10,6 +10,7 @@ use App\Jobs\TaskDownloadRun;
 use App\Models\ExternalBackupRule;
 use App\Models\MonitoredScheduledTaskLogItems;
 use App\Models\Task;
+use App\Services\ExternalBackups\LocalBackupPresenceOccurrenceClaim;
 use App\Services\Notifications\ExternalBackupNotificationReconciler;
 use App\Services\Notifications\NativeBackupNotificationReconciler;
 use App\Traits\LogsTaskActivity;
@@ -62,6 +63,11 @@ class Kernel extends ConsoleKernel
 
                 // if task is_paused, skip it
                 if ($task->is_paused) {
+                    continue;
+                }
+
+                // Local presence has a separate lifecycle; never use native downloads.
+                if ($task->task_command === LocalBackupPresenceOccurrenceClaim::TASK_COMMAND) {
                     continue;
                 }
 
