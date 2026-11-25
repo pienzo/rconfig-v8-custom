@@ -82,26 +82,7 @@ final class LocalBackupPresenceOccurrenceClaim
     /** @return array<string, mixed> */
     private function criteria(LocalBackupPresenceRule $rule, string $cron, string $timezone, string $activation): array
     {
-        $minimum = $rule->minimum_bytes;
-        $age = $rule->maximum_age_seconds;
-        $quiet = $rule->quiet_seconds;
-        $deadline = $rule->deadline_seconds;
-        $entries = $rule->max_entries;
-        $matches = $rule->max_matches;
-        $millis = $rule->max_scan_millis;
-
-        if ($minimum < 1 || $minimum > 1000000000000
-            || ($age !== null && ($age < 1 || $age > 31536000))
-            || $deadline < 60 || $deadline > 2678400
-            || ($quiet !== null && ($quiet < 1 || $quiet > 3600 || $quiet >= $deadline))
-            || $entries < 1 || $entries > 10000
-            || $matches < 1 || $matches > 1000 || $matches > $entries
-            || $millis < 1 || $millis > 10000) {
-            throw new DomainException('Local backup rule has invalid observation limits.');
-        }
-
-        LocalBackupDirectoryMap::validateSelection($rule->directory_alias, $rule->relative_directory);
-        $this->matcher->validatePattern($rule->filename_pattern, $rule->pattern_mode);
+        (new LocalBackupPresenceCriteriaValidator($this->matcher))->validate($rule);
 
         return [
             'version' => 1,
@@ -113,13 +94,13 @@ final class LocalBackupPresenceOccurrenceClaim
             'relative_directory' => $rule->relative_directory,
             'pattern_mode' => $rule->pattern_mode,
             'filename_pattern' => $rule->filename_pattern,
-            'minimum_bytes' => $minimum,
-            'maximum_age_seconds' => $age,
-            'quiet_seconds' => $quiet,
-            'deadline_seconds' => $deadline,
-            'max_entries' => $entries,
-            'max_matches' => $matches,
-            'max_scan_millis' => $millis,
+            'minimum_bytes' => $rule->minimum_bytes,
+            'maximum_age_seconds' => $rule->maximum_age_seconds,
+            'quiet_seconds' => $rule->quiet_seconds,
+            'deadline_seconds' => $rule->deadline_seconds,
+            'max_entries' => $rule->max_entries,
+            'max_matches' => $rule->max_matches,
+            'max_scan_millis' => $rule->max_scan_millis,
         ];
     }
 }
