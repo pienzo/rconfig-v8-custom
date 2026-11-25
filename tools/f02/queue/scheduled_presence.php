@@ -202,7 +202,7 @@ function presenceTransactionCrashProbe(string $root, string $fixture, string $ph
             presenceCheck(! $child->isSuccessful() && $elapsed >= 29 && $elapsed < 40
                 && is_file($timeoutMarker)
                 && trim((string) file_get_contents($timeoutMarker)) === $original['uuid'] . ':1', 'real JobTimedOut and autonomous worker exit');
-            printf("F02_PRESENCE_TIMEOUT_METRICS elapsed_seconds=%.3f\\n", $elapsed);
+            printf("F02_PRESENCE_TIMEOUT_METRICS elapsed_seconds=%.3f\n", $elapsed);
         } else {
             $child->signal(SIGKILL);
             $child->wait();
