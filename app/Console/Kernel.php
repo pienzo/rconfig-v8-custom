@@ -11,6 +11,7 @@ use App\Models\ExternalBackupRule;
 use App\Models\MonitoredScheduledTaskLogItems;
 use App\Models\Task;
 use App\Services\ExternalBackups\LocalBackupPresenceOccurrenceClaim;
+use App\Services\ExternalBackups\LocalBackupPresenceSchedulePlanner;
 use App\Services\Notifications\ExternalBackupNotificationReconciler;
 use App\Services\Notifications\NativeBackupNotificationReconciler;
 use App\Traits\LogsTaskActivity;
@@ -100,6 +101,15 @@ class Kernel extends ConsoleKernel
             $schedule->job(new ExternalBackupExpirePendingJob, 'ExternalBackupChecks', 'redis_external_backups')
                 ->name('f02-expire-pending')
                 ->everyMinute();
+        }
+
+        if (LocalBackupPresenceSchedulePlanner::enabled()
+            && Schema::hasTable('tasks')
+            && Schema::hasTable('local_backup_presence_rules')
+            && Schema::hasTable('local_backup_presence_runs')) {
+            $schedule->call(static function (): void {
+                app(LocalBackupPresenceSchedulePlanner::class)->reserveDue();
+            })->name('f02-local-presence-reserve-due')->everyMinute()->withoutOverlapping(2);
         }
 
         if (config('custom-backup-notifications.enabled', false) === true) {

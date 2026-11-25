@@ -126,3 +126,24 @@ test('local presence tasks never fall through to native download scheduling', fu
         Mockery::on(fn ($context) => is_array($context) && ($context['task_id'] ?? null) === $task->id),
     ]);
 })->with([false, true]);
+
+test('local presence reservation scheduler requires all three gates and is never registered in demo', function () {
+    $events = fn () => scheduledTaskCommandEvents()->filter(
+        fn (Event $event) => $event->description === 'f02-local-presence-reserve-due'
+    );
+    expect($events())->toBeEmpty();
+
+    config([
+        'local-backup-presence.runtime_enabled' => true,
+        'local-backup-presence.queue_enabled' => true,
+        'rConfig.is_demo' => false,
+    ]);
+    expect($events())->toBeEmpty();
+
+    config(['local-backup-presence.scheduler_enabled' => true]);
+    expect($events())->toHaveCount(1);
+    expect($events()->first()->expression)->toBe('* * * * *');
+
+    config(['rConfig.is_demo' => true]);
+    expect($events())->toBeEmpty();
+});
