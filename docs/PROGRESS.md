@@ -5,8 +5,12 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load accepted (5/5); #227 real Redis crash/concurrency accepted (5/5); #229 transaction crash accepted (5/5); #231 actual worker timeout accepted (5/5); #232 managed Core task boundary candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load accepted (5/5); #227 real Redis crash/concurrency accepted (5/5); #229 transaction crash accepted (5/5); #231 actual worker timeout accepted (5/5); #233 managed Core task boundary: REST v1 fixture snapshot corrected, repeat CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Managed task guard test snapshot correction
+
+- #233 initial head `54314204`, CI 45648909884, PHP job 139327624716: 1930 passed / 2 failed / 8 skips / 8875 assertions. Both failures at TasksApiV1Test.php:108, strict receipt and Local Presence dataset cases. Both HTTP 409 assertions passed; raw comparison used factory-created model before SQL round-trip versus freshly loaded MySQL row (integer versus bool, default task_snippet column, key order). Read initial snapshot via fresh() as already done in the passing SPA test. Keep strict full-row equality, both HTTP assertions and all test cases. Pint/PHPStan/ESLint/Vitest and Docker build/first-install passed; staging workflow not complete at inspection. No production logic or configuration changes; full repeat CI required. No VM change.
 
 ## 2026-11-25 — Actual worker timeout accepted; Core task boundary candidate
 
