@@ -5,6 +5,7 @@
  * No production access, providers, native downloads or verified receipts.
  */
 
+use App\Jobs\LocalBackupPresenceObserveJob;
 use App\Models\Device;
 use App\Models\ExternalBackupCheckRun;
 use App\Models\ExternalBackupFileReceipt;
@@ -14,14 +15,134 @@ use App\Models\Task;
 use App\Services\ExternalBackups\LocalBackupPresenceOccurrenceClaim;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Redis;
 use Symfony\Component\Process\Process;
 
 function presenceCheck(bool $ok, string $stage): void
 {
     if (! $ok) {
         throw new RuntimeException('F02 presence probe failed: ' . $stage);
+    }
+}
+
+/**
+ * Kill only an owned child after its real Redis reservation, with the rule
+ * locked by a separate DB connection. Then observe actual lease expiration
+ * and force simultaneous duplicate delivery without altering retry_after.
+ */
+function presenceCrashProbe(string $root, LocalBackupPresenceRule $rule, LocalBackupPresenceRun $run, $dispatch, $app): void
+{
+    $queue = Queue::connection('redis_local_backup_presence');
+    $redis = Redis::connection('default');
+    $reservedKey = 'queues:LocalBackupPresence:reserved';
+    $failedBefore = DB::table('failed_jobs')->count();
+    presenceCheck(config('queue.connections.redis_local_backup_presence.retry_after') === 120
+        && config('queue.connections.redis_local_backup_presence.connection') === 'default'
+        && $queue->size('LocalBackupPresence') === 1, 'real retry configuration');
+
+    $workers = [];
+    $command = [PHP_BINARY, 'artisan', 'queue:work', 'redis_local_backup_presence',
+        '--queue=LocalBackupPresence', '--once', '--sleep=0', '--timeout=30', '--tries=2', '--no-interaction'];
+    $lock = static function () use ($rule): void {
+        DB::beginTransaction();
+        LocalBackupPresenceRule::query()->whereKey($rule->id)->lockForUpdate()->firstOrFail();
+    };
+    $waitReserved = static function (int $expected, array $children) use ($redis, $reservedKey): array {
+        $until = microtime(true) + 15;
+        do {
+            foreach ($children as $child) {
+                presenceCheck($child->isRunning(), 'owned worker running at reservation barrier');
+            }
+            $payloads = $redis->zrange($reservedKey, 0, -1);
+            if (count($payloads) === $expected) {
+                return $payloads;
+            }
+            presenceCheck(microtime(true) < $until, 'real Redis reservation barrier');
+            usleep(100000);
+        } while (true);
+    };
+
+    try {
+        $before = $run->fresh()->getRawOriginal();
+        $lock();
+        $first = new Process($command, $root, null, null, 40);
+        $workers[] = $first;
+        $first->start();
+        $payload = $waitReserved(1, [$first])[0];
+        $original = json_decode($payload, true, 512, JSON_THROW_ON_ERROR);
+        $lease = $redis->zscore($reservedKey, $payload);
+        presenceCheck(is_string($original['uuid'] ?? null) && ($original['attempts'] ?? null) === 1
+            && is_numeric($lease) && (int) $lease > time() && (int) $lease <= time() + 120, 'original reserved job and lease');
+
+        // No scan can commit while this rule is locked by the parent.
+        $first->signal(SIGKILL);
+        $first->wait();
+        presenceCheck(! $first->isSuccessful(), 'owned child interrupted');
+        DB::rollBack();
+        presenceCheck($run->fresh()->getRawOriginal() === $before
+            && $redis->zcard($reservedKey) === 1 && $queue->size('LocalBackupPresence') === 1, 'unobserved state and reserved message survive crash');
+        echo "F02_PRESENCE_PREOBSERVATION_CRASH_OK (SYNTHETIC_ONLY)\n";
+
+        $until = microtime(true) + 125;
+        while (time() <= (int) $lease) {
+            presenceCheck(microtime(true) < $until, 'actual retry lease elapsed');
+            usleep(200000);
+        }
+        // Intentionally duplicate the same immutable occurrence IDs in this
+        // isolated queue. No new occurrence or synthetic scanner evidence.
+        Bus::dispatch(new LocalBackupPresenceObserveJob((int) $rule->id, (int) $run->id));
+        presenceCheck($queue->size('LocalBackupPresence') === 2, 'duplicate and recoverable reservation');
+        $lock();
+        $second = new Process($command, $root, null, null, 40);
+        $third = new Process($command, $root, null, null, 40);
+        $workers[] = $second;
+        $workers[] = $third;
+        $second->start();
+        $third->start();
+        presenceCheck($second->getPid() !== null && $third->getPid() !== null
+            && $second->getPid() !== $third->getPid(), 'independent worker processes');
+        $payloads = $waitReserved(2, [$second, $third]);
+        $attempts = [];
+        foreach ($payloads as $item) {
+            $decoded = json_decode($item, true, 512, JSON_THROW_ON_ERROR);
+            presenceCheck(is_string($decoded['uuid'] ?? null) && is_int($decoded['attempts'] ?? null), 'actual concurrent reserved payload');
+            $attempts[$decoded['uuid']] = $decoded['attempts'];
+        }
+        presenceCheck(count($attempts) === 2 && ($attempts[$original['uuid']] ?? null) === 2
+            && in_array(1, $attempts, true), 'original attempt two and distinct duplicate attempt one');
+        echo "F02_PRESENCE_REAL_REDELIVERY_CONCURRENT_RESERVATIONS_OK (SYNTHETIC_ONLY)\n";
+        DB::commit();
+        foreach ([$second, $third] as $worker) {
+            $worker->wait();
+            presenceCheck($worker->isSuccessful(), 'replacement worker completed');
+        }
+
+        $final = $run->fresh();
+        presenceCheck($final->status === 'present' && $final->reason === 'matching_file_observed'
+            && $final->matched_filename === 'backup_final.cfg'
+            && $final->getRawOriginal('first_observed_at_utc') !== null
+            && $final->getRawOriginal('first_observed_at_utc') === $final->getRawOriginal('last_observed_at_utc')
+            && $final->getRawOriginal('last_observed_at_utc') < $final->getRawOriginal('deadline_at_utc')
+            && $final->stability_baseline === null
+            && $rule->runs()->count() === 1 && $queue->size('LocalBackupPresence') === 0
+            && DB::table('failed_jobs')->count() === $failedBefore, 'single terminal result and both acknowledgements');
+
+        $snapshot = $final->getRawOriginal();
+        $dispatch->run($app);
+        presenceCheck($queue->size('LocalBackupPresence') === 0 && $run->fresh()->getRawOriginal() === $snapshot, 'crash terminal replay unchanged');
+        echo "F02_PRESENCE_CRASH_CONCURRENCY_TERMINAL_OK (SYNTHETIC_ONLY)\n";
+    } finally {
+        foreach ($workers as $worker) {
+            if ($worker->isRunning()) {
+                $worker->stop(1, SIGKILL);
+            }
+        }
+        while (DB::transactionLevel() > 0) {
+            DB::rollBack();
+        }
     }
 }
 
@@ -33,11 +154,12 @@ if (getenv('GITHUB_ACTIONS') !== 'true' || getenv('RUNNER_ENVIRONMENT') !== 'git
 }
 
 $mode = getenv('F02_PRESENCE_LOAD');
-if ($mode !== false && ! in_array($mode, ['0', '1'], true)) {
+if ($mode !== false && ! in_array($mode, ['0', '1', '2'], true)) {
     exit(2);
 }
 $load = $mode === '1';
-$count = $load ? 100 : 2;
+$crash = $mode === '2';
+$count = $load ? 100 : ($crash ? 1 : 2);
 
 $failClosed = static function (Throwable $exception): never {
     $message = $exception->getMessage();
@@ -117,8 +239,8 @@ try {
             'relative_directory' => 'device-' . $index,
             'pattern_mode' => 'glob',
             'filename_pattern' => 'backup_*.cfg',
-            'quiet_seconds' => ! $load && $index === 1 ? 2 : null,
-            'deadline_seconds' => $load || $index === 1 ? 180 : 60,
+            'quiet_seconds' => ! $load && ! $crash && $index === 1 ? 2 : null,
+            'deadline_seconds' => $crash ? 300 : ($load || $index === 1 ? 180 : 60),
         ]);
         $rules[$index]->enabled = true;
         $rules[$index]->activated_at_utc = CarbonImmutable::now('UTC')->subMinute()->startOfMinute()->format('Y-m-d H:i:s');
@@ -164,8 +286,7 @@ try {
             && $runs[$index]->getRawOriginal('last_observed_at_utc') === null
             && (int) $runs[$index]->device_id === (int) $devices[$index]->id, 'durable unobserved occurrence');
     }
-    presenceCheck($runs[1]->getRawOriginal('scheduled_at_utc') === $runs[2]->getRawOriginal('scheduled_at_utc')
-        && $queue->size('LocalBackupPresence') === 0, 'same tick before queue handoff');
+    presenceCheck($queue->size('LocalBackupPresence') === 0, 'same tick before queue handoff');
     $reserve->run($app);
     foreach ($rules as $rule) {
         presenceCheck($rule->runs()->count() === 1, 'reservation replay');
@@ -177,62 +298,66 @@ try {
     presenceCheck($queue->size('LocalBackupPresence') === $count, 'exact jobs and cooldown replay');
     echo "F02_PRESENCE_DURABLE_SCHEDULE_OK (SYNTHETIC_ONLY)\n";
 
-    $master = new Process([PHP_BINARY, 'artisan', 'horizon', '--environment=production'], $root, null, null, 150);
-    $workerStart = hrtime(true);
-    $master->start();
-    $await = static function (Closure $condition, string $label, int $timeout = 40) use ($master): void {
-        $until = microtime(true) + $timeout;
-        while (! $condition()) {
-            presenceCheck($master->isRunning() && microtime(true) < $until, $label);
-            usleep(200000);
-        }
-    };
-    if ($load) {
-        $ids = array_map(static fn ($run): int => (int) $run->id, $runs);
-        $await(static fn (): bool => LocalBackupPresenceRun::whereIn('id', $ids)->where('status', 'present')->count() === $count
-            && $queue->size('LocalBackupPresence') === 0, '100-rule queue drain', 50);
-        $drainMillis = (hrtime(true) - $workerStart) / 1000000;
-        presenceCheck($drainMillis <= 50000, '50-second candidate drain budget');
-        $terminal = [];
-        foreach ($runs as $index => $run) {
-            $final = $run->fresh();
-            presenceCheck($final->status === 'present'
-                && $final->reason === 'matching_file_observed'
-                && $final->matched_filename === 'backup_final.cfg'
-                && (int) $final->device_id === (int) $devices[$index]->id
-                && $final->getRawOriginal('last_observed_at_utc') < $final->getRawOriginal('deadline_at_utc')
-                && $final->stability_baseline === null, 'exact per-device load evidence');
-            $terminal[$index] = $final->getRawOriginal();
-        }
-        $dispatch->run($app);
-        presenceCheck($queue->size('LocalBackupPresence') === 0, 'load terminal replay queue empty');
-        foreach ($runs as $index => $run) {
-            presenceCheck($run->fresh()->getRawOriginal() === $terminal[$index], 'load terminal replay unchanged');
-        }
-        printf("F02_PRESENCE_LOAD_METRICS rules=%d files=%d reserve_ms=%.2f dispatch_ms=%.2f drain_ms=%.2f\n",
-            $count, $count * 25, $reservationMillis, $dispatchMillis, $drainMillis);
-        echo "F02_PRESENCE_100_RULE_HORIZON_OK (SYNTHETIC_ONLY)\n";
+    if ($crash) {
+        presenceCrashProbe($root, $rules[1], $runs[1], $dispatch, $app);
     } else {
-        $await(static fn (): bool => $runs[1]->fresh()->reason === 'stability_wait'
-            && $runs[2]->fresh()->reason === 'no_matching_file'
-            && $queue->size('LocalBackupPresence') === 0, 'actual initial worker observations');
-        presenceCheck($runs[1]->fresh()->status === 'pending' && $runs[2]->fresh()->status === 'pending', 'initial outcomes pending');
-        $deadline = CarbonImmutable::parse($runs[2]->getRawOriginal('deadline_at_utc'), 'UTC');
-        $await(static fn (): bool => CarbonImmutable::now('UTC')->greaterThanOrEqualTo($deadline->addSecond()), 'real deadline elapsed', 70);
-        $dispatch->run($app);
-        $await(static fn (): bool => $runs[1]->fresh()->status === 'present'
-            && $runs[2]->fresh()->status === 'absent' && $queue->size('LocalBackupPresence') === 0, 'actual stable presence and deadline absence');
-        $present = $runs[1]->fresh();
-        $absent = $runs[2]->fresh();
-        presenceCheck($present->reason === 'stable_matching_file_observed' && $present->matched_filename === 'backup_final.cfg'
-            && $absent->reason === 'no_matching_file' && $absent->matched_filename === null
-            && $present->stability_baseline === null && $absent->stability_baseline === null, 'exact terminal evidence');
-        echo "F02_PRESENCE_REAL_HORIZON_MIXED_OUTCOMES_OK (SYNTHETIC_ONLY)\n";
+        $master = new Process([PHP_BINARY, 'artisan', 'horizon', '--environment=production'], $root, null, null, 150);
+        $workerStart = hrtime(true);
+        $master->start();
+        $await = static function (Closure $condition, string $label, int $timeout = 40) use ($master): void {
+            $until = microtime(true) + $timeout;
+            while (! $condition()) {
+                presenceCheck($master->isRunning() && microtime(true) < $until, $label);
+                usleep(200000);
+            }
+        };
+        if ($load) {
+            $ids = array_map(static fn ($run): int => (int) $run->id, $runs);
+            $await(static fn (): bool => LocalBackupPresenceRun::whereIn('id', $ids)->where('status', 'present')->count() === $count
+                && $queue->size('LocalBackupPresence') === 0, '100-rule queue drain', 50);
+            $drainMillis = (hrtime(true) - $workerStart) / 1000000;
+            presenceCheck($drainMillis <= 50000, '50-second candidate drain budget');
+            $terminal = [];
+            foreach ($runs as $index => $run) {
+                $final = $run->fresh();
+                presenceCheck($final->status === 'present'
+                    && $final->reason === 'matching_file_observed'
+                    && $final->matched_filename === 'backup_final.cfg'
+                    && (int) $final->device_id === (int) $devices[$index]->id
+                    && $final->getRawOriginal('last_observed_at_utc') < $final->getRawOriginal('deadline_at_utc')
+                    && $final->stability_baseline === null, 'exact per-device load evidence');
+                $terminal[$index] = $final->getRawOriginal();
+            }
+            $dispatch->run($app);
+            presenceCheck($queue->size('LocalBackupPresence') === 0, 'load terminal replay queue empty');
+            foreach ($runs as $index => $run) {
+                presenceCheck($run->fresh()->getRawOriginal() === $terminal[$index], 'load terminal replay unchanged');
+            }
+            printf("F02_PRESENCE_LOAD_METRICS rules=%d files=%d reserve_ms=%.2f dispatch_ms=%.2f drain_ms=%.2f\n",
+                $count, $count * 25, $reservationMillis, $dispatchMillis, $drainMillis);
+            echo "F02_PRESENCE_100_RULE_HORIZON_OK (SYNTHETIC_ONLY)\n";
+        } else {
+            $await(static fn (): bool => $runs[1]->fresh()->reason === 'stability_wait'
+                && $runs[2]->fresh()->reason === 'no_matching_file'
+                && $queue->size('LocalBackupPresence') === 0, 'actual initial worker observations');
+            presenceCheck($runs[1]->fresh()->status === 'pending' && $runs[2]->fresh()->status === 'pending', 'initial outcomes pending');
+            $deadline = CarbonImmutable::parse($runs[2]->getRawOriginal('deadline_at_utc'), 'UTC');
+            $await(static fn (): bool => CarbonImmutable::now('UTC')->greaterThanOrEqualTo($deadline->addSecond()), 'real deadline elapsed', 70);
+            $dispatch->run($app);
+            $await(static fn (): bool => $runs[1]->fresh()->status === 'present'
+                && $runs[2]->fresh()->status === 'absent' && $queue->size('LocalBackupPresence') === 0, 'actual stable presence and deadline absence');
+            $present = $runs[1]->fresh();
+            $absent = $runs[2]->fresh();
+            presenceCheck($present->reason === 'stable_matching_file_observed' && $present->matched_filename === 'backup_final.cfg'
+                && $absent->reason === 'no_matching_file' && $absent->matched_filename === null
+                && $present->stability_baseline === null && $absent->stability_baseline === null, 'exact terminal evidence');
+            echo "F02_PRESENCE_REAL_HORIZON_MIXED_OUTCOMES_OK (SYNTHETIC_ONLY)\n";
 
-        $dispatch->run($app);
-        presenceCheck($queue->size('LocalBackupPresence') === 0
-            && $present->fresh()->getRawOriginal() === $present->getRawOriginal()
-            && $absent->fresh()->getRawOriginal() === $absent->getRawOriginal(), 'terminal reconciliation replay');
+            $dispatch->run($app);
+            presenceCheck($queue->size('LocalBackupPresence') === 0
+                && $present->fresh()->getRawOriginal() === $present->getRawOriginal()
+                && $absent->fresh()->getRawOriginal() === $absent->getRawOriginal(), 'terminal reconciliation replay');
+        }
     }
     foreach ($rules as $rule) {
         presenceCheck($rule->runs()->count() === 1, 'no extra occurrence');
@@ -251,6 +376,9 @@ try {
             }
         }
         echo "F02_PRESENCE_100_RULE_INTEGRITY_OK (SYNTHETIC_ONLY)\n";
+    }
+    if ($crash) {
+        echo "F02_PRESENCE_CRASH_CONCURRENCY_INTEGRITY_OK (SYNTHETIC_ONLY)\n";
     }
     echo "F02_PRESENCE_TERMINAL_REPLAY_OK (SYNTHETIC_ONLY)\n";
 } catch (Throwable $exception) {
