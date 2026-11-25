@@ -14,6 +14,7 @@ Route::prefix('tasks')->group(function () { // must be above the resource route
     Route::get('/external-backup-rules/{externalBackupRule}/runs', 'ExternalBackupRunHistoryController@index');
     Route::post('/external-backup-rules/{externalBackupRule}/verify-now', 'ExternalBackupManualProbeController@check')->middleware('throttle:6,1');
     Route::middleware(EnsureUserIsAdmin::class)->group(function () {
+        Route::post('/local-backup-presence-pattern-preview', 'ExternalBackupPatternPreviewController@preview')->middleware('throttle:12,1');
         Route::get('/local-backup-presence-rules', 'LocalBackupPresenceRuleController@index');
         Route::get('/local-backup-presence-rules/{localBackupPresenceRule}', 'LocalBackupPresenceRuleController@show');
         Route::post('/local-backup-presence-rules', 'LocalBackupPresenceRuleController@store');
