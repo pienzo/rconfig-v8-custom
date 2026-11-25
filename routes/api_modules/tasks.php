@@ -13,6 +13,13 @@ Route::prefix('tasks')->group(function () { // must be above the resource route
     Route::get('/external-backup-rules/{externalBackupRule}/files-preview', 'ExternalBackupFilePreviewController@preview');
     Route::get('/external-backup-rules/{externalBackupRule}/runs', 'ExternalBackupRunHistoryController@index');
     Route::post('/external-backup-rules/{externalBackupRule}/verify-now', 'ExternalBackupManualProbeController@check')->middleware('throttle:6,1');
+    Route::middleware(EnsureUserIsAdmin::class)->group(function () {
+        Route::get('/local-backup-presence-rules', 'LocalBackupPresenceRuleController@index');
+        Route::get('/local-backup-presence-rules/{localBackupPresenceRule}', 'LocalBackupPresenceRuleController@show');
+        Route::post('/local-backup-presence-rules', 'LocalBackupPresenceRuleController@store');
+        Route::patch('/local-backup-presence-rules/{localBackupPresenceRule}', 'LocalBackupPresenceRuleController@update');
+        Route::delete('/local-backup-presence-rules/{localBackupPresenceRule}', 'LocalBackupPresenceRuleController@destroy');
+    });
     Route::post('/validate-task', 'TaskController@validateTask');
     Route::post('/run-manual-task', 'TaskManualRunController@runManualTask');
     Route::get('/recent-failed-jobs-count', 'TaskController@failedJobsLast24HrsCount');
