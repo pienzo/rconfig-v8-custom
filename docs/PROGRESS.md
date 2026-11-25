@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load accepted (5/5); #227 real Redis crash/concurrency accepted (5/5); #228 transaction crash candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load accepted (5/5); #227 real Redis crash/concurrency accepted (5/5); #229 transaction crash accepted (5/5); #230 actual worker timeout candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Transaction crash accepted; actual worker timeout candidate
+
+- #229 head `d7b63ac0` passed all five CI jobs (run 45635674425, PHP job 139280329752: 1925 passed / 8824 assertions / 8 skips). Actual precommit rollback and original UUID redelivery at 14:48:02 / 14:50:03 UTC; actual postcommit/preack and redelivery at 14:50:04 / 14:52:05; transaction integrity markers passed. Repeat 100-rule load reserve 783.81ms, dispatch 195.29ms, drain 4848.11ms. Merged at `e192e7f9c3428183362ce01a5b52a3598c15b93d`.
+- #230 candidate extends guarded hosted probe with sixth mode: actual queued job, Laravel daemon queue:work, test-only post-UPDATE/precommit 45s barrier, production job timeout unchanged at 30s. Require actual JobTimedOut event with original UUID/attempt one, self-termination in measured 29–40s window, rollback and retained Redis reservation, same UUID attempt two after actual 120s retry lease and exact terminal result, no failed jobs or side effects. Earlier probes retained. No production hooks/default changes, migration or staging changes. This is an interruptible user-space delay, not a kernel-blocked filesystem syscall or Horizon supervisor restart test. Guarded lifecycle/activation, missed-tick end-to-end and sustained load remain gates. CI pending.
 
 ## 2026-11-25 — Real Redis crash/concurrency accepted; transaction crash candidate
 
