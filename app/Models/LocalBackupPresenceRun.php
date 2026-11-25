@@ -28,6 +28,7 @@ class LocalBackupPresenceRun extends BaseModel
     protected function casts(): array
     {
         return [
+            'criteria_snapshot' => 'array',
             'scheduled_at_utc' => 'datetime',
             'deadline_at_utc' => 'datetime',
             'first_observed_at_utc' => 'datetime',

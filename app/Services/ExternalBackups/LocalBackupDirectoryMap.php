@@ -22,8 +22,9 @@ final class LocalBackupDirectoryMap
      */
     public function snapshot(string $alias, string $relativeDirectory = ''): array
     {
-        if (preg_match('/\A[a-zA-Z][a-zA-Z0-9_-]{0,63}\z/D', $alias) !== 1
-            || ! isset($this->roots[$alias])) {
+        self::validateSelection($alias, $relativeDirectory);
+
+        if (! isset($this->roots[$alias])) {
             throw new InvalidArgumentException('Unknown approved backup directory mapping.');
         }
 
@@ -32,9 +33,9 @@ final class LocalBackupDirectoryMap
             throw new InvalidArgumentException('Invalid approved backup root.');
         }
 
-        $parts = $this->segments(substr($root, 1));
+        $parts = self::segments(substr($root, 1));
         if ($relativeDirectory !== '') {
-            $parts = [...$parts, ...$this->segments($relativeDirectory)];
+            $parts = [...$parts, ...self::segments($relativeDirectory)];
         }
 
         if (count($parts) > 32 || strlen(implode('/', $parts)) > 4095) {
@@ -81,8 +82,22 @@ final class LocalBackupDirectoryMap
         }
     }
 
+    /**
+     * Validate syntax without accessing a filesystem or approving a mapping.
+     */
+    public static function validateSelection(string $alias, string $relativeDirectory): void
+    {
+        if (preg_match('/\A[a-zA-Z][a-zA-Z0-9_-]{0,63}\z/D', $alias) !== 1) {
+            throw new InvalidArgumentException('Invalid approved backup directory alias.');
+        }
+
+        if ($relativeDirectory !== '' && count(self::segments($relativeDirectory)) > 32) {
+            throw new InvalidArgumentException('Approved backup directory exceeds path bounds.');
+        }
+    }
+
     /** @return list<string> */
-    private function segments(string $path): array
+    private static function segments(string $path): array
     {
         if (strlen($path) > 4095 || str_contains($path, '\\')
             || preg_match('/[\x00-\x1F\x7F]/', $path) !== 0
