@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #75 operator-reported staging image and storage checks passed; #194 explicit bootstrap driver candidate, CI pending. No OS connector, bootstrap or release approval. All operational gates remain OFF.
+**Current gate:** Operator-reported installed synthetic staging smoke passed; F02 presence-mode redesign #196 candidate and theme enhancement #197 queued. All operational Custom gates remain OFF. No production/release approval.
 
+
+## 2026-11-25 — First installed staging and browser smoke; revised F02 direction
+
+- Operator-reported STEPs 297–308: clean source `302a37c9419425befad23294786cda35c36ae3fd`, PR #195 merged after 15/15 CI; pinned local image build and offline smoke passed. Powered-off pre-bootstrap snapshot confirmed by operator, not restored/tested. Explicit approval and one-shot bootstrap success; independent postflight exact 82 migrations, sealed administrator, log-only SMTP, persistent marker. Apache login/assets, authenticated dashboard and three Custom APIs passed. Horizon master 1, supervisors 3, workers 6; real scheduler heartbeat and combined role checks passed. Five containers running on internal bridge, no published ports, Redis authentication enforced, zero devices/tasks/check runs/deliveries; all ten Custom flags OFF. Operator browser screenshots confirm dashboard, inventory, configurations and notification template editor. HTTPS warning remains expected on temporary SSH tunnel; proper TLS required before operational access. No screenshot, address, host path or credentials published. No OS connector; external perimeter and actual snapshot restore not independently verified. Production/release gates remain open.
+- #196: operator clarified simple local directory presence task, pre-existing push uploads, no mandatory custom publisher. Candidate separate pure metadata policy and ADR; no activation, migration or deployment. Preserve strict receipt path. #197: six themes (3 dark/3 light); source audit found Core forcibly enables dark in NavigationTop; theme implementation separate. Next review CI, design mapped directories and native wizard, then staged activation; maintain pre-bootstrap snapshot. Post-install checkpoint and deployed restart/restore remain pending.
 
 ## 2026-11-25 — Operator image smoke and storage readiness; bootstrap candidate
 
