@@ -22,7 +22,7 @@ final class LocalBackupPresenceRunState
 
     public function __construct(private readonly ExternalBackupFilenameMatcher $matcher) {}
 
-    /** @param array{status: string, reason: string, filename: string|null} $result */
+    /** @param  array{status: string, reason: string, filename: string|null}  $result */
     public function record(int $ruleId, int $runId, CarbonImmutable $observedAt, array $result): LocalBackupPresenceRun
     {
         return $this->transition($ruleId, $runId, $observedAt, $result, false);
@@ -33,7 +33,7 @@ final class LocalBackupPresenceRunState
         return $this->transition($ruleId, $runId, $now, null, true);
     }
 
-    /** @param array{status: string, reason: string, filename: string|null}|null $result */
+    /** @param  array{status: string, reason: string, filename: string|null}|null  $result */
     private function transition(int $ruleId, int $runId, CarbonImmutable $at, ?array $result, bool $expire): LocalBackupPresenceRun
     {
         if (config('local-backup-presence.runtime_enabled', false) !== true || config('rConfig.is_demo', false)) {
@@ -49,12 +49,17 @@ final class LocalBackupPresenceRunState
             $rule = LocalBackupPresenceRule::query()->whereKey($ruleId)->lockForUpdate()->firstOrFail();
             $run = $rule->runs()->whereKey($runId)->lockForUpdate()->firstOrFail();
             $snapshot = $run->criteria_snapshot;
-            if (is_array($snapshot) === false || ($snapshot['version'] ?? null) !== 1
-                || ($snapshot['task_id'] ?? null) !== (int) $rule->task_id
-                || (int) $run->device_id !== (int) $rule->device_id
-                || array_key_exists('quiet_seconds', $snapshot) === false
-                || is_string($snapshot['filename_pattern'] ?? null) === false
-                || is_string($snapshot['pattern_mode'] ?? null) === false) {
+            if (is_array($snapshot) === false) {
+                throw new DomainException('Local backup occurrence criteria are invalid.');
+            }
+
+            $validVersion = ($snapshot['version'] ?? null) === 1;
+            $validTask = ($snapshot['task_id'] ?? null) === (int) $rule->task_id;
+            $validDevice = (int) $run->device_id === (int) $rule->device_id;
+            $hasQuiet = array_key_exists('quiet_seconds', $snapshot);
+            $hasPattern = is_string($snapshot['filename_pattern'] ?? null) && is_string($snapshot['pattern_mode'] ?? null);
+
+            if ($validVersion === false || $validTask === false || $validDevice === false || $hasQuiet === false || $hasPattern === false) {
                 throw new DomainException('Local backup occurrence criteria are invalid.');
             }
 
@@ -62,8 +67,11 @@ final class LocalBackupPresenceRunState
             $scheduled = $run->getRawOriginal('scheduled_at_utc');
             $deadline = $run->getRawOriginal('deadline_at_utc');
             $last = $run->getRawOriginal('last_observed_at_utc');
-            if (is_string($scheduled) === false || is_string($deadline) === false || $deadline <= $scheduled
-                || $instant < $scheduled || ($last !== null && $instant < $last)) {
+            if (is_string($scheduled) === false || is_string($deadline) === false || $deadline <= $scheduled) {
+                throw new DomainException('Local backup occurrence window is invalid.');
+            }
+
+            if ($instant < $scheduled || ($last !== null && $instant < $last)) {
                 throw new DomainException('Local backup observation is outside its ordered window.');
             }
 
@@ -71,6 +79,7 @@ final class LocalBackupPresenceRunState
             if (in_array($run->status, [LocalBackupPresenceRun::PRESENT, LocalBackupPresenceRun::ABSENT, LocalBackupPresenceRun::ERROR], true)) {
                 return $run;
             }
+
             if ($run->status !== LocalBackupPresenceRun::PENDING) {
                 throw new DomainException('Invalid stored local backup status.');
             }
@@ -91,6 +100,7 @@ final class LocalBackupPresenceRunState
                 } else {
                     throw new DomainException('Invalid pending observation reason.');
                 }
+
                 $run->save();
 
                 return $run->refresh();
@@ -126,6 +136,7 @@ final class LocalBackupPresenceRunState
             if ($run->getRawOriginal('first_observed_at_utc') === null) {
                 $run->first_observed_at_utc = $instant;
             }
+
             $run->save();
 
             return $run->refresh();
@@ -133,8 +144,8 @@ final class LocalBackupPresenceRunState
     }
 
     /**
-     * @param array{status: string, reason: string, filename: string|null} $result
-     * @param array<string, mixed> $snapshot
+     * @param  array{status: string, reason: string, filename: string|null} $result
+     * @param  array<string, mixed>  $snapshot
      */
     private function validateResult(array $result, array $snapshot): void
     {
@@ -148,13 +159,20 @@ final class LocalBackupPresenceRunState
             throw new DomainException('Invalid stored quiet interval.');
         }
 
-        $valid = match ($result['status']) {
-            'present' => $result['reason'] === ($quiet === null ? 'matching_file_observed' : 'stable_matching_file_observed') && is_string($filename),
-            'pending' => $quiet !== null && $result['reason'] === 'stability_wait' && is_string($filename),
-            'absent' => in_array($result['reason'], self::ABSENCE_REASONS, true) && $filename === null,
-            'error' => in_array($result['reason'], self::ERROR_REASONS, true) && $filename === null,
-            default => false,
-        };
+        $status = $result['status'];
+        $reason = $result['reason'];
+        $valid = false;
+
+        if ($status === 'present') {
+            $expectedReason = $quiet === null ? 'matching_file_observed' : 'stable_matching_file_observed';
+            $valid = $reason === $expectedReason && is_string($filename);
+        } elseif ($status === 'pending') {
+            $valid = $quiet !== null && $reason === 'stability_wait' && is_string($filename);
+        } elseif ($status === 'absent') {
+            $valid = in_array($reason, self::ABSENCE_REASONS, true) && $filename === null;
+        } elseif ($status === 'error') {
+            $valid = in_array($reason, self::ERROR_REASONS, true) && $filename === null;
+        }
 
         if ($valid === false || ($filename !== null && $this->matcher->matches($filename, $snapshot['filename_pattern'], $snapshot['pattern_mode']) === false)) {
             throw new InvalidArgumentException('Local backup policy evidence is not allowed.');
