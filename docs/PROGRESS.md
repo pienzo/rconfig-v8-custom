@@ -5,8 +5,12 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #224 100-rule load candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load workflow syntax corrected; repeat CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — 100-rule benchmark workflow repair
+
+- #225 initial head `9839a825`, Actions run 45628701305 failed before creating any jobs. Exact committed workflow diff shows a malformed metrics grep line and duplicate downstream scanner/SMTP blocks: the literal regex end anchor followed by a single quote was interpreted as a replacement-string suffix token during patch generation. Reconstruct the complete suffix from the accepted #223 workflow and insert the anchored grep literally. Verify unchanged workflow prefix, unique downstream steps and byte-identical restored suffix. No benchmark assertion, 50s budget, 100-rule cap, PHP logic or runtime defaults changed. No workload results yet; new CI required. No staging changes.
 
 ## 2026-11-25 — Real Local Presence Horizon accepted; 100-rule load candidate
 

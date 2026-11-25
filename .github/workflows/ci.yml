@@ -428,20 +428,7 @@ jobs:
           run_presence_probe 1 | tee "$RUNNER_TEMP/f02-presence-horizon.log"
           grep -Fxq 'F02_PRESENCE_100_RULE_HORIZON_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
           grep -Fxq 'F02_PRESENCE_100_RULE_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
-          grep -Eq '^F02_PRESENCE_LOAD_METRICS rules=100 files=2500 reserve_ms=[0-9.]+ dispatch_ms=[0-9.]+ drain_ms=[0-9.]+
-
-      - name: Test F02 bounded metadata scanner load (hosted only)
-        run: |
-          test "$RUNNER_ENVIRONMENT" = github-hosted
-          set -o pipefail
-          F02_SYNTHETIC_SCANNER_LOAD=1 timeout 60 php -d memory_limit=128M tools/f02/performance/scanner_load.php | tee "$RUNNER_TEMP/f02-scanner-load.log"
-          grep -Fxq 'F02_SCANNER_LOAD_EXACT_RESULTS_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-scanner-load.log"
-          grep -Fxq 'F02_SCANNER_LOAD_LIMITS_FAIL_CLOSED_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-scanner-load.log"
-
-      - name: Test F03 actual implicit TLS SMTP and mandatory AUTH (hosted only)
-        # Local loopback fixture, ephemeral test CA, no relay or real provider.
-        run: F03_SYNTHETIC_SMTP_TLS=1 python3 tools/f03/smtp_tls_probe.py
- "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Eq '^F02_PRESENCE_LOAD_METRICS rules=100 files=2500 reserve_ms=[0-9.]+ dispatch_ms=[0-9.]+ drain_ms=[0-9.]+$' "$RUNNER_TEMP/f02-presence-horizon.log"
 
       - name: Test F02 bounded metadata scanner load (hosted only)
         run: |
