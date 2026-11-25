@@ -23,6 +23,7 @@ $failed = false;
 function admissionState(int $id): array
 {
     $rule = LocalBackupPresenceRule::findOrFail($id);
+
     return [$rule->getRawOriginal(), $rule->task()->firstOrFail()->getRawOriginal()];
 }
 
@@ -30,7 +31,7 @@ function admissionAssertState(int $id, bool $enabled): void
 {
     $rule = LocalBackupPresenceRule::findOrFail($id);
     admissionCheck($rule->enabled === $enabled
-        && (bool) $rule->task->is_paused === ! $enabled
+        && (bool) $rule->task->is_paused !== $enabled
         && $rule->runs()->count() === 0
         && $rule->scheduler_checked_minute_utc === null
         && $rule->scheduler_revision === null

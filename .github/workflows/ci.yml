@@ -62,7 +62,7 @@ jobs:
         if: ${{ failure() && steps.pint_check.outcome == 'failure' }}
         run: |
           vendor/bin/pint
-          git --no-pager diff --no-ext-diff -- app tests database
+          git --no-pager diff --no-ext-diff
 
   phpstan:
     name: Static Analysis (PHPStan)
