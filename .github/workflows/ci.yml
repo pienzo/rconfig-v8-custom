@@ -377,7 +377,7 @@ jobs:
           grep -Fxq 'F04_WHATSAPP_DRAFT_ISOLATED_MAPPING_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
           grep -Fxq 'F03_WHATSAPP_ACCEPTED_UNCERTAIN_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
 
-      - name: Test actual F02 local presence scheduler and Horizon mixed outcomes (hosted only)
+      - name: Test actual F02 local presence mixed outcomes and 100-rule Horizon load (hosted only)
         # Static operator config is changed only in this disposable checkout.
         # No production mapping, secrets, provider calls or privileged access.
         shell: bash
@@ -411,16 +411,37 @@ jobs:
             $settings["roots"] = ["synthetic" => getenv("F02_PRESENCE_FIXTURE")];
             if (file_put_contents($path, "<?php\n\nreturn " . var_export($settings, true) . ";\n") === false) { exit(2); }
           '
-          F02_SYNTHETIC_PRESENCE_HORIZON=1 REDIS_DB=5 REDIS_CACHE_DB=6 \
-            HORIZON_PREFIX="f02_presence_ci_$(basename "$fixture"):" CACHE_PREFIX="f02_presence_ci_$(basename "$fixture")" \
-            QUEUE_CONNECTION=redis CACHE_DRIVER=redis CACHE_STORE=redis MAIL_MAILER=log \
-            RCONFIG_F02_RUNTIME_ENABLED=false RCONFIG_F02_QUEUE_ENABLED=false \
-            RCONFIG_CUSTOM_BACKUP_NOTIFICATIONS_ENABLED=false RCONFIG_NATIVE_BACKUP_NOTIFICATIONS_ENABLED=false \
-            RCONFIG_TELEGRAM_ENABLED=false RCONFIG_BACKUP_EMAIL_ENABLED=false RCONFIG_WHATSAPP_ENABLED=false \
-            php tools/f02/queue/scheduled_presence.php | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          run_presence_probe() {
+            F02_PRESENCE_LOAD="$1" F02_SYNTHETIC_PRESENCE_HORIZON=1 REDIS_DB=5 REDIS_CACHE_DB=6 \
+              HORIZON_PREFIX="f02_presence_ci_$(basename "$fixture")_$1:" CACHE_PREFIX="f02_presence_ci_$(basename "$fixture")_$1" \
+              QUEUE_CONNECTION=redis CACHE_DRIVER=redis CACHE_STORE=redis MAIL_MAILER=log \
+              RCONFIG_F02_RUNTIME_ENABLED=false RCONFIG_F02_QUEUE_ENABLED=false \
+              RCONFIG_CUSTOM_BACKUP_NOTIFICATIONS_ENABLED=false RCONFIG_NATIVE_BACKUP_NOTIFICATIONS_ENABLED=false \
+              RCONFIG_TELEGRAM_ENABLED=false RCONFIG_BACKUP_EMAIL_ENABLED=false RCONFIG_WHATSAPP_ENABLED=false \
+              php tools/f02/queue/scheduled_presence.php
+          }
+          run_presence_probe 0 | tee "$RUNNER_TEMP/f02-presence-horizon.log"
           grep -Fxq 'F02_PRESENCE_DURABLE_SCHEDULE_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
           grep -Fxq 'F02_PRESENCE_REAL_HORIZON_MIXED_OUTCOMES_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
           grep -Fxq 'F02_PRESENCE_TERMINAL_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
+          run_presence_probe 1 | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_100_RULE_HORIZON_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_100_RULE_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Eq '^F02_PRESENCE_LOAD_METRICS rules=100 files=2500 reserve_ms=[0-9.]+ dispatch_ms=[0-9.]+ drain_ms=[0-9.]+
+
+      - name: Test F02 bounded metadata scanner load (hosted only)
+        run: |
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          set -o pipefail
+          F02_SYNTHETIC_SCANNER_LOAD=1 timeout 60 php -d memory_limit=128M tools/f02/performance/scanner_load.php | tee "$RUNNER_TEMP/f02-scanner-load.log"
+          grep -Fxq 'F02_SCANNER_LOAD_EXACT_RESULTS_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-scanner-load.log"
+          grep -Fxq 'F02_SCANNER_LOAD_LIMITS_FAIL_CLOSED_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-scanner-load.log"
+
+      - name: Test F03 actual implicit TLS SMTP and mandatory AUTH (hosted only)
+        # Local loopback fixture, ephemeral test CA, no relay or real provider.
+        run: F03_SYNTHETIC_SMTP_TLS=1 python3 tools/f03/smtp_tls_probe.py
+ "$RUNNER_TEMP/f02-presence-horizon.log"
 
       - name: Test F02 bounded metadata scanner load (hosted only)
         run: |
