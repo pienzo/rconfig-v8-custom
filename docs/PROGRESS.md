@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** Operator-reported installed synthetic staging smoke passed; F02 presence-mode redesign #196 candidate and theme enhancement #197 queued. All operational Custom gates remain OFF. No production/release approval.
+**Current gate:** #198 merged (presence policy, no runtime wiring); #200 authorized directory mapping candidate; #199 theme draft CI passed, visual review pending. All operational Custom gates remain OFF. No production/release approval.
 
+
+## 2026-11-25 — Presence policy accepted, local directory mapping candidate
+
+- #198 merged at `b628ad15f635e386882a86fc2b21b57389ecd3e8` after 11/11 CI at `c74c2df0`. PHP suite: 1825 passed, 8488 assertions, 8 skips. #199 at `231a120e` 11/11 CI; nine preset tests and all 57 Vitest files passed; remains draft until visual review. No runtime activation or staging update.
+- #200 candidate uses operator-defined named absolute roots and optional relative subdirectories; metadata scanner reuses existing bounded enumeration, checks all path components and rechecks identities. Protected ancestor/mount topology and read-only mounts are deployment prerequisites, not guaranteed by PHP snapshots; no arbitrary request paths. Missing mappings are configuration/access errors, never a successful presence check. No persistence, API or task integration yet; strict receipt semantics remain unchanged. Next gate CI/review then separate persistence and task lifecycle design.
 
 ## 2026-11-25 — First installed staging and browser smoke; revised F02 direction
 
