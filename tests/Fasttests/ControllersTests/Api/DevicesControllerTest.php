@@ -5,7 +5,12 @@ use App\Models\Category;
 use App\Models\Command;
 use App\Models\Config as DeviceConfig;
 use App\Models\Device;
+use App\Models\ExternalBackupCheckRun;
+use App\Models\ExternalBackupRule;
+use App\Models\LocalBackupPresenceRule;
+use App\Models\LocalBackupPresenceRun;
 use App\Models\Tag;
+use App\Models\Task;
 use App\Models\Template;
 use App\Models\User;
 use App\Models\Vendor;
@@ -360,3 +365,81 @@ function is_serialized($string)
 
     return true;
 }
+
+test('device deletion preflight protects linked F02 history and real files before any cleanup', function (string $mode, bool $history) {
+    Device::observe(DeviceObserver::class);
+    $native = Device::factory()->create();
+    $device = Device::factory()->create();
+    $task = Task::factory()->create([
+        'task_command' => $mode === 'presence' ? 'rconfig:check-local-backup-presence' : 'rconfig:check-external-backup',
+        'is_paused' => 1,
+    ]);
+    $task->device()->attach($device->id);
+    $attributes = [
+        'task_id' => $task->id,
+        'device_id' => $device->id,
+        'pattern_mode' => 'glob',
+        'filename_pattern' => 'backup_*.cfg',
+    ];
+    $rule = $mode === 'presence'
+        ? LocalBackupPresenceRule::create($attributes + ['directory_alias' => 'synthetic', 'relative_directory' => 'device'])
+        : ExternalBackupRule::create($attributes + ['enabled' => false]);
+    $run = null;
+    if ($history) {
+        $rule->enabled = true;
+        $rule->save();
+        $task->is_paused = 0;
+        $task->save();
+        $occurrence = [
+            'rule_id' => $rule->id,
+            'device_id' => $device->id,
+            'scheduled_at_utc' => '2026-11-25 06:00:00',
+            'deadline_at_utc' => '2026-11-25 07:00:00',
+        ];
+        $run = $mode === 'presence' ? LocalBackupPresenceRun::create($occurrence) : ExternalBackupCheckRun::create($occurrence);
+    }
+
+    $linkedFile = tempnam(sys_get_temp_dir(), 'f02_linked_');
+    $nativeFile = tempnam(sys_get_temp_dir(), 'f02_native_');
+    expect($linkedFile)->not->toBeFalse();
+    expect($nativeFile)->not->toBeFalse();
+    try {
+        file_put_contents($linkedFile, 'synthetic linked fixture');
+        file_put_contents($nativeFile, 'synthetic native fixture');
+        $linkedConfig = DeviceConfig::factory()->create(['device_id' => $device->id, 'config_location' => $linkedFile]);
+        $nativeConfig = DeviceConfig::factory()->create(['device_id' => $native->id, 'config_location' => $nativeFile]);
+        $ruleBefore = $rule->fresh()->getRawOriginal();
+        $runBefore = $run?->fresh()->getRawOriginal();
+
+        $this->deleteJson('/api/devices/' . $device->id)->assertStatus(409);
+        $this->postJson('/api/devices/delete-many', ['ids' => [$native->id, $device->id]])->assertStatus(409);
+        expect(fn () => $device->fresh()->delete())->toThrow(DomainException::class);
+
+        expect($rule->fresh()->getRawOriginal())->toBe($ruleBefore);
+        expect($run?->fresh()->getRawOriginal())->toBe($runBefore);
+        $this->assertDatabaseHas('devices', ['id' => $device->id]);
+        $this->assertDatabaseHas('devices', ['id' => $native->id]);
+        $this->assertDatabaseHas('configs', ['id' => $linkedConfig->id]);
+        $this->assertDatabaseHas('configs', ['id' => $nativeConfig->id]);
+        $this->assertDatabaseHas('device_task', ['device_id' => $device->id, 'task_id' => $task->id]);
+        expect(file_get_contents($linkedFile))->toBe('synthetic linked fixture');
+        expect(file_get_contents($nativeFile))->toBe('synthetic native fixture');
+
+        $this->postJson('/api/devices/delete-many', ['ids' => [$native->id]])->assertOk();
+        $this->assertDatabaseMissing('devices', ['id' => $native->id]);
+        $this->assertDatabaseMissing('configs', ['id' => $nativeConfig->id]);
+        expect(is_file($nativeFile))->toBeFalse();
+        expect(file_get_contents($linkedFile))->toBe('synthetic linked fixture');
+    } finally {
+        foreach ([$linkedFile, $nativeFile] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
+    }
+})->with([
+    'dormant local presence' => ['presence', false],
+    'active local presence with history' => ['presence', true],
+    'dormant strict receipt' => ['receipt', false],
+    'active strict receipt with history' => ['receipt', true],
+]);
