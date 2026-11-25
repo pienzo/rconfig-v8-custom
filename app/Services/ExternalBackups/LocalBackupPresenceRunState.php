@@ -144,7 +144,7 @@ final class LocalBackupPresenceRunState
     }
 
     /**
-     * @param  array{status: string, reason: string, filename: string|null} $result
+     * @param  array{status: string, reason: string, filename: string|null}  $result
      * @param  array<string, mixed>  $snapshot
      */
     private function validateResult(array $result, array $snapshot): void

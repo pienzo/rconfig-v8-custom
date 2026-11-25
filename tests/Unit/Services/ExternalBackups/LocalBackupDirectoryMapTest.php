@@ -81,3 +81,38 @@ test('ignores symlink files and refuses incomplete bounded scans', function () {
     expect(fn () => $this->scanner->scanMapped($this->mapping, 'existing', '', '*.cfg', 'glob', 100, 1))->toThrow(RuntimeException::class);
     expect(fn () => $this->scanner->scanMapped($this->mapping, 'existing', '', '(', 'regex'))->toThrow(InvalidArgumentException::class);
 });
+
+test('bound observation retains directory identity across ordinary file arrivals', function () {
+    $first = $this->scanner->scanMappedObservation($this->mapping, 'existing', 'firewalls/site-a', '*.cfg', 'glob');
+    File::put($this->nested . '/backup.cfg', 'synthetic');
+    $second = $this->scanner->scanMappedObservation($this->mapping, 'existing', 'firewalls/site-a', '*.cfg', 'glob', expectedIdentity: $first['directory_identity']);
+
+    expect($first['directory_identity'])->toMatch('/\A[0-9a-f]{64}\z/');
+    expect($first['scan']['files'])->toBe([]);
+    expect($second['directory_identity'])->toBe($first['directory_identity']);
+    expect(array_column($second['scan']['files'], 'filename'))->toBe(['backup.cfg']);
+    expect($second['scan']['files'][0])->not->toHaveKey('path');
+    expect($second['scan'])->toBe($this->scanner->scanMapped($this->mapping, 'existing', 'firewalls/site-a', '*.cfg', 'glob'));
+});
+
+test('bound observation rejects directory replacement between scans', function () {
+    $first = $this->scanner->scanMappedObservation($this->mapping, 'existing', 'firewalls/site-a', '*.cfg', 'glob');
+    rename($this->nested, $this->nested . '-old');
+    File::ensureDirectoryExists($this->nested);
+
+    expect(fn () => $this->scanner->scanMappedObservation($this->mapping, 'existing', 'firewalls/site-a', '*.cfg', 'glob', expectedIdentity: $first['directory_identity']))->toThrow(RuntimeException::class);
+});
+
+test('bound observation rejects alias remap or a different relative directory', function () {
+    $first = $this->scanner->scanMappedObservation($this->mapping, 'existing', '', '*.cfg', 'glob');
+    $remapped = new LocalBackupDirectoryMap(['existing' => $this->nested]);
+    expect(fn () => $this->scanner->scanMappedObservation($remapped, 'existing', '', '*.cfg', 'glob', expectedIdentity: $first['directory_identity']))->toThrow(RuntimeException::class);
+    expect(fn () => $this->scanner->scanMappedObservation($this->mapping, 'existing', 'firewalls/site-a', '*.cfg', 'glob', expectedIdentity: $first['directory_identity']))->toThrow(RuntimeException::class);
+});
+
+test('bound observation retains limits and rejects malformed identity', function () {
+    File::put($this->root . '/a.cfg', 'a');
+    File::put($this->root . '/b.cfg', 'b');
+    expect(fn () => $this->scanner->scanMappedObservation($this->mapping, 'existing', '', '*.cfg', 'glob', 1, 1))->toThrow(RuntimeException::class);
+    expect(fn () => $this->scanner->scanMappedObservation($this->mapping, 'existing', '', '*.cfg', 'glob', expectedIdentity: 'invalid'))->toThrow(InvalidArgumentException::class);
+});

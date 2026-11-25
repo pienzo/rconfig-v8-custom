@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #207 merged after 15/15 CI; #208 internal run-state lifecycle candidate. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #207/#211 accepted; #209 run-state lifecycle corrected using actual Pint patch; combined CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Directory observation accepted; lifecycle formatter correction
+
+- #211 head `756d7e46` passed 11/11 checks, PHP 1881 passed / 8640 assertions / 8 skips; merged at `e25b1f78dd48354ae16d191a6ded08da31b3239e`. Bounded mapped scan returns a directory-chain fingerprint; normal arrivals retain identity, replacement/remap is refused. This is metadata equality, not atomic path traversal or authorization. No runtime change.
+- #209 head `fd8f0e8c` passed 10/11 checks including PHP 1892 passed / 8668 assertions / 8 skips; only Pint failed. Diagnostic head `6a9f92a3` retains required Pint --test and prints formatter diff locally on failure without pushing. Job 138981794230 produced the exact remaining fix: two spaces between the typed array PHPDoc and `$result` parameter. Applied that exact patch and merged accepted #211 into the feature branch (no change to custom here). Combined CI pending. No staging update or migration. Next: connect trusted filesystem observation, durable quiet-period baseline and terminal lifecycle before dispatch/API.
 
 ## 2026-11-25 — Occurrence claim accepted; run-state lifecycle candidate
 
