@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #201 merged (authorized directory scanner); #202 separate presence ledger candidate; #199 themes draft, visual review pending. All operational Custom gates remain OFF. No production/release approval.
+**Current gate:** #203/#205 merged after exact-head CI; #206 occurrence claim candidate, combined CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Presence ledger and stability accepted; occurrence claim candidate
+
+- #203 corrected head `86d6dd9d` passed 15/15 checks; PHP 1853 passed, 8560 assertions, 8 skips. Merged at `bc36c27b3a7fa35ae4ade12d424ecde8022071bb`. #205 head `1f8e02c4` passed 11/11 checks; PHP 1853 passed, 8539 assertions, 8 skips. Merged at `7d5446ca800f696fac3799eebbb482ae21bbd540`. Separate heads were tested; combined tree regression pending in #206. Strict receipt unchanged.
+- #206 candidate: transactional claim on locked rule and linked task, dedicated task command, exact one device, due cron in configured application timezone, UTC minute uniqueness, immutable-by-service versioned criteria snapshot, activation and pause checks, no filesystem reads, no dispatch. Config runtime gate defaults false and has no environment binding. Snapshot stores alias/relative selection only; actual mapped directory identity must be bound and validated at scan time. Replay returns original criteria/deadline/outcome; schema-only rows without snapshot are refused. Future lifecycle still must enforce terminal updates, observation persistence, deadline/retry, directory binding, activation/edit protections and scheduler exclusions; no production or staging migration. New migration is additive; down discards snapshots, requires reviewed recovery if populated.
 
 ## 2026-11-25 — Presence schema CI correction
 
