@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery candidate, Pint correction published; repeat CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #222 actual Local Presence Horizon probe candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Scheduler recovery accepted; real presence Horizon probe candidate
+
+- #221 corrected head `6d6b771f` passed 15/15 checks in seven workflows, PHP 1925 passed / 8824 assertions / 8 skips (CI 45622784540, job 139235238704), all downstream regressions passed. Merged at `8983b5fb29709c49ce2fec8df0e364bacbc4ef5c`. No VM change.
+- #222 candidate adds hosted-only real Local Presence probe to CI: isolated Redis DBs 5/6 and unique Horizon/cache prefixes, disposable MySQL fixture rows, static operator config temporarily enabled in runner checkout and restored on exit. Actual named schedule callbacks reserve two occurrences before dispatch; actual Horizon consumes, first observations pending for quiet stability and negative file match; wall-clock deadline, subsequent observation and expiry, terminal replay, no native/receipt/notification side effects. No production config or application logic change; catch-up remains off in this probe. Actual results pending CI. 100-rule workload, worker crash/concurrent delivery, missed-tick integration, guarded lifecycle and activation remain gates. No staging change.
 
 ## 2026-11-25 — Scheduler recovery formatting correction
 
