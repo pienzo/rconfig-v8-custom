@@ -90,6 +90,30 @@ final class ExternalBackupDirectoryScanner
         int $maxMatches = 100,
         int $maxScanMillis = 2000
     ): array {
+        return $this->scanMappedObservation($mapping, $alias, $relativeDirectory, $pattern, $mode, $maxEntries, $maxMatches, $maxScanMillis)['scan'];
+    }
+
+    /**
+     * Bind metadata to the same checked directory chain across observations.
+     * The expected fingerprint is internal state, never a user authorization token.
+     *
+     * @return array{directory_identity: string, scan: array{directory_present: bool, scanned_entries: int, files: list<array{filename: string, size: int, mtime: int, ctime: int, device: int, inode: int}>}}
+     */
+    public function scanMappedObservation(
+        LocalBackupDirectoryMap $mapping,
+        string $alias,
+        string $relativeDirectory,
+        string $pattern,
+        string $mode,
+        int $maxEntries = 1000,
+        int $maxMatches = 100,
+        int $maxScanMillis = 2000,
+        ?string $expectedIdentity = null
+    ): array {
+        if ($expectedIdentity !== null && preg_match('/\\A[0-9a-f]{64}\\z/D', $expectedIdentity) !== 1) {
+            throw new InvalidArgumentException('Invalid expected backup directory identity.');
+        }
+
         if ($maxEntries < 1 || $maxEntries > 10000 || $maxMatches < 1 || $maxMatches > 1000 || $maxMatches > $maxEntries || $maxScanMillis < 1 || $maxScanMillis > 10000) {
             throw new InvalidArgumentException('Invalid external backup scanner bounds.');
         }
@@ -101,11 +125,32 @@ final class ExternalBackupDirectoryScanner
             throw new RuntimeException('Approved backup directory is unavailable.');
         }
 
+        $identity = $this->mappedDirectoryFingerprint($chain);
+        if ($expectedIdentity !== null && hash_equals($expectedIdentity, $identity) === false) {
+            throw new RuntimeException('Approved backup directory identity changed between observations.');
+        }
+
         $result = $this->enumerate($directory, $pattern, $mode, $maxEntries, $maxMatches, $maxScanMillis);
 
         $mapping->assertUnchanged($chain);
 
-        return $result;
+        return ['directory_identity' => $identity, 'scan' => $result];
+    }
+
+    /**
+     * Ignore changing directory entry timestamps/size between scans: arrivals
+     * are normal. The existing in-scan check still detects concurrent changes.
+     *
+     * @param  array<string, array<string|int, int>>  $chain
+     */
+    private function mappedDirectoryFingerprint(array $chain): string
+    {
+        $components = [];
+        foreach ($chain as $path => $stat) {
+            $components[] = [$path, $stat['dev'], $stat['ino'], $stat['mode'], $stat['uid'], $stat['gid']];
+        }
+
+        return hash('sha256', json_encode(['version' => 1, 'components' => $components], JSON_THROW_ON_ERROR));
     }
 
     /** @return array{directory_present: bool, scanned_entries: int, files: list<array{filename: string, size: int, mtime: int, ctime: int, device: int, inode: int}>} */
