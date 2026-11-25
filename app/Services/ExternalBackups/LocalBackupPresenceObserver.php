@@ -132,7 +132,7 @@ final class LocalBackupPresenceObserver
                 if ($result['status'] === 'pending') {
                     // Preserve an identical earlier baseline on rapid retries.
                     // A changed match set starts a new conservative quiet window.
-                    if ($baseline === null || $baseline['scan']['files'] !== $observation['scan']['files']) {
+                    if ($baseline === null || ! $this->sameFileSet($baseline['scan']['files'], $observation['scan']['files'])) {
                         $updated->stability_baseline = [
                             'observed_at' => $at->getTimestamp(),
                             'scan' => $observation['scan'],
@@ -146,6 +146,24 @@ final class LocalBackupPresenceObserver
 
             return $updated->refresh();
         });
+    }
+
+    /**
+     * MySQL JSON may reorder object keys on persistence. Keep strict value
+     * and type comparisons after normalizing keys, not loose PHP equality.
+     *
+     * @param  list<array<string, mixed>>  $earlier
+     * @param  list<array<string, mixed>>  $later
+     */
+    private function sameFileSet(array $earlier, array $later): bool
+    {
+        $normalize = static function (array $file): array {
+            ksort($file, SORT_STRING);
+
+            return $file;
+        };
+
+        return array_map($normalize, $earlier) === array_map($normalize, $later);
     }
 
     /** @return array<string, mixed> */

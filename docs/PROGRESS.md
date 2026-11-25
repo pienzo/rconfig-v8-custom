@@ -5,8 +5,12 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #209 accepted (11/11 combined CI); #212 trusted observer candidate. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #209 accepted (11/11 combined CI); #213 observer corrected after CI failure; repeat CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Trusted observer CI correction
+
+- #213 initial head `2ee750cd`: six supporting workflows succeeded; CI run 45549703901 failed Pint (job 138987668643, exact blank-line patch) and Unit + Fasttests (job 138987668946: 1905 passed, 1 failed, 8 skipped, 8711 assertions). Downstream probes in that job were skipped. Existing integration test exposed a quiet-baseline reset on unchanged metadata after a MySQL JSON round trip. Strict PHP array equality is order-sensitive, whereas MySQL may reorder object keys. Normalize each file's associative keys before strict comparison; preserve list ordering and value/type checks. Keep original failing assertion and add same-size/same-mtime replacement with different inode and exact restarted quiet boundary. No weakening of freshness, scanner or receipt behavior. Repeat CI required; no merge, no VM changes. #199 remains draft. Next after accepted observer: gated scheduler/worker design, then activation/API and GUI.
 
 ## 2026-11-25 — Lifecycle accepted; trusted filesystem observer candidate
 

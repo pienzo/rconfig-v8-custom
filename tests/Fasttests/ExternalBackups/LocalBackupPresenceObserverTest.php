@@ -106,6 +106,33 @@ test('file arrival after an empty scan and a growing file need a new stable obse
     expect($this->observer->observe($this->rule->id, $this->run->id, $this->mapping)->status)->toBe('present');
 });
 
+test('same size replacement changes the inode and restarts the quiet baseline', function () {
+    $file = $this->folder . '/backup_a.cfg';
+    File::put($file, 'original');
+    $first = $this->observer->observe($this->rule->id, $this->run->id, $this->mapping);
+    expect($first->reason)->toBe('stability_wait');
+    $original = $first->stability_baseline['scan']['files'][0];
+
+    // Keep the old inode allocated under a nonmatching name.
+    rename($file, $this->folder . '/previous.cfg');
+    File::put($file, 'replaced');
+    touch($file, $original['mtime']);
+
+    CarbonImmutable::setTestNow($this->instant->addSeconds(10));
+    $second = $this->observer->observe($this->rule->id, $this->run->id, $this->mapping);
+    expect($second->status)->toBe('pending');
+    expect($second->stability_baseline['observed_at'])->toBe($this->instant->addSeconds(10)->getTimestamp());
+    $replacement = $second->stability_baseline['scan']['files'][0];
+    expect($replacement['size'])->toBe($original['size']);
+    expect($replacement['mtime'])->toBe($original['mtime']);
+    expect($replacement['inode'])->not->toBe($original['inode']);
+
+    CarbonImmutable::setTestNow($this->instant->addSeconds(30));
+    expect($this->observer->observe($this->rule->id, $this->run->id, $this->mapping)->status)->toBe('pending');
+    CarbonImmutable::setTestNow($this->instant->addSeconds(40));
+    expect($this->observer->observe($this->rule->id, $this->run->id, $this->mapping)->status)->toBe('present');
+});
+
 test('snapshot disables quiet checking without requiring a second observation', function () {
     $this->rule->update(['quiet_seconds' => null]);
     $instant = $this->instant->addMinute();

@@ -19,7 +19,6 @@ class LocalBackupPresenceRun extends BaseModel
     public const ERROR = 'error';
 
     protected $hidden = ['directory_identity', 'stability_baseline'];
-
     protected $fillable = [
         'rule_id',
         'device_id',
