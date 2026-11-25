@@ -5,11 +5,14 @@ use App\Models\LocalBackupPresenceRule;
 use App\Models\LocalBackupPresenceRun;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\ExternalBackups\LocalBackupPresenceOccurrenceClaim;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Bus;
 
 beforeEach(function () {
     $this->beginTransaction();
     config(['rConfig.is_demo' => false, 'local-backup-presence.runtime_enabled' => false,
+        'local-backup-presence.activation_api_enabled' => false,
         'local-backup-presence.roots' => ['synthetic' => '/synthetic/private-root']]);
     $this->device = Device::factory()->create();
     $this->admin = User::factory()->create(['role' => 'Admin']);
@@ -134,5 +137,132 @@ test('device reassignment history and demo writes are refused', function () {
     $draft = $this->payload;
     $draft['task_name'] = 'Synthetic demo refusal';
     $this->postJson($this->url, $draft)->assertStatus(409);
+    Bus::assertNothingDispatched();
+});
+
+function approveSyntheticPresenceActivation(): void
+{
+    config([
+        'local-backup-presence.activation_api_enabled' => true,
+        'local-backup-presence.runtime_enabled' => true,
+        'local-backup-presence.queue_enabled' => true,
+        'local-backup-presence.scheduler_enabled' => true,
+        'local-backup-presence.dispatch_enabled' => true,
+        'local-backup-presence.max_rules_per_tick' => 100,
+    ]);
+}
+
+test('local presence activation requires authentication and administrator role', function () {
+    $this->patchJson($this->url . '/1/activation', ['enabled' => true])->assertUnauthorized();
+    $this->actingAs($this->admin);
+    $id = $this->postJson($this->url, $this->payload)->assertCreated()->json('data.id');
+    $this->actingAs(User::factory()->create(['role' => 'User']));
+    approveSyntheticPresenceActivation();
+    $this->patchJson($this->url . '/' . $id . '/activation', ['enabled' => true])->assertForbidden();
+    $this->patchJson($this->url . '/' . $id . '/activation', ['enabled' => false])->assertForbidden();
+    expect(LocalBackupPresenceRule::findOrFail($id)->enabled)->toBeFalse();
+    Bus::assertNothingDispatched();
+});
+
+test('operator approval and runtime gates must all be strict booleans', function (string $key, mixed $value) {
+    $this->actingAs($this->admin);
+    $id = $this->postJson($this->url, $this->payload)->assertCreated()->json('data.id');
+    approveSyntheticPresenceActivation();
+    config([$key => $value]);
+    $this->getJson($this->url)->assertOk()->assertJsonPath('activation_available', false);
+    $this->patchJson($this->url . '/' . $id . '/activation', ['enabled' => true])->assertStatus(409);
+    $rule = LocalBackupPresenceRule::findOrFail($id);
+    expect($rule->enabled)->toBeFalse()
+        ->and((bool) $rule->task->is_paused)->toBeTrue();
+    Bus::assertNothingDispatched();
+})->with([
+    ['local-backup-presence.activation_api_enabled', false],
+    ['local-backup-presence.activation_api_enabled', 'true'],
+    ['local-backup-presence.runtime_enabled', false],
+    ['local-backup-presence.queue_enabled', false],
+    ['local-backup-presence.scheduler_enabled', false],
+    ['local-backup-presence.dispatch_enabled', false],
+    ['rConfig.is_demo', true],
+]);
+
+test('activation rejects any payload other than one boolean', function (array $payload) {
+    $this->actingAs($this->admin);
+    $id = $this->postJson($this->url, $this->payload)->assertCreated()->json('data.id');
+    approveSyntheticPresenceActivation();
+    $this->patchJson($this->url . '/' . $id . '/activation', $payload)
+        ->assertUnprocessable()->assertJsonValidationErrors('enabled');
+    expect(LocalBackupPresenceRule::findOrFail($id)->enabled)->toBeFalse();
+    Bus::assertNothingDispatched();
+})->with([
+    [[]],
+    [['enabled' => 'true']],
+    [['enabled' => 1]],
+    [['enabled' => null]],
+    [['enabled' => true, 'root' => null]],
+]);
+
+test('administrator activation is idempotent and suspension works with execution and approval gates off', function () {
+    $this->actingAs($this->admin);
+    $id = $this->postJson($this->url, $this->payload)->assertCreated()->json('data.id');
+    $url = $this->url . '/' . $id . '/activation';
+    $this->patchJson($url, ['enabled' => true])->assertStatus(409);
+    approveSyntheticPresenceActivation();
+    $this->getJson($this->url)->assertOk()->assertJsonPath('activation_available', true);
+    $this->patchJson($url, ['enabled' => true])->assertOk()->assertJsonPath('data.enabled', true);
+    $rule = LocalBackupPresenceRule::findOrFail($id);
+    $before = $rule->getRawOriginal();
+    $taskBefore = $rule->task()->firstOrFail()->getRawOriginal();
+    expect((bool) $rule->task->is_paused)->toBeFalse();
+    $this->patchJson($url, ['enabled' => true])->assertOk();
+    expect($rule->fresh()->getRawOriginal())->toBe($before)
+        ->and($rule->task()->firstOrFail()->getRawOriginal())->toBe($taskBefore);
+    config(['local-backup-presence.activation_api_enabled' => false, 'local-backup-presence.runtime_enabled' => false]);
+    $response = $this->patchJson($url, ['enabled' => false])->assertOk()->assertJsonPath('data.enabled', false);
+    expect((bool) $rule->task()->firstOrFail()->is_paused)->toBeTrue()
+        ->and($rule->fresh()->getRawOriginal('activated_at_utc'))->toBe($before['activated_at_utc'])
+        ->and($response->getContent())->not->toContain('/synthetic/private-root');
+    $this->patchJson($url, ['enabled' => true])->assertStatus(409);
+    $this->patchJson($url, ['enabled' => false])->assertOk();
+    Bus::assertNothingDispatched();
+});
+
+test('invalid mapping and full capacity fail closed via HTTP', function () {
+    $this->actingAs($this->admin);
+    $id = $this->postJson($this->url, $this->payload)->assertCreated()->json('data.id');
+    $second = $this->postJson($this->url, array_replace($this->payload, ['task_name' => 'Synthetic second activation']))
+        ->assertCreated()->json('data.id');
+    approveSyntheticPresenceActivation();
+    config(['local-backup-presence.roots' => ['synthetic' => '/synthetic/private-root/../unsafe']]);
+    $response = $this->patchJson($this->url . '/' . $id . '/activation', ['enabled' => true])->assertStatus(409);
+    expect($response->getContent())->not->toContain('/synthetic/private-root');
+    config(['local-backup-presence.roots' => ['synthetic' => '/synthetic/private-root'],
+        'local-backup-presence.max_rules_per_tick' => 1]);
+    $this->patchJson($this->url . '/' . $id . '/activation', ['enabled' => true])->assertOk();
+    $this->patchJson($this->url . '/' . $second . '/activation', ['enabled' => true])->assertStatus(409);
+    expect(LocalBackupPresenceRule::findOrFail($second)->enabled)->toBeFalse();
+    Bus::assertNothingDispatched();
+});
+
+test('pending checks and demo mode prevent suspension without changing ledger state', function () {
+    $this->actingAs($this->admin);
+    $id = $this->postJson($this->url, $this->payload)->assertCreated()->json('data.id');
+    // Every minute, independent of the actual UTC clock.
+    $edit = $this->payload;
+    unset($edit['device_id']);
+    $edit['task_cron'] = ['*', '*', '*', '*', '*'];
+    $this->patchJson($this->url . '/' . $id, $edit)->assertOk();
+    approveSyntheticPresenceActivation();
+    $url = $this->url . '/' . $id . '/activation';
+    $this->patchJson($url, ['enabled' => true])->assertOk();
+    $rule = LocalBackupPresenceRule::findOrFail($id);
+    $minute = CarbonImmutable::parse($rule->getRawOriginal('activated_at_utc'), 'UTC');
+    $run = app(LocalBackupPresenceOccurrenceClaim::class)->claim($id, $minute);
+    $before = $run->fresh()->getRawOriginal();
+    $this->patchJson($url, ['enabled' => false])->assertStatus(409);
+    config(['rConfig.is_demo' => true]);
+    $this->patchJson($url, ['enabled' => false])->assertStatus(409);
+    expect($rule->fresh()->enabled)->toBeTrue()
+        ->and((bool) $rule->task()->firstOrFail()->is_paused)->toBeFalse()
+        ->and($run->fresh()->getRawOriginal())->toBe($before);
     Bus::assertNothingDispatched();
 });

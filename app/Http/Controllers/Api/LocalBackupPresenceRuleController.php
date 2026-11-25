@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\LocalBackupPresenceRule;
 use App\Services\ExternalBackups\LocalBackupPresenceCriteriaValidator;
+use App\Services\ExternalBackups\LocalBackupPresenceRuleActivation;
 use App\Services\ExternalBackups\LocalBackupPresenceRuleLifecycle;
 use DomainException;
 use Illuminate\Http\JsonResponse;
@@ -13,7 +14,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
-/** Administrator configuration surface only. No activation or file IO. */
+/** Administrator rule configuration and guarded activation. No file IO. */
 final class LocalBackupPresenceRuleController extends Controller
 {
     private const CRITERIA = [
@@ -40,7 +41,9 @@ final class LocalBackupPresenceRuleController extends Controller
             ->paginate(min(max((int) $request->integer('per_page', 20), 1), 100))
             ->through(fn (LocalBackupPresenceRule $rule): array => $this->representation($rule));
 
-        return response()->json($items);
+        return response()->json($items->toArray() + [
+            'activation_available' => $this->activationAvailable(app(LocalBackupPresenceRuleActivation::class)),
+        ]);
     }
 
     public function show(LocalBackupPresenceRule $localBackupPresenceRule): JsonResponse
@@ -76,6 +79,36 @@ final class LocalBackupPresenceRuleController extends Controller
         }
 
         return $this->respond($rule);
+    }
+
+    public function activation(Request $request, LocalBackupPresenceRule $localBackupPresenceRule, LocalBackupPresenceRuleActivation $activation): JsonResponse
+    {
+        if (array_keys($request->all()) !== ['enabled'] || ! is_bool($request->input('enabled'))) {
+            throw ValidationException::withMessages(['enabled' => 'Supply only a JSON boolean enabled field.']);
+        }
+
+        $enabled = $request->input('enabled');
+        if ($enabled && ! $this->activationAvailable($activation)) {
+            return response()->json(['message' => 'Local backup activation is not approved.'], 409);
+        }
+
+        try {
+            $rule = $activation->change($localBackupPresenceRule->id, $enabled);
+        } catch (InvalidArgumentException) {
+            // Operator configuration errors must not expose mapped paths.
+            return response()->json(['message' => 'Local backup activation configuration is invalid.'], 409);
+        } catch (DomainException $exception) {
+            // Domain service emits fixed, non-sensitive conflict messages.
+            return response()->json(['message' => $exception->getMessage()], 409);
+        }
+
+        return $this->respond($rule);
+    }
+
+    private function activationAvailable(LocalBackupPresenceRuleActivation $activation): bool
+    {
+        return config('local-backup-presence.activation_api_enabled', false) === true
+            && $activation->available();
     }
 
     public function destroy(LocalBackupPresenceRule $localBackupPresenceRule, LocalBackupPresenceRuleLifecycle $lifecycle): JsonResponse
