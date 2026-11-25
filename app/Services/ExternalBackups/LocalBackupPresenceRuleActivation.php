@@ -90,10 +90,11 @@ final class LocalBackupPresenceRuleActivation
                     throw new InvalidArgumentException('Invalid local backup scheduler capacity.');
                 }
 
-                // Count even enabled rules whose first eligible minute is in
-                // the future. Disabled drafts do not consume capacity.
+                // The Nth enabled row exists exactly when capacity is full.
+                // Keep a current locking read under the admission mutex,
+                // including future first ticks, but excluding disabled drafts.
                 if (LocalBackupPresenceRule::query()->where('enabled', true)
-                    ->orderBy('id')->limit($limit)->lockForUpdate()->pluck('id')->count() >= $limit) {
+                    ->orderBy('id')->offset($limit - 1)->lockForUpdate()->first(['id']) !== null) {
                     throw new DomainException('Local backup active rule capacity reached.');
                 }
 

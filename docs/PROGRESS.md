@@ -5,8 +5,12 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load accepted (5/5); #227 real Redis crash/concurrency accepted (5/5); #229 transaction crash accepted (5/5); #231 actual worker timeout accepted (5/5); #233 managed Core task boundary accepted (11/11); #235 device deletion guard accepted (11/11); #237 dormant presence lifecycle accepted (11/11); #238 transactional activation candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load accepted (5/5); #227 real Redis crash/concurrency accepted (5/5); #229 transaction crash accepted (5/5); #231 actual worker timeout accepted (5/5); #233 managed Core task boundary accepted (11/11); #235 device deletion guard accepted (11/11); #237 dormant presence lifecycle accepted (11/11); #239 transactional activation: PHPStan bounded locking query corrected, repeat CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Activation capacity query correction
+
+- #239 initial head `e05a69b6`, CI 45668077933: PHP job 139395571556 passed 1969 tests / 9096 assertions / 8 skips, including all 18 new activation cases and actual sequential 100/101 boundary. 100-rule load reserve 489.86ms / dispatch 137.52ms / drain 3835.39ms; timeout 30.248s and redelivery passed. Six other workflows passed including disposable MariaDB migration/install/recovery. Only PHPStan job 139395571391 failed: collection count can be obtained as a query. Replace bounded pluck/count with ordered OFFSET (limit - 1), LIMIT 1, FOR UPDATE lookup: the Nth enabled row exists iff admission capacity is reached. Keep singleton transaction mutex, current locking reads, enabled-only scope including future ticks, existing limits, tests and configuration. No aggregate snapshot read, baseline suppression or migration change. Repeat full CI required. Independent concurrent admission/rollback proof still outstanding. No VM change.
 
 ## 2026-11-25 — Dormant lifecycle accepted; transactional activation candidate
 
