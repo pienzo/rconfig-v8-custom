@@ -18,6 +18,7 @@ class LocalBackupPresenceRun extends BaseModel
 
     public const ERROR = 'error';
 
+    protected $hidden = ['directory_identity', 'stability_baseline'];
     protected $fillable = [
         'rule_id',
         'device_id',
@@ -29,6 +30,7 @@ class LocalBackupPresenceRun extends BaseModel
     {
         return [
             'criteria_snapshot' => 'array',
+            'stability_baseline' => 'array',
             'scheduled_at_utc' => 'datetime',
             'deadline_at_utc' => 'datetime',
             'first_observed_at_utc' => 'datetime',

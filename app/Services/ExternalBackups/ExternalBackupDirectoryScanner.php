@@ -127,7 +127,7 @@ final class ExternalBackupDirectoryScanner
 
         $identity = $this->mappedDirectoryFingerprint($chain);
         if ($expectedIdentity !== null && hash_equals($expectedIdentity, $identity) === false) {
-            throw new RuntimeException('Approved backup directory identity changed between observations.');
+            throw new LocalBackupDirectoryChanged('Approved backup directory identity changed between observations.');
         }
 
         $result = $this->enumerate($directory, $pattern, $mode, $maxEntries, $maxMatches, $maxScanMillis);
