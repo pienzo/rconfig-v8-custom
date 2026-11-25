@@ -111,7 +111,28 @@ test('presence outcome cannot be mass assigned and verified success is not a pre
         expect($run->isFillable($field))->toBeFalse();
     }
     expect(fn () => DB::table('local_backup_presence_runs')->where('id', $run->id)->update(['status' => 'success']))->toThrow(QueryException::class);
+    expect($run->fresh()->status)->toBe(LocalBackupPresenceRun::PENDING);
 });
+
+test('database rejects the empty enum sentinel and invalid insert without changing core SQL mode', function () {
+    $run = LocalBackupPresenceRun::create($this->occurrence);
+    expect(fn () => DB::table('local_backup_presence_runs')->where('id', $run->id)->update(['status' => '']))->toThrow(QueryException::class);
+    expect($run->fresh()->status)->toBe(LocalBackupPresenceRun::PENDING);
+
+    expect(fn () => DB::table('local_backup_presence_runs')->insert(array_replace($this->occurrence, [
+        'scheduled_at_utc' => '2026-11-26 06:00:00',
+        'deadline_at_utc' => '2026-11-26 07:00:00',
+        'status' => 'success',
+    ])))->toThrow(QueryException::class);
+
+    expect($this->rule->runs()->count())->toBe(1);
+});
+
+test('database accepts all four presence status values', function (string $status) {
+    $run = LocalBackupPresenceRun::create($this->occurrence);
+    DB::table('local_backup_presence_runs')->where('id', $run->id)->update(['status' => $status]);
+    expect($run->fresh()->status)->toBe($status);
+})->with(['pending', 'present', 'absent', 'error']);
 
 test('presence ledger has no side effects on strict rule run and receipt ledgers', function () {
     $before = [ExternalBackupRule::count(), ExternalBackupCheckRun::count(), ExternalBackupFileReceipt::count()];

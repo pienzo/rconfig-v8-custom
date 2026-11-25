@@ -8,6 +8,10 @@
 **Current gate:** #201 merged (authorized directory scanner); #202 separate presence ledger candidate; #199 themes draft, visual review pending. All operational Custom gates remain OFF. No production/release approval.
 
 
+## 2026-11-25 — Presence schema CI correction
+
+- #203 original head `f5e7861d`: 14/15 checks passed; PHP 1847 passed, 8 skips, 1 failed, 8551 assertions (run 45527659213, job 138914879652). Core MySQL connection uses strict=false; invalid ENUM input can be coerced to its empty sentinel. The negative schema test exposed a real domain enforcement gap. Add an explicit CHECK constraint to the still-unmerged migration, retain the failing assertion, add invalid insert/empty sentinel and valid-state regression tests. Do not change Core SQL mode. CI on corrected head pending; no merge or deployed migration yet.
+
 ## 2026-11-25 — Directory mapping accepted; additive presence ledger candidate
 
 - #201 merged at `b6a39e25225abd3e925aaeb7dbb71d5f2d148948` after 11/11 checks at `fe98cfb0`; PHP 1838 passed, 8517 assertions, 8 skipped. Strict scanner regression retained. No actual VM changes.

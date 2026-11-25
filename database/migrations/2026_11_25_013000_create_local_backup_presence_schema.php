@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -56,6 +57,11 @@ return new class extends Migration
             $table->unique(['rule_id', 'scheduled_at_utc'], 'local_presence_occurrence_unique');
             $table->index(['device_id', 'status', 'scheduled_at_utc'], 'local_presence_device_status_idx');
         });
+
+        // Core uses non-strict SQL mode: invalid ENUM input can become the
+        // special empty ENUM value. Enforce the allowed domain independently
+        // of connection SQL mode on supported MySQL/MariaDB versions.
+        DB::statement("ALTER TABLE local_backup_presence_runs ADD CONSTRAINT local_presence_valid_status CHECK (status IN ('pending', 'present', 'absent', 'error'))");
     }
 
     public function down(): void
