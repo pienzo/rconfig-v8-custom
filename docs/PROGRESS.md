@@ -5,8 +5,12 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #220 bounded scheduler recovery candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery candidate, Pint correction published; repeat CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Scheduler recovery formatting correction
+
+- #221 initial head `10fc5c10`, CI 45621847530: Pint job 139231768943 reported one ordered_imports violation across 941 files. PHPStan, ESLint, Vitest and Run Unit + Fasttests step passed; downstream probes and some staging jobs were still running at inspection. Apply exactly the formatter import-order diff in LocalBackupPresenceOccurrenceClaimTest.php. No logic or assertions changed; repeat CI required before merge. No VM changes; user-approved 100-rule cap and five-minute candidate catch-up unchanged.
 
 ## 2026-11-25 — Pending reconciliation accepted; bounded missed-minute recovery candidate
 
