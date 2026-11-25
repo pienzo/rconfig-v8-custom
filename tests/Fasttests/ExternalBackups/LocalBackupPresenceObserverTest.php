@@ -11,11 +11,16 @@ use App\Services\ExternalBackups\ExternalBackupFilenameMatcher;
 use App\Services\ExternalBackups\LocalBackupDirectoryMap;
 use App\Services\ExternalBackups\LocalBackupPresenceObserver;
 use App\Services\ExternalBackups\LocalBackupPresenceOccurrenceClaim;
+use App\Services\ExternalBackups\LocalBackupPresencePendingReconciler;
 use App\Services\ExternalBackups\LocalBackupPresencePolicy;
 use App\Services\ExternalBackups\LocalBackupPresenceRunState;
 use App\Services\ExternalBackups\LocalBackupPresenceStabilityPolicy;
 use Carbon\CarbonImmutable;
+use Illuminate\Contracts\Queue\Queue as QueueContract;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 
 beforeEach(function () {
     $this->beginTransaction();
@@ -255,4 +260,110 @@ test('local presence job refuses disabled gates demo and unrelated run identifie
     config(['rConfig.is_demo' => false]);
     (new LocalBackupPresenceObserveJob($this->rule->id + 1, $this->run->id))->handle($this->observer);
     expect($this->run->fresh()->getAttributes())->toEqual($before);
+});
+
+test('pending reconciliation reserves a durable cooldown and retries lost jobs without inventing evidence', function () {
+    config([
+        'local-backup-presence.queue_enabled' => true,
+        'local-backup-presence.scheduler_enabled' => true,
+        'local-backup-presence.dispatch_enabled' => true,
+        'local-backup-presence.roots' => ['synthetic' => $this->sandbox],
+    ]);
+    Queue::fake();
+    Bus::fake();
+    $reconciler = app(LocalBackupPresencePendingReconciler::class);
+    $reconciler->enqueue();
+    $reconciler->enqueue();
+    Bus::assertDispatchedTimes(LocalBackupPresenceObserveJob::class, 1);
+    Bus::assertDispatched(LocalBackupPresenceObserveJob::class, fn ($job) => $job->ruleId === $this->rule->id && $job->runId === $this->run->id);
+    $run = $this->run->fresh();
+    expect($run->getRawOriginal('dispatch_not_before_utc'))->toBe($this->instant->addSeconds(55)->format('Y-m-d H:i:s'));
+    expect($run->getRawOriginal('last_observed_at_utc'))->toBeNull();
+    expect($run->toArray())->not->toHaveKey('dispatch_not_before_utc');
+    expect($run->isFillable('dispatch_not_before_utc'))->toBeFalse();
+
+    CarbonImmutable::setTestNow($this->instant->addSeconds(54));
+    $reconciler->enqueue();
+    Bus::assertDispatchedTimes(LocalBackupPresenceObserveJob::class, 1);
+    CarbonImmutable::setTestNow($this->instant->addMinute());
+    $reconciler->enqueue();
+    Bus::assertDispatchedTimes(LocalBackupPresenceObserveJob::class, 2);
+    expect($this->run->fresh()->status)->toBe('pending');
+
+    File::put($this->folder . '/backup_a.cfg', 'synthetic');
+    $job = new LocalBackupPresenceObserveJob($this->rule->id, $this->run->id);
+    $job->handle($this->observer);
+    CarbonImmutable::setTestNow($this->instant->addSeconds(90));
+    $job->handle($this->observer);
+    expect($this->run->fresh()->status)->toBe('present');
+
+    CarbonImmutable::setTestNow($this->instant->addMinutes(2));
+    $reconciler->enqueue();
+    Bus::assertDispatchedTimes(LocalBackupPresenceObserveJob::class, 2);
+});
+
+test('pending reconciliation does not dispatch through disabled gates or before schedule', function () {
+    Queue::fake();
+    Bus::fake();
+    $reconciler = app(LocalBackupPresencePendingReconciler::class);
+    config([
+        'local-backup-presence.queue_enabled' => true,
+        'local-backup-presence.scheduler_enabled' => true,
+    ]);
+    expect(config('local-backup-presence.dispatch_enabled'))->toBeFalse();
+    $reconciler->enqueue();
+    config(['local-backup-presence.dispatch_enabled' => true, 'rConfig.is_demo' => true]);
+    $reconciler->enqueue();
+    config(['rConfig.is_demo' => false]);
+    CarbonImmutable::setTestNow($this->instant->subSecond());
+    $reconciler->enqueue();
+    Bus::assertNothingDispatched();
+    expect($this->run->fresh()->getRawOriginal('dispatch_not_before_utc'))->toBeNull();
+});
+
+test('paused and disabled runs are not dispatched before deadline but are recoverable for expiry', function () {
+    config([
+        'local-backup-presence.queue_enabled' => true,
+        'local-backup-presence.scheduler_enabled' => true,
+        'local-backup-presence.dispatch_enabled' => true,
+        'local-backup-presence.roots' => ['synthetic' => $this->sandbox],
+    ]);
+    Queue::fake();
+    Bus::fake();
+    $reconciler = app(LocalBackupPresencePendingReconciler::class);
+    $this->task->update(['is_paused' => 1]);
+    $this->rule->enabled = false;
+    $this->rule->save();
+    $reconciler->enqueue();
+    Bus::assertNothingDispatched();
+
+    CarbonImmutable::setTestNow($this->instant->addHour());
+    $reconciler->enqueue();
+    Bus::assertDispatchedTimes(LocalBackupPresenceObserveJob::class, 1);
+    (new LocalBackupPresenceObserveJob($this->rule->id, $this->run->id))->handle($this->observer);
+    expect($this->run->fresh()->status)->toBe('error');
+    expect($this->run->fresh()->reason)->toBe('no_observation_before_deadline');
+});
+
+test('pending reconciliation respects queue pressure and does not leak transport errors', function () {
+    config([
+        'local-backup-presence.queue_enabled' => true,
+        'local-backup-presence.scheduler_enabled' => true,
+        'local-backup-presence.dispatch_enabled' => true,
+    ]);
+    $queue = Mockery::mock(QueueContract::class);
+    Queue::shouldReceive('connection')->with('redis_local_backup_presence')->andReturn($queue);
+    $queue->shouldReceive('size')->with('LocalBackupPresence')->andReturn(100, 0, 0);
+    Bus::shouldReceive('dispatch')->once()->andThrow(new RuntimeException('synthetic private transport diagnostic'));
+    Log::spy();
+    $reconciler = app(LocalBackupPresencePendingReconciler::class);
+    $reconciler->enqueue();
+    expect($this->run->fresh()->getRawOriginal('dispatch_not_before_utc'))->toBeNull();
+
+    $reconciler->enqueue();
+    expect($this->run->fresh()->getRawOriginal('dispatch_not_before_utc'))->toBe($this->instant->addSeconds(55)->format('Y-m-d H:i:s'));
+    $reconciler->enqueue();
+    expect($this->run->fresh()->status)->toBe('pending');
+    expect($this->run->fresh()->getRawOriginal('last_observed_at_utc'))->toBeNull();
+    Log::shouldHaveReceived('warning')->with('Local backup presence dispatch unavailable.', ['run_id' => $this->run->id])->once();
 });
