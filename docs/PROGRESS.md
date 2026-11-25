@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #203/#205 merged after exact-head CI; #206 occurrence claim candidate, combined CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #207 merged after 15/15 CI; #208 internal run-state lifecycle candidate. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Occurrence claim accepted; run-state lifecycle candidate
+
+- #207 head `43e83d67` passed 15/15 CI; PHP 1877 passed, 8629 assertions, 8 skips (job 138928033648). Merged at `5ea77348ac57e0f071edf037d9a0ef94ce238c59`. Combined #203/#205 regression passed. No deployed migration.
+- #208 candidate: internal, gated rule/run-locked transition service. Validated policy result shape, safe matching basename, UTC window; pending on absence/stability wait before deadline, terminal present or sanitized error, explicit expiry distinguishes observed absence/stability timeout from unobserved monitoring error. No late success or terminal rewrite, no fabricated observation. No new migration, scan, API, queue or provider wiring. Caller must be trusted; service does not prove scanner evidence. Future integration must bind directory identity and persist trusted observations, guard task edits/activation and use a trusted clock; no operational enablement. CI pending. Rollback code-only revert.
 
 ## 2026-11-25 — Presence ledger and stability accepted; occurrence claim candidate
 
