@@ -94,7 +94,7 @@ test('destroy deletes task', function () {
 
 test('token API cannot delete or convert a managed F02 task into a native download', function (string $command) {
     $task = Task::factory()->create(['task_command' => $command, 'is_paused' => 1]);
-    $before = $task->getRawOriginal();
+    $before = $task->fresh()->getRawOriginal();
     $this->withHeaders(tasksApiV1AuthHeader($this->token))
         ->patchJson('/api/v1/tasks/' . $task->id, [
             'id' => $task->id,
