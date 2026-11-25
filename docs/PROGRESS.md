@@ -5,8 +5,17 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #198 merged (presence policy, no runtime wiring); #200 authorized directory mapping candidate; #199 theme draft CI passed, visual review pending. All operational Custom gates remain OFF. No production/release approval.
+**Current gate:** #201 merged (authorized directory scanner); #202 separate presence ledger candidate; #199 themes draft, visual review pending. All operational Custom gates remain OFF. No production/release approval.
 
+
+## 2026-11-25 — Presence schema CI correction
+
+- #203 original head `f5e7861d`: 14/15 checks passed; PHP 1847 passed, 8 skips, 1 failed, 8551 assertions (run 45527659213, job 138914879652). Core MySQL connection uses strict=false; invalid ENUM input can be coerced to its empty sentinel. The negative schema test exposed a real domain enforcement gap. Add an explicit CHECK constraint to the still-unmerged migration, retain the failing assertion, add invalid insert/empty sentinel and valid-state regression tests. Do not change Core SQL mode. CI on corrected head pending; no merge or deployed migration yet.
+
+## 2026-11-25 — Directory mapping accepted; additive presence ledger candidate
+
+- #201 merged at `b6a39e25225abd3e925aaeb7dbb71d5f2d148948` after 11/11 checks at `fe98cfb0`; PHP 1838 passed, 8517 assertions, 8 skipped. Strict scanner regression retained. No actual VM changes.
+- #202 proposes separate rules and UTC occurrence ledger (pending/present/absent/error), unique native task and rule/occurrence linkage, composite rule/device FK, disabled default, nullable age and quiet criteria. No receipt rows, scheduler/notification hooks, API or activation. The schema is additive; existing 82-migration VM remains unchanged. Future lifecycle service must enforce rule configuration, task/device and command separation, immutable history/config semantics and terminal transitions under locks; schema alone does not provide this. Fresh migration regression in CI; upgrade and rollback on disposable copy before staging migration. Down drops new data; never apply it to populated history without approved backup/restore. Theme PR #199 remains draft after 11/11 checks.
 
 ## 2026-11-25 — Presence policy accepted, local directory mapping candidate
 
