@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load accepted (5/5); #227 real Redis crash/concurrency accepted (5/5); #229 transaction crash accepted (5/5); #231 actual worker timeout accepted (5/5); #233 managed Core task boundary: REST v1 fixture snapshot corrected, repeat CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load accepted (5/5); #227 real Redis crash/concurrency accepted (5/5); #229 transaction crash accepted (5/5); #231 actual worker timeout accepted (5/5); #233 managed Core task boundary accepted (11/11); #234 device deletion guard candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Managed task guards accepted; device deletion guard candidate
+
+- #233 corrected head `e77fb931` passed 11/11 in four workflows (CI 45649723332, PHP job 139330720347: 1932 passed / 8875 assertions / 8 skips; Docker 45649723412 and 45649723311; staging roles 45649723570). Repeat 100-rule reserve 854.07ms, dispatch 386.85ms, drain 4854.31ms; actual timeout 30.243s and redelivery passed. Merged `7200b9c0bbbd3f5252a7902ad7ca248a4529b7dc`.
+- #234 audit: both rule schemas restrict device deletion, but DeviceObserver::deleting removes configs before FK rejection and Config::deleted can unlink files. Candidate checks both rule tables before any single/bulk API deletion, locks device rows in deterministic order, refuses entire mixed batch and adds observer fallback for normal model deletion. v1 inherits controller. Six regression cases cover both rule types, dormant/active with history, direct model refusal, synthetic actual files and native bulk success, token API. No automatic retry around file IO; no schema/default changes. Raw SQL, unrelated IO failure atomicity and concurrent non-API model deletes are not claimed covered. Lifecycle creation must coordinate device lock; corrupt task linkage and activation gates remain. CI pending, no VM changes.
 
 ## 2026-11-25 — Managed task guard test snapshot correction
 

@@ -7,9 +7,11 @@ use App\Http\Requests\StoreDeviceRequest;
 use App\Jobs\CheckDeviceReachabilityJob;
 use App\Jobs\DownloadConfigNowJob;
 use App\Models\Device;
+use App\Services\ExternalBackups\F02DeviceDeletionGuard;
 use App\Traits\MaskableCredentials;
 use App\Traits\RespondsWithHttpStatus;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Spatie\QueryBuilder\AllowedFilter;
@@ -210,17 +212,47 @@ class DeviceController extends ApiBaseController
 
     public function destroy($id, $return = 0)
     {
-        $model = parent::destroy($id, 1);
+        return DB::transaction(function () use ($id) {
+            $device = Device::query()->whereKey($id)->lockForUpdate()->firstOrFail();
+            if (F02DeviceDeletionGuard::blocks([(int) $device->id])) {
+                return response()->json(['message' => F02DeviceDeletionGuard::MESSAGE], 409);
+            }
 
-        $model->delete();
-        $model->Tag()->detach();
-        $model->Vendor()->detach();
-        $model->Category()->detach();
-        $model->Template()->detach();
+            $model = parent::destroy($id, 1);
 
-        // configs are deleted in the Device Observer
+            $model->delete();
+            $model->Tag()->detach();
+            $model->Vendor()->detach();
+            $model->Category()->detach();
+            $model->Template()->detach();
 
-        return $this->successResponse(Str::ucfirst($this->modelname) . ' deleted successfully!');
+            // configs are deleted in the Device Observer
+
+            return $this->successResponse(Str::ucfirst($this->modelname) . ' deleted successfully!');
+        });
+    }
+
+    public function deleteMany(Request $request)
+    {
+        $data = $request->validate([
+            'ids' => ['present', 'array'],
+            'ids.*' => ['required', 'integer', 'min:1'],
+        ]);
+
+        // Check every selected device before triggering any filesystem cleanup.
+        // Never retry this transaction automatically: file deletes are not SQL.
+        return DB::transaction(function () use ($data) {
+            $items = Device::query()->whereIn('id', $data['ids'])->orderBy('id')->lockForUpdate()->get();
+            if (F02DeviceDeletionGuard::blocks($items->pluck('id')->map(static fn ($id): int => (int) $id)->all())) {
+                return response()->json(['message' => F02DeviceDeletionGuard::MESSAGE], 409);
+            }
+
+            foreach ($items as $item) {
+                $item->delete();
+            }
+
+            return response()->json(['message' => $this->modelname . 'deleted successfully'], 200);
+        });
     }
 
     public function allDeviceNames()

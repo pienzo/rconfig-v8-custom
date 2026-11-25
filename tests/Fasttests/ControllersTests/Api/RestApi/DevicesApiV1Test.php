@@ -4,8 +4,11 @@ use App\Jobs\DownloadConfigNowJob;
 use App\Models\Category;
 use App\Models\Command;
 use App\Models\Device;
+use App\Models\ExternalBackupRule;
+use App\Models\LocalBackupPresenceRule;
 use App\Models\RestApiToken;
 use App\Models\Tag;
+use App\Models\Task;
 use App\Models\Template;
 use App\Models\User;
 use App\Models\Vendor;
@@ -187,3 +190,24 @@ test('update refuses a device address that points at this server', function () {
 
     $this->assertDatabaseHas('devices', ['id' => $device->id, 'device_ip' => '10.9.9.9']);
 });
+
+test('token API cannot delete a device linked to either F02 rule type', function (string $mode) {
+    $device = Device::factory()->create();
+    $task = Task::factory()->create(['is_paused' => 1]);
+    $attributes = [
+        'task_id' => $task->id,
+        'device_id' => $device->id,
+        'pattern_mode' => 'glob',
+        'filename_pattern' => 'backup_*.cfg',
+    ];
+    $rule = $mode === 'presence'
+        ? LocalBackupPresenceRule::create($attributes + ['directory_alias' => 'synthetic', 'relative_directory' => 'device'])
+        : ExternalBackupRule::create($attributes + ['enabled' => false]);
+    $before = $rule->fresh()->getRawOriginal();
+
+    $this->withHeaders(devicesApiV1AuthHeader($this->token))
+        ->deleteJson('/api/v1/devices/' . $device->id)->assertStatus(409);
+
+    $this->assertDatabaseHas('devices', ['id' => $device->id]);
+    expect($rule->fresh()->getRawOriginal())->toBe($before);
+})->with(['presence', 'receipt']);
