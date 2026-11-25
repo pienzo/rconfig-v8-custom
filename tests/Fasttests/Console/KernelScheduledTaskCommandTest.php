@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Task;
+use App\Services\ExternalBackups\LocalBackupPresenceOccurrenceClaim;
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Collection;
@@ -106,3 +107,22 @@ test('pause migration pauses only tasks with an unsupported task command', funct
         ->withArgs(fn (string $message, array $context) => $context['task_id'] === $unsupported->id)
         ->once();
 });
+
+test('local presence tasks never fall through to native download scheduling', function (bool $enabled) {
+    config([
+        'local-backup-presence.runtime_enabled' => $enabled,
+        'local-backup-presence.queue_enabled' => $enabled,
+    ]);
+    Log::spy();
+    $task = Task::factory()->create([
+        'task_command' => LocalBackupPresenceOccurrenceClaim::TASK_COMMAND,
+        'task_cron' => '* * * * *',
+        'is_paused' => 0,
+    ]);
+
+    expect(scheduledEventsForTask($task->id))->toBeEmpty();
+    Log::shouldNotHaveReceived('warning', [
+        Mockery::any(),
+        Mockery::on(fn ($context) => is_array($context) && ($context['task_id'] ?? null) === $task->id),
+    ]);
+})->with([false, true]);

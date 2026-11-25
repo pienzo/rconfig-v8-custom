@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\LocalBackupPresenceObserveJob;
 use App\Models\Device;
 use App\Models\ExternalBackupCheckRun;
 use App\Models\ExternalBackupFileReceipt;
@@ -204,4 +205,54 @@ test('same second replay does not rescan and paused task or disabled gate refuse
     expect(fn () => $this->observer->observe($this->rule->id, $this->run->id, $this->mapping))->toThrow(DomainException::class);
     config(['local-backup-presence.runtime_enabled' => false]);
     expect(fn () => $this->observer->observe($this->rule->id, $this->run->id, $this->mapping))->toThrow(DomainException::class);
+});
+
+test('isolated one-observation job uses only configured roots and persisted run evidence', function () {
+    config([
+        'local-backup-presence.queue_enabled' => true,
+        'local-backup-presence.roots' => ['synthetic' => $this->sandbox],
+    ]);
+    File::put($this->folder . '/backup_a.cfg', 'synthetic');
+    $job = new LocalBackupPresenceObserveJob($this->rule->id, $this->run->id);
+    expect($job->connection)->toBe('redis_local_backup_presence');
+    expect($job->queue)->toBe('LocalBackupPresence');
+    expect($job->timeout)->toBeLessThan(config('queue.connections.redis_local_backup_presence.retry_after'));
+    expect(serialize($job))->not->toContain($this->sandbox);
+    $before = [ExternalBackupCheckRun::count(), ExternalBackupFileReceipt::count()];
+
+    $job->handle($this->observer);
+    expect($this->run->fresh()->reason)->toBe('stability_wait');
+    CarbonImmutable::setTestNow($this->instant->addSeconds(30));
+    $job->handle($this->observer);
+    $final = $this->run->fresh();
+    expect($final->status)->toBe('present');
+    expect($final->matched_filename)->toBe('backup_a.cfg');
+
+    File::deleteDirectory($this->folder);
+    $job->handle($this->observer);
+    expect($this->run->fresh()->getAttributes())->toEqual($final->getAttributes());
+    expect([ExternalBackupCheckRun::count(), ExternalBackupFileReceipt::count()])->toBe($before);
+});
+
+test('local presence job refuses disabled gates demo and unrelated run identifiers', function () {
+    config(['local-backup-presence.roots' => ['synthetic' => $this->sandbox]]);
+    File::put($this->folder . '/backup_a.cfg', 'synthetic');
+    $job = new LocalBackupPresenceObserveJob($this->rule->id, $this->run->id);
+    $before = $this->run->fresh()->getAttributes();
+
+    expect(config('local-backup-presence.queue_enabled'))->toBeFalse();
+    $job->handle($this->observer);
+    expect($this->run->fresh()->getAttributes())->toEqual($before);
+
+    config(['local-backup-presence.queue_enabled' => true, 'local-backup-presence.runtime_enabled' => false]);
+    $job->handle($this->observer);
+    expect($this->run->fresh()->getAttributes())->toEqual($before);
+
+    config(['local-backup-presence.runtime_enabled' => true, 'rConfig.is_demo' => true]);
+    $job->handle($this->observer);
+    expect($this->run->fresh()->getAttributes())->toEqual($before);
+
+    config(['rConfig.is_demo' => false]);
+    (new LocalBackupPresenceObserveJob($this->rule->id + 1, $this->run->id))->handle($this->observer);
+    expect($this->run->fresh()->getAttributes())->toEqual($before);
 });

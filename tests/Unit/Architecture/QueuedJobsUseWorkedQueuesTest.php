@@ -1,6 +1,8 @@
 <?php
 
 use App\Jobs\CheckForUpdateJob;
+use App\Jobs\LocalBackupPresenceObserveJob;
+use App\Services\ExternalBackups\LocalBackupPresenceQueueConfiguration;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\File;
@@ -174,6 +176,82 @@ function isDormantBackupNotificationQueue(?string $queue): bool
     return true;
 }
 
+/**
+ * A dormant queue is allowed only with a real gated supervisor in every
+ * environment and a valid timeout/connection contract.
+ */
+function isDormantLocalBackupPresenceQueue(?string $queue): bool
+{
+    if ($queue !== 'LocalBackupPresence'
+        || config('local-backup-presence.runtime_enabled') !== false
+        || config('local-backup-presence.queue_enabled') !== false
+        || config('queue.connections.redis_local_backup_presence.queue') !== $queue
+        || config('queue.connections.redis_local_backup_presence.driver') !== 'redis'
+        || config('queue.connections.redis_local_backup_presence.after_commit') !== true) {
+        return false;
+    }
+
+    $source = File::get(config_path('horizon.php'));
+    if (! str_contains($source, 'LocalBackupPresenceQueueConfiguration::withSupervisors(')
+        || ! str_contains($source, "require __DIR__ . '/local-backup-presence.php'")) {
+        return false;
+    }
+
+    $base = config('horizon.environments');
+    $enabled = LocalBackupPresenceQueueConfiguration::withSupervisors($base, [
+        'runtime_enabled' => true,
+        'queue_enabled' => true,
+    ]);
+
+    if ($enabled === [] || array_keys($base) !== array_keys($enabled)) {
+        return false;
+    }
+
+    foreach ($enabled as $supervisors) {
+        $worker = $supervisors['HorizonLocalBackupPresence'] ?? [];
+        if (($worker['queue'] ?? []) !== [$queue]
+            || ($worker['connection'] ?? null) !== 'redis_local_backup_presence'
+            || ($worker['minProcesses'] ?? null) !== 1
+            || ($worker['maxProcesses'] ?? null) !== 1
+            || ($worker['tries'] ?? null) !== 2
+            || ($worker['timeout'] ?? 0) <= (new LocalBackupPresenceObserveJob(1, 1))->timeout
+            || $worker['timeout'] >= config('queue.connections.redis_local_backup_presence.retry_after')) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+test('local presence supervisor requires both explicit config gates and valid queue limits', function () {
+    $actual = require config_path('horizon.php');
+    $base = $actual['environments'];
+    expect($base)->toBe(config('horizon.environments'));
+    expect(horizonWorkedQueues())->not->toContain('LocalBackupPresence');
+    expect(isDormantLocalBackupPresenceQueue('LocalBackupPresence'))->toBeTrue();
+    expect(isDormantLocalBackupPresenceQueue('default'))->toBeFalse();
+
+    foreach ([[false, false], [true, false], [false, true], ['true', true]] as [$runtime, $queue]) {
+        expect(LocalBackupPresenceQueueConfiguration::withSupervisors($base, [
+            'runtime_enabled' => $runtime,
+            'queue_enabled' => $queue,
+        ]))->toBe($base);
+    }
+
+    $enabled = LocalBackupPresenceQueueConfiguration::withSupervisors($base, [
+        'runtime_enabled' => true,
+        'queue_enabled' => true,
+    ]);
+    foreach ($enabled as $environment => $supervisors) {
+        expect($supervisors['HorizonLocalBackupPresence']['queue'])->toBe(['LocalBackupPresence']);
+        unset($supervisors['HorizonLocalBackupPresence']);
+        expect($supervisors)->toBe($base[$environment]);
+    }
+
+    config()->set('queue.connections.redis_local_backup_presence.retry_after', 45);
+    expect(isDormantLocalBackupPresenceQueue('LocalBackupPresence'))->toBeFalse();
+});
+
 test('optional notification supervisor is absent by default and works every environment when enabled', function () {
     expect(config('custom-backup-notifications.enabled'))->toBeFalse();
     expect(horizonWorkedQueues())->not->toContain('BackupNotifications');
@@ -207,7 +285,7 @@ test('every queued job sets a queue that Horizon works', function () {
     foreach (queueableJobClasses() as $class) {
         $queue = pinnedQueue(new ReflectionClass($class));
 
-        if ($queue === null || (! in_array($queue, $worked, true) && ! isDormantExternalBackupQueue($queue) && ! isDormantBackupNotificationQueue($queue))) {
+        if ($queue === null || (! in_array($queue, $worked, true) && ! isDormantExternalBackupQueue($queue) && ! isDormantBackupNotificationQueue($queue) && ! isDormantLocalBackupPresenceQueue($queue))) {
             $offenders[] = $class . ' -> ' . ($queue ?? 'no queue set (lands on "default")');
         }
     }
@@ -235,7 +313,7 @@ test('every onQueue() call in app/ names a queue that Horizon works', function (
 
             if (preg_match_all('/onQueue\(\s*[\'"]([^\'"]+)[\'"]\s*\)/', $line, $matches)) {
                 foreach ($matches[1] as $queue) {
-                    if (! in_array($queue, $worked, true) && ! isDormantExternalBackupQueue($queue) && ! isDormantBackupNotificationQueue($queue)) {
+                    if (! in_array($queue, $worked, true) && ! isDormantExternalBackupQueue($queue) && ! isDormantBackupNotificationQueue($queue) && ! isDormantLocalBackupPresenceQueue($queue)) {
                         $offenders[] = $file->getRelativePathname() . ':' . ($number + 1) . ' -> ' . $queue;
                     }
                 }
