@@ -20,6 +20,8 @@ Route::prefix('tasks')->group(function () { // must be above the resource route
         Route::patch('/local-backup-presence-rules/{localBackupPresenceRule}', 'LocalBackupPresenceRuleController@update');
         Route::delete('/local-backup-presence-rules/{localBackupPresenceRule}', 'LocalBackupPresenceRuleController@destroy');
         Route::patch('/local-backup-presence-rules/{localBackupPresenceRule}/activation', 'LocalBackupPresenceRuleController@activation');
+        Route::get('/local-backup-presence-rules/{localBackupPresenceRule}/runs', 'LocalBackupPresenceRunHistoryController@forRule');
+        Route::get('/local-backup-presence-runs', 'LocalBackupPresenceRunHistoryController@forDevice');
     });
     Route::post('/validate-task', 'TaskController@validateTask');
     Route::post('/run-manual-task', 'TaskManualRunController@runManualTask');
