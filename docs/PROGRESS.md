@@ -5,8 +5,17 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #222 actual Local Presence Horizon probe candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load workflow syntax corrected; repeat CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — 100-rule benchmark workflow repair
+
+- #225 initial head `9839a825`, Actions run 45628701305 failed before creating any jobs. Exact committed workflow diff shows a malformed metrics grep line and duplicate downstream scanner/SMTP blocks: the literal regex end anchor followed by a single quote was interpreted as a replacement-string suffix token during patch generation. Reconstruct the complete suffix from the accepted #223 workflow and insert the anchored grep literally. Verify unchanged workflow prefix, unique downstream steps and byte-identical restored suffix. No benchmark assertion, 50s budget, 100-rule cap, PHP logic or runtime defaults changed. No workload results yet; new CI required. No staging changes.
+
+## 2026-11-25 — Real Local Presence Horizon accepted; 100-rule load candidate
+
+- #223 head `2becb9fb` passed all 5 CI jobs (run 45626887414, PHP job 139249336036: 1925 passed / 8824 assertions / 8 skips); actual durable schedule, Horizon mixed outcomes and terminal replay markers at 13:53:00 and 13:54:03 UTC. MySQL 8 and Redis 7 on hosted CI, two independent synthetic folders; no native/receipt/provider effects. Merged at `2c14e5601c76f6c0c8e526253c68daa1996546be`. Not a deployed staging or MariaDB-specific result.
+- #224 candidate retains mixed test and adds a second hosted invocation with 100 active rules and directories, 2500 synthetic files (one matching and 24 nonmatching per folder), quiet disabled, 180s deadlines, single existing Horizon worker. Exact 100 durable occurrences and jobs, all present with correct device and filename before deadline, terminal replay and content integrity; no strict receipts, native jobs or notifications. Monotonic reservation, dispatch and drain metrics; candidate 50s drain budget includes Horizon startup. Fresh Horizon/cache prefixes, same isolated Redis DB pair after first probe exits with queue drained. No application config defaults or VM change. Does not prove sustained or worst-case load, 100 mixed/stability checks with short deadlines, actual crash/concurrency or lifecycle/activation. CI pending.
 
 ## 2026-11-25 — Scheduler recovery accepted; real presence Horizon probe candidate
 

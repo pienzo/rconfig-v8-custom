@@ -32,6 +32,13 @@ if (getenv('GITHUB_ACTIONS') !== 'true' || getenv('RUNNER_ENVIRONMENT') !== 'git
     exit(2);
 }
 
+$mode = getenv('F02_PRESENCE_LOAD');
+if ($mode !== false && ! in_array($mode, ['0', '1'], true)) {
+    exit(2);
+}
+$load = $mode === '1';
+$count = $load ? 100 : 2;
+
 $failClosed = static function (Throwable $exception): never {
     $message = $exception->getMessage();
     fwrite(STDERR, ($exception instanceof RuntimeException && str_starts_with($message, 'F02 presence probe failed: ')
@@ -84,10 +91,13 @@ $master = null;
 $failed = false;
 
 try {
-    foreach ([1, 2] as $index) {
+    foreach (range(1, $count) as $index) {
         $folders[$index] = $fixture . '/device-' . $index;
         presenceCheck(mkdir($folders[$index], 0700), 'synthetic directory');
-        $devices[$index] = Device::factory()->create();
+        $devices[$index] = Device::factory()->create($load ? [
+            'device_name' => 'F02-PRESENCE-CI-' . $index,
+            'device_ip' => '192.0.2.' . $index,
+        ] : []);
         $tasks[$index] = Task::factory()->create([
             'task_command' => LocalBackupPresenceOccurrenceClaim::TASK_COMMAND,
             'task_cron' => '* * * * *',
@@ -107,16 +117,24 @@ try {
             'relative_directory' => 'device-' . $index,
             'pattern_mode' => 'glob',
             'filename_pattern' => 'backup_*.cfg',
-            'quiet_seconds' => $index === 1 ? 2 : null,
-            'deadline_seconds' => $index === 1 ? 180 : 60,
+            'quiet_seconds' => ! $load && $index === 1 ? 2 : null,
+            'deadline_seconds' => $load || $index === 1 ? 180 : 60,
         ]);
         $rules[$index]->enabled = true;
         $rules[$index]->activated_at_utc = CarbonImmutable::now('UTC')->subMinute()->startOfMinute()->format('Y-m-d H:i:s');
         $rules[$index]->save();
     }
-    $file = $folders[1] . '/backup_final.cfg';
     $bytes = "synthetic presence fixture\n";
-    presenceCheck(file_put_contents($file, $bytes) === strlen($bytes), 'synthetic file');
+    $files = [];
+    foreach ($load ? $folders : [1 => $folders[1]] as $index => $folder) {
+        $files[$index] = $folder . '/backup_final.cfg';
+        presenceCheck(file_put_contents($files[$index], $bytes) === strlen($bytes), 'synthetic file');
+        if ($load) {
+            foreach (range(1, 24) as $noise) {
+                presenceCheck(file_put_contents($folder . '/noise-' . $noise . '.txt', $bytes) === strlen($bytes), 'nonmatching synthetic file');
+            }
+        }
+    }
 
     $schedule = $kernel->resolveConsoleSchedule();
     $find = static function (string $name) use ($schedule, $app) {
@@ -135,11 +153,14 @@ try {
         presenceCheck(microtime(true) < $until, 'wait for real minute boundary');
         usleep(100000);
     }
+    $start = hrtime(true);
     $reserve->run($app);
+    $reservationMillis = (hrtime(true) - $start) / 1000000;
     $runs = [];
     foreach ($rules as $index => $rule) {
         $runs[$index] = $rule->runs()->sole();
         presenceCheck($runs[$index]->status === 'pending'
+            && $runs[$index]->getRawOriginal('scheduled_at_utc') === $runs[1]->getRawOriginal('scheduled_at_utc')
             && $runs[$index]->getRawOriginal('last_observed_at_utc') === null
             && (int) $runs[$index]->device_id === (int) $devices[$index]->id, 'durable unobserved occurrence');
     }
@@ -149,12 +170,15 @@ try {
     foreach ($rules as $rule) {
         presenceCheck($rule->runs()->count() === 1, 'reservation replay');
     }
+    $start = hrtime(true);
     $dispatch->run($app);
+    $dispatchMillis = (hrtime(true) - $start) / 1000000;
     $dispatch->run($app);
-    presenceCheck($queue->size('LocalBackupPresence') === 2, 'two jobs and cooldown replay');
+    presenceCheck($queue->size('LocalBackupPresence') === $count, 'exact jobs and cooldown replay');
     echo "F02_PRESENCE_DURABLE_SCHEDULE_OK (SYNTHETIC_ONLY)\n";
 
     $master = new Process([PHP_BINARY, 'artisan', 'horizon', '--environment=production'], $root, null, null, 150);
+    $workerStart = hrtime(true);
     $master->start();
     $await = static function (Closure $condition, string $label, int $timeout = 40) use ($master): void {
         $until = microtime(true) + $timeout;
@@ -163,34 +187,71 @@ try {
             usleep(200000);
         }
     };
-    $await(static fn (): bool => $runs[1]->fresh()->reason === 'stability_wait'
-        && $runs[2]->fresh()->reason === 'no_matching_file'
-        && $queue->size('LocalBackupPresence') === 0, 'actual initial worker observations');
-    presenceCheck($runs[1]->fresh()->status === 'pending' && $runs[2]->fresh()->status === 'pending', 'initial outcomes pending');
-    $deadline = CarbonImmutable::parse($runs[2]->getRawOriginal('deadline_at_utc'), 'UTC');
-    $await(static fn (): bool => CarbonImmutable::now('UTC')->greaterThanOrEqualTo($deadline->addSecond()), 'real deadline elapsed', 70);
-    $dispatch->run($app);
-    $await(static fn (): bool => $runs[1]->fresh()->status === 'present'
-        && $runs[2]->fresh()->status === 'absent' && $queue->size('LocalBackupPresence') === 0, 'actual stable presence and deadline absence');
-    $present = $runs[1]->fresh();
-    $absent = $runs[2]->fresh();
-    presenceCheck($present->reason === 'stable_matching_file_observed' && $present->matched_filename === 'backup_final.cfg'
-        && $absent->reason === 'no_matching_file' && $absent->matched_filename === null
-        && $present->stability_baseline === null && $absent->stability_baseline === null, 'exact terminal evidence');
-    echo "F02_PRESENCE_REAL_HORIZON_MIXED_OUTCOMES_OK (SYNTHETIC_ONLY)\n";
+    if ($load) {
+        $ids = array_map(static fn ($run): int => (int) $run->id, $runs);
+        $await(static fn (): bool => LocalBackupPresenceRun::whereIn('id', $ids)->where('status', 'present')->count() === $count
+            && $queue->size('LocalBackupPresence') === 0, '100-rule queue drain', 50);
+        $drainMillis = (hrtime(true) - $workerStart) / 1000000;
+        presenceCheck($drainMillis <= 50000, '50-second candidate drain budget');
+        $terminal = [];
+        foreach ($runs as $index => $run) {
+            $final = $run->fresh();
+            presenceCheck($final->status === 'present'
+                && $final->reason === 'matching_file_observed'
+                && $final->matched_filename === 'backup_final.cfg'
+                && (int) $final->device_id === (int) $devices[$index]->id
+                && $final->getRawOriginal('last_observed_at_utc') < $final->getRawOriginal('deadline_at_utc')
+                && $final->stability_baseline === null, 'exact per-device load evidence');
+            $terminal[$index] = $final->getRawOriginal();
+        }
+        $dispatch->run($app);
+        presenceCheck($queue->size('LocalBackupPresence') === 0, 'load terminal replay queue empty');
+        foreach ($runs as $index => $run) {
+            presenceCheck($run->fresh()->getRawOriginal() === $terminal[$index], 'load terminal replay unchanged');
+        }
+        printf("F02_PRESENCE_LOAD_METRICS rules=%d files=%d reserve_ms=%.2f dispatch_ms=%.2f drain_ms=%.2f\n",
+            $count, $count * 25, $reservationMillis, $dispatchMillis, $drainMillis);
+        echo "F02_PRESENCE_100_RULE_HORIZON_OK (SYNTHETIC_ONLY)\n";
+    } else {
+        $await(static fn (): bool => $runs[1]->fresh()->reason === 'stability_wait'
+            && $runs[2]->fresh()->reason === 'no_matching_file'
+            && $queue->size('LocalBackupPresence') === 0, 'actual initial worker observations');
+        presenceCheck($runs[1]->fresh()->status === 'pending' && $runs[2]->fresh()->status === 'pending', 'initial outcomes pending');
+        $deadline = CarbonImmutable::parse($runs[2]->getRawOriginal('deadline_at_utc'), 'UTC');
+        $await(static fn (): bool => CarbonImmutable::now('UTC')->greaterThanOrEqualTo($deadline->addSecond()), 'real deadline elapsed', 70);
+        $dispatch->run($app);
+        $await(static fn (): bool => $runs[1]->fresh()->status === 'present'
+            && $runs[2]->fresh()->status === 'absent' && $queue->size('LocalBackupPresence') === 0, 'actual stable presence and deadline absence');
+        $present = $runs[1]->fresh();
+        $absent = $runs[2]->fresh();
+        presenceCheck($present->reason === 'stable_matching_file_observed' && $present->matched_filename === 'backup_final.cfg'
+            && $absent->reason === 'no_matching_file' && $absent->matched_filename === null
+            && $present->stability_baseline === null && $absent->stability_baseline === null, 'exact terminal evidence');
+        echo "F02_PRESENCE_REAL_HORIZON_MIXED_OUTCOMES_OK (SYNTHETIC_ONLY)\n";
 
-    $dispatch->run($app);
-    presenceCheck($queue->size('LocalBackupPresence') === 0
-        && $present->fresh()->getRawOriginal() === $present->getRawOriginal()
-        && $absent->fresh()->getRawOriginal() === $absent->getRawOriginal(), 'terminal reconciliation replay');
+        $dispatch->run($app);
+        presenceCheck($queue->size('LocalBackupPresence') === 0
+            && $present->fresh()->getRawOriginal() === $present->getRawOriginal()
+            && $absent->fresh()->getRawOriginal() === $absent->getRawOriginal(), 'terminal reconciliation replay');
+    }
     foreach ($rules as $rule) {
         presenceCheck($rule->runs()->count() === 1, 'no extra occurrence');
     }
     foreach ($nativeQueues as $nativeQueue) {
         presenceCheck(Queue::connection('redis')->size($nativeQueue) === 0, 'no native work');
     }
-    presenceCheck([ExternalBackupCheckRun::count(), ExternalBackupFileReceipt::count(), DB::table('custom_backup_notification_deliveries')->count()] === $before
-        && file_get_contents($file) === $bytes, 'no receipt notification or file mutation');
+    presenceCheck([ExternalBackupCheckRun::count(), ExternalBackupFileReceipt::count(), DB::table('custom_backup_notification_deliveries')->count()] === $before, 'no receipt or notification');
+    foreach ($files as $file) {
+        presenceCheck(file_get_contents($file) === $bytes, 'no matching file mutation');
+    }
+    if ($load) {
+        foreach ($folders as $folder) {
+            foreach (range(1, 24) as $noise) {
+                presenceCheck(file_get_contents($folder . '/noise-' . $noise . '.txt') === $bytes, 'no nonmatching file mutation');
+            }
+        }
+        echo "F02_PRESENCE_100_RULE_INTEGRITY_OK (SYNTHETIC_ONLY)\n";
+    }
     echo "F02_PRESENCE_TERMINAL_REPLAY_OK (SYNTHETIC_ONLY)\n";
 } catch (Throwable $exception) {
     $failed = true;
@@ -223,6 +284,14 @@ try {
     foreach ($folders as $folder) {
         if (is_file($folder . '/backup_final.cfg')) {
             unlink($folder . '/backup_final.cfg');
+        }
+        if ($load) {
+            foreach (range(1, 24) as $noise) {
+                $path = $folder . '/noise-' . $noise . '.txt';
+                if (is_file($path)) {
+                    unlink($path);
+                }
+            }
         }
         if (is_dir($folder)) {
             rmdir($folder);
