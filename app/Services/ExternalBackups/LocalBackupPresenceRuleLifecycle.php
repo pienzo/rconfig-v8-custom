@@ -127,7 +127,7 @@ final class LocalBackupPresenceRuleLifecycle
      * Full replacement, strict types: do not allow Eloquent casts or mass
      * assignment to silently reinterpret caller-supplied fields.
      *
-     * @param array<string, mixed> $criteria
+     * @param  array<string, mixed>  $criteria
      * @return array<string, mixed>
      */
     private function validatedFields(array $criteria): array

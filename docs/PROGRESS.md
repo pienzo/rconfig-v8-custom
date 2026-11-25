@@ -5,8 +5,12 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load accepted (5/5); #227 real Redis crash/concurrency accepted (5/5); #229 transaction crash accepted (5/5); #231 actual worker timeout accepted (5/5); #233 managed Core task boundary accepted (11/11); #235 device deletion guard accepted (11/11); #236 dormant presence lifecycle candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load accepted (5/5); #227 real Redis crash/concurrency accepted (5/5); #229 transaction crash accepted (5/5); #231 actual worker timeout accepted (5/5); #233 managed Core task boundary accepted (11/11); #235 device deletion guard accepted (11/11); #237 dormant presence lifecycle: Pint PHPDoc spacing corrected, repeat CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Dormant presence lifecycle formatting correction
+
+- #237 initial head `4be3000d`, CI 45657629456, PHP job 139358484360: 1951 passed / 9022 assertions / 8 skips, including all 13 new lifecycle cases and every existing hosted integration probe. Repeat 100-rule reserve 466.70ms / dispatch 139.47ms / drain 3837.17ms; actual timeout 30.240s and redelivery passed. Docker source/first-install and synthetic staging workflows also succeeded. Only Pint failed (job 139358484441): 947 files checked, one PHPDoc spacing issue in LocalBackupPresenceRuleLifecycle.php. Apply exact emitted diff to multiline @param annotation; no runtime logic, assertions, limits, defaults or staging changes. Full repeat CI required before merge.
 
 ## 2026-11-25 — Device deletion guard accepted; dormant presence lifecycle candidate
 
