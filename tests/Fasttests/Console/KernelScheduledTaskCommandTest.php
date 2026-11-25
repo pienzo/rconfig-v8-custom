@@ -121,6 +121,8 @@ test('local presence tasks never fall through to native download scheduling', fu
     ]);
 
     expect(scheduledEventsForTask($task->id))->toBeEmpty();
-    Log::shouldNotHaveReceived('warning')
-        ->withArgs(fn (string $message, array $context) => ($context['task_id'] ?? null) === $task->id);
+    Log::shouldNotHaveReceived('warning', [
+        Mockery::any(),
+        Mockery::on(fn ($context) => is_array($context) && ($context['task_id'] ?? null) === $task->id),
+    ]);
 })->with([false, true]);

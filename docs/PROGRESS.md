@@ -5,8 +5,12 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #213 observer accepted (15/15); #214 isolated worker candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #213 observer accepted (15/15); #215 worker CI corrected; repeat CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Isolated worker CI correction
+
+- #215 initial head `febb4034`: Pint/PHPStan/ESLint/Vitest and source build/first-install passed; CI 45610735602 job 139193252964 had 1906 passed / 5 failed / 8 skips / 8741 assertions; downstream probes skipped. Two architecture guards correctly rejected an unworked queue, two scheduler negative-log assertions used an invalid Mockery chain, one unrelated Core category creation fixture generated a name rejected by the API. Add actual gated Horizon configuration for every environment, loaded from the same static operator config file even during config caching; both runtime/queue flags must be strictly true, no env binding. Guard continues rejecting unworked queues, with a validated dormant exception for this exact queue/connection/supervisor; negative timeout and partial gate tests. Candidate supervisor timeout 45s > job 30s and < retry_after 120s. Correct the spy argument matcher; use explicit valid names only in the two category creation tests, retain negative API validation. No dispatch, migration or staging change. Repeat CI pending. Actual worker execution, timeout and reconciliation remain unproven.
 
 ## 2026-11-25 — Trusted observer accepted; isolated worker candidate
 

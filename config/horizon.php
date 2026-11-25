@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\ExternalBackups\LocalBackupPresenceQueueConfiguration;
 use Illuminate\Support\Str;
 use Laravel\Scout\Jobs\MakeSearchable;
 use Laravel\Scout\Jobs\RemoveFromSearch;
@@ -215,7 +216,7 @@ return [
     / 'balance' => 'simple',
      */
 
-    'environments' => [
+    'environments' => LocalBackupPresenceQueueConfiguration::withSupervisors([
         'production' => [
             'HorizonOne' => [
                 'connection' => 'redis',
@@ -273,5 +274,5 @@ return [
             ...$f02Supervisors,
             ...$notificationSupervisors,
         ],
-    ],
+    ], require __DIR__ . '/local-backup-presence.php'),
 ];
