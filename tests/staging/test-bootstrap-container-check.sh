@@ -59,6 +59,7 @@ reject() {
 sh "$script" --check
 reject
 reject --apply
+RCONFIG_STAGING_BOOTSTRAP_APPROVAL=operator-reviewed-v1 reject --apply
 reject --check --apply
 reject --wat
 RCONFIG_STAGING_BOOTSTRAP=wrong reject --check

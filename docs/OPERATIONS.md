@@ -24,3 +24,7 @@ After the inventory is reviewed, independently confirm the current checkout scri
 ## Recovery and safety
 
 No rollback action is required for read-only inventory. For future changes, prepare coherent DB/Redis/storage/APP_KEY restore with writers stopped, tested independent restore and reviewed migration compatibility. Do not run docker compose down -v, redis flush, artisan migrate or key:generate as a readiness check. No real backup contents, account tokens or actual provider destinations in public repository. See TEST_PLAN and PROJECT_HANDOFF.
+
+## Candidate operator bootstrap (#194)
+
+The installed bootstrap entrypoint retains default --check. Explicit --apply additionally requires RCONFIG_STAGING_BOOTSTRAP_APPROVAL=operator-reviewed-v1, the exact provisioned log-only dotenv, no ambient overrides, all custom flags OFF and the strict existing coordinator. The token is an invocation guard, not proof of a snapshot or approval. Do not set it on ordinary roles. Hosted CI must validate the exact installed entrypoint before acceptance. No operator apply until reviewed final image, existing storage and fresh SQL/Redis, consistent powered-off snapshot/recovery, protected mounts, isolated synthetic scope and separately confirmed operator authorization. If apply fails, preserve attempt and state; no retry or marker repair. The default Compose command remains --check. The old integrated Core entrypoint remains unchanged.
