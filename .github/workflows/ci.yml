@@ -435,6 +435,16 @@ jobs:
           grep -Fxq 'F02_PRESENCE_REAL_REDELIVERY_CONCURRENT_RESERVATIONS_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
           grep -Fxq 'F02_PRESENCE_CRASH_CONCURRENCY_TERMINAL_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
           grep -Fxq 'F02_PRESENCE_CRASH_CONCURRENCY_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
+          run_presence_probe 3 | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_PRECOMMIT_ROLLBACK_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_PRECOMMIT_REDELIVERY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_TRANSACTION_CRASH_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
+          run_presence_probe 4 | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_POSTCOMMIT_PREACK_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_POSTCOMMIT_REDELIVERY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_TRANSACTION_CRASH_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
 
       - name: Test F02 bounded metadata scanner load (hosted only)
         run: |
