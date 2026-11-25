@@ -12,8 +12,10 @@ import { Lock } from "lucide-vue-next";
 import GenericPopover from "@/pages/Shared/Popover/GeneralPopover.vue";
 import { useVersionCheck } from "@/composables/useVersionCheck";
 import { eventBus } from "@/composables/eventBus";
+import { THEME_PRESETS } from "@/appimports/themePresets";
 
 const colorMode = inject("colorMode");
+const themePalette = inject("themePalette");
 const panelStore = usePanelStore(); // Access the panel store
 const route = useRoute();
 const router = useRouter();
@@ -27,9 +29,6 @@ const isHttpsDisabled = ref(false);
 
 const { currentVersion, latestVersion, updateAvailable, reachable, checked, consecutiveFailures, fetchVersionStatus } = useVersionCheck();
 
-//Flag to control dark mode enforcement - set to true for now.
-//When we want to enable light mode in the future, set this to false
-const enforceDarkMode = ref(true);
 
 defineProps({
 	panelRef: {
@@ -39,10 +38,6 @@ defineProps({
 });
 
 onMounted(() => {
-	if (enforceDarkMode.value) {
-		colorMode.value = "dark";
-		document.documentElement.classList.add("dark");
-	}
 	checkHttpsStatus();
 	fetchVersionStatus();
 });
@@ -103,28 +98,8 @@ const navPanelBtnState = computed(() => {
 	return panelStore.panelRef?.isCollapsed;
 });
 
-function toggleTheme() {
-	if (enforceDarkMode.value) {
-		toastInfo("Dark Mode Only", "Light mode is currently disabled. Only dark mode is available.");
-
-		colorMode.value = "dark";
-		document.documentElement.classList.add("dark");
-	} else {
-		const newMode = colorMode.value === "dark" ? "light" : "dark";
-		colorMode.value = newMode;
-
-		if (newMode === "dark") {
-			document.documentElement.classList.add("dark");
-		} else {
-			document.documentElement.classList.remove("dark");
-		}
-
-		if (newMode === "dark") {
-			toastSuccess("Dark Mode Enabled", "The interface has been switched to dark mode.");
-		} else {
-			toastSuccess("Light Mode Enabled", "The interface has been switched to light mode.");
-		}
-	}
+function selectTheme(id) {
+	themePalette.value = id;
 }
 
 function navToUpgrade() {
@@ -348,39 +323,28 @@ const showServerName = computed(() => {
 					</Tooltip>
 				</TooltipProvider>
 
-				<TooltipProvider>
-					<Tooltip>
-						<TooltipTrigger as-child>
-							<Button
-								variant="ghost"
-								class="hover:bg-rcgray-600 transition-colors duration-200 transform hover:scale-105 relative overflow-hidden"
-								@click="toggleTheme()"
+				<DropdownMenu>
+					<DropdownMenuTrigger as-child>
+						<Button variant="ghost" class="hover:bg-rcgray-600" aria-label="Choose appearance theme">
+							<Sun v-if="colorMode === 'dark'" class="h-[1.2rem] w-[1.2rem] text-yellow-500" />
+							<Moon v-else class="h-[1.2rem] w-[1.2rem] text-blue-500" />
+						</Button>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="end" class="min-w-48">
+						<template v-for="mode in ['dark', 'light']" :key="mode">
+							<DropdownMenuSeparator v-if="mode === 'light'" />
+							<DropdownMenuLabel>{{ mode === 'dark' ? 'Dark themes' : 'Light themes' }}</DropdownMenuLabel>
+							<DropdownMenuItem
+								v-for="preset in THEME_PRESETS.filter(item => item.mode === mode)"
+								:key="preset.id"
+								@select="selectTheme(preset.id)"
 							>
-								<div class="absolute inset-0 bg-blue-500/10 rounded-full filter blur-md opacity-0 hover:opacity-100 transition-opacity duration-300"></div>
-								<Sun
-									v-if="enforceDarkMode"
-									class="h-[1.2rem] w-[1.2rem] text-yellow-400"
-								/>
-								<Sun
-									v-else-if="colorMode === 'dark'"
-									class="h-[1.2rem] w-[1.2rem] text-yellow-400"
-								/>
-								<Moon
-									v-else
-									class="h-[1.2rem] w-[1.2rem] text-blue-400"
-								/>
-							</Button>
-						</TooltipTrigger>
-						<TooltipContent class="text-white bg-rcgray-800 border border-blue-500/30">
-							<p v-if="enforceDarkMode">
-								Dark Mode Enabled
-							</p>
-							<p v-else>
-								Toggle {{ colorMode === "dark" ? "Light Mode" : "Dark Mode" }}
-							</p>
-						</TooltipContent>
-					</Tooltip>
-				</TooltipProvider>
+								<span class="flex-1">{{ preset.label }}</span>
+								<CheckCircle2 v-if="themePalette === preset.id" class="ml-2 h-4 w-4" aria-label="Selected" />
+							</DropdownMenuItem>
+						</template>
+					</DropdownMenuContent>
+				</DropdownMenu>
 
 				<DropdownMenu>
 					<DropdownMenuTrigger as-child>

@@ -1,0 +1,112 @@
+/* Custom appearance presets. Classic Dark retains upstream values.
+ * Legacy rcgray utilities are treated as a foreground/surface scale here.
+ * Semantic status colors are inherited, not recolored. */
+@layer base {
+  :root[data-palette="midnight"] {
+    --background: 222 32% 12%;
+    --foreground: 214 40% 96%;
+    --card: 222 30% 16%;
+    --card-foreground: 214 40% 96%;
+    --popover: 222 30% 16%;
+    --popover-foreground: 214 40% 96%;
+    --muted: 221 25% 22%;
+    --muted-foreground: #a5b6cb;
+    --secondary: 221 25% 22%;
+    --accent: 217 30% 26%;
+    --border: 217 22% 29%;
+    --input: 217 22% 29%;
+    --ring: 204 85% 70%;
+    --color-rcgray-900: #101927;
+    --color-rcgray-850: #142032;
+    --color-rcgray-800: #19263a;
+    --color-rcgray-700: #20314a;
+    --color-rcgray-600: #30445e;
+    --color-rcgray-500: #8b9cb5;
+    --color-rcgray-400: #b0bfd3;
+  }
+
+  :root[data-palette="graphite"] {
+    --background: 0 0% 10%;
+    --foreground: 0 0% 96%;
+    --card: 0 0% 14%;
+    --card-foreground: 0 0% 96%;
+    --popover: 0 0% 14%;
+    --popover-foreground: 0 0% 96%;
+    --muted: 0 0% 20%;
+    --muted-foreground: #b6b6b6;
+    --secondary: 0 0% 20%;
+    --accent: 0 0% 24%;
+    --border: 0 0% 29%;
+    --input: 0 0% 29%;
+    --ring: 0 0% 77%;
+    --color-rcgray-900: #121212;
+    --color-rcgray-850: #171717;
+    --color-rcgray-800: #202020;
+    --color-rcgray-700: #292929;
+    --color-rcgray-600: #373737;
+    --color-rcgray-500: #949494;
+    --color-rcgray-400: #b6b6b6;
+  }
+
+  :root:is([data-palette="light"], [data-palette="cloud"], [data-palette="sand"]) {
+    --muted-foreground: #475569;
+    --color-rcgray-900: #ffffff;
+    --color-rcgray-850: #f8fafc;
+    --color-rcgray-800: #f1f5f9;
+    --color-rcgray-700: #e2e8f0;
+    --color-rcgray-600: #dbe3ec;
+    --color-rcgray-500: #526174;
+    --color-rcgray-400: #475569;
+    --color-rcgray-300: #334155;
+    --color-rcgray-200: #1e293b;
+    --color-rcgray-100: #172033;
+    --color-rcgray-50: #0f172a;
+  }
+
+  :root[data-palette="cloud"] {
+    --background: 210 50% 97%;
+    --foreground: 217 40% 19%;
+    --card: 210 50% 99%;
+    --card-foreground: 217 40% 19%;
+    --popover: 210 50% 99%;
+    --popover-foreground: 217 40% 19%;
+    --muted: 211 45% 92%;
+    --secondary: 211 45% 92%;
+    --accent: 208 52% 89%;
+    --border: 212 28% 80%;
+    --input: 212 28% 80%;
+    --ring: 214 67% 43%;
+    --color-rcgray-900: #f7faff;
+    --color-rcgray-850: #eef5ff;
+    --color-rcgray-800: #e5effb;
+    --color-rcgray-700: #d9e7f7;
+    --color-rcgray-600: #ccdced;
+  }
+
+  :root[data-palette="sand"] {
+    --background: 42 38% 96%;
+    --foreground: 29 32% 19%;
+    --card: 44 45% 98%;
+    --card-foreground: 29 32% 19%;
+    --popover: 44 45% 98%;
+    --popover-foreground: 29 32% 19%;
+    --muted: 37 30% 90%;
+    --muted-foreground: #66584a;
+    --secondary: 37 30% 90%;
+    --accent: 35 38% 86%;
+    --border: 33 23% 79%;
+    --input: 33 23% 79%;
+    --ring: 29 61% 40%;
+    --color-rcgray-900: #fffaf0;
+    --color-rcgray-850: #f7f0e4;
+    --color-rcgray-800: #f0e6d6;
+    --color-rcgray-700: #e7dbc7;
+    --color-rcgray-600: #ddcfb7;
+    --color-rcgray-500: #6b5c4c;
+    --color-rcgray-400: #5e5144;
+    --color-rcgray-300: #4b4035;
+    --color-rcgray-200: #382f27;
+    --color-rcgray-100: #302820;
+    --color-rcgray-50: #282018;
+  }
+}

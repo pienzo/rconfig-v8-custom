@@ -1,0 +1,5 @@
+# Appearance presets (#197)
+
+Candidate authenticated SPA theme selector: Classic Dark (upstream default), Midnight Blue, Graphite, Classic Light, Cloud Blue and Warm Sand. Browser-local preference, six allowlisted IDs, legacy mode keys retained, pre-Vue bootstrap and runtime agree on dark/light. Forced-dark login stays unchanged and does not overwrite the chosen SPA palette. No migrations, dependencies, external resources or provider changes.
+
+The palette changes shared CSS variables and the app shell; Core contains hard-coded colors and dark-only components (including Monaco). This is a first implementation candidate, not a verified full light-mode redesign. Before merge/release, review CI, inspect all six palettes in actual browser across dashboard, navigation, forms, task wizard, F02/F04, modals, diff, notifications and charts; fix hard-coded contrast issues, test keyboard/focus and reload. Do not claim WCAG compliance without measured review. Syntax editor may intentionally retain a dark surface pending dedicated audit. No staging change without separate approval. Rollback: revert PR; legacy mode keys remain compatible (Core enforces dark).
