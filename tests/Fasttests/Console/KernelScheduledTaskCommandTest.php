@@ -147,3 +147,21 @@ test('local presence reservation scheduler requires all three gates and is never
     config(['rConfig.is_demo' => true]);
     expect($events())->toBeEmpty();
 });
+
+test('pending reconciliation scheduler is separately gated and absent in demo', function () {
+    $events = fn () => scheduledTaskCommandEvents()->filter(
+        fn (Event $event) => $event->description === 'f02-local-presence-reconcile-pending'
+    );
+    config([
+        'local-backup-presence.runtime_enabled' => true,
+        'local-backup-presence.queue_enabled' => true,
+        'local-backup-presence.scheduler_enabled' => true,
+        'rConfig.is_demo' => false,
+    ]);
+    expect($events())->toBeEmpty();
+    config(['local-backup-presence.dispatch_enabled' => true]);
+    expect($events())->toHaveCount(1);
+    expect($events()->first()->expression)->toBe('* * * * *');
+    config(['rConfig.is_demo' => true]);
+    expect($events())->toBeEmpty();
+});

@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #213 observer accepted (15/15); #215 worker accepted (11/11); #216 current-minute scheduler reservation candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #218 pending reconciliation candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Scheduler accepted; persistent pending reconciliation candidate
+
+- #217 head `71fb6668` passed 11/11 checks, PHP 1916 passed / 8775 assertions / 8 skips (CI 45614171143, job 139205165871); downstream regressions passed. Merged at `2025c684593064ee586332e97512598866b24185`. User approved the existing 100-rule cap for local presence only for first version. No change to native Core tasks.
+- #218 candidate adds a separate OFF-by-default dispatch flag, every-minute bounded pending reconciliation, nullable hidden per-run dispatch cooldown and index, atomic conditional reservation before Redis handoff, 55-second cooldown and candidate queue high-water/batch 100. Pending rows are durable recovery source; transport failure or crash after reservation can retry after cooldown, never invent observation or terminal outcome. Expired rows remain eligible even if paused/disabled; worker uses existing expiry policy. Queue size check is advisory, not atomic with push; duplicate deliveries possible and existing observer serializes state. No guarantee of final-minute observation under load; capacity/fairness, actual Redis/Horizon, cancellation semantics and missed-tick catch-up remain required before activation. Additive migration only in CI, no VM changes. Rollback quiesce scheduler/workers before dropping cooldown/index; no observation history dropped. CI pending.
 
 ## 2026-11-25 — Isolated worker accepted; durable scheduling candidate
 
