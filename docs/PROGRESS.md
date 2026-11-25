@@ -5,8 +5,13 @@
 **Checkpoint:** 2026-11-25  
 **Project:** public open-source extension of rConfig V8 Core, also usable in authorized enterprise environments; not an employer-owned private project.  
 **Master:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 (project specification held in ChatGPT; not yet committed here).  
-**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load accepted (5/5); #226 real Redis crash/concurrency candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
+**Current gate:** #213 observer accepted (15/15); #217 scheduler accepted (11/11); #219 pending reconciliation accepted (15/15); #221 scheduler recovery accepted (15/15); #223 real Local Presence Horizon accepted (5/5); #225 100-rule load accepted (5/5); #227 real Redis crash/concurrency accepted (5/5); #228 transaction crash candidate, CI pending. #199 theme draft awaits visual review. Staging unchanged; no release approval.
 
+
+## 2026-11-25 — Real Redis crash/concurrency accepted; transaction crash candidate
+
+- #227 head `a496924f` passed all five CI jobs, run 45632924260, PHP job 139270652287 (1925 passed / 8824 assertions / 8 skips). Actual pre-observation crash at 14:31:00 UTC, concurrent original redelivery and duplicate reservations at 14:33:01, exact terminal outcome and integrity markers passed. Repeat 100-rule workload reserve 773.39ms, dispatch 212.12ms, drain 5049.77ms. Merged at `5776476151d1bb19aae1c6488194104c28c7f4a6`. MySQL 8 and Redis 7 synthetic hosted environment only.
+- #228 candidate adds two distinct hosted-only queue:work scenarios, actual SQL UPDATE before outer commit and actual outer commit before Redis acknowledgement. Test-only query/transaction event listeners in a guarded child process, no production hooks. Kill only owned child, verify separate-connection visibility, rollback/retained state and actual original UUID attempt 2 after unchanged 120s retry lease; verify exact terminal evidence, queue empty, no failed jobs, no duplicate occurrences, files/receipt/notification isolation. Existing probes retained. Mid-filesystem-syscall crash and real worker timeout not established by this test; guarded lifecycle, sustained load, missed-tick integration remain gates. No runtime default changes, migrations or VM changes. CI pending.
 
 ## 2026-11-25 — 100-rule benchmark accepted; real crash/concurrency candidate
 

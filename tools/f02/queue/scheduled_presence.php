@@ -146,6 +146,99 @@ function presenceCrashProbe(string $root, LocalBackupPresenceRule $rule, LocalBa
     }
 }
 
+/**
+ * Test actual job SQL transaction and queue acknowledgement boundaries.
+ * The child installs test-only listeners; application code is untouched.
+ */
+function presenceTransactionCrashProbe(string $root, string $fixture, string $phase, LocalBackupPresenceRule $rule, LocalBackupPresenceRun $run, $dispatch, $app): void
+{
+    $queue = Queue::connection('redis_local_backup_presence');
+    $redis = Redis::connection('default');
+    $reservedKey = 'queues:LocalBackupPresence:reserved';
+    $marker = $fixture . '/transaction-barrier';
+    $failedBefore = DB::table('failed_jobs')->count();
+    $before = $run->fresh()->getRawOriginal();
+    presenceCheck(config('queue.connections.redis_local_backup_presence.retry_after') === 120
+        && $queue->size('LocalBackupPresence') === 1 && ! file_exists($marker), 'transaction crash preflight');
+
+    $workers = [];
+    $command = [PHP_BINARY, $root . '/tools/f02/queue/presence_transaction_worker.php'];
+    try {
+        $child = new Process([...$command, $phase, (string) $run->id], $root, null, null, 40);
+        $workers[] = $child;
+        $child->start();
+        $until = microtime(true) + 15;
+        while (! is_file($marker) || trim((string) file_get_contents($marker)) !== $phase) {
+            presenceCheck($child->isRunning() && microtime(true) < $until, 'actual SQL boundary barrier');
+            usleep(100000);
+        }
+        presenceCheck($child->isRunning(), 'owned transaction worker at barrier');
+        $reserved = $redis->zrange($reservedKey, 0, -1);
+        presenceCheck(count($reserved) === 1, 'job reserved before acknowledgement');
+        $original = json_decode($reserved[0], true, 512, JSON_THROW_ON_ERROR);
+        $lease = $redis->zscore($reservedKey, $reserved[0]);
+        presenceCheck(is_string($original['uuid'] ?? null) && ($original['attempts'] ?? null) === 1
+            && is_numeric($lease) && (int) $lease > time() && (int) $lease <= time() + 120, 'original retry lease');
+
+        $visible = $run->fresh();
+        if ($phase === 'precommit') {
+            presenceCheck($visible->getRawOriginal() === $before, 'uncommitted observation not visible to separate connection');
+        } else {
+            presenceCheck($visible->status === 'present' && $visible->reason === 'matching_file_observed'
+                && $visible->matched_filename === 'backup_final.cfg'
+                && $visible->getRawOriginal('last_observed_at_utc') !== null, 'committed evidence visible before acknowledgement');
+        }
+
+        $snapshot = $visible->getRawOriginal();
+        $child->signal(SIGKILL);
+        $child->wait();
+        presenceCheck(! $child->isSuccessful(), 'owned transaction worker interrupted');
+        presenceCheck($run->fresh()->getRawOriginal() === $snapshot
+            && $queue->size('LocalBackupPresence') === 1 && count($redis->zrange($reservedKey, 0, -1)) === 1, 'database and reserved job survive interruption');
+        echo $phase === 'precommit'
+            ? "F02_PRESENCE_PRECOMMIT_ROLLBACK_OK (SYNTHETIC_ONLY)\n"
+            : "F02_PRESENCE_POSTCOMMIT_PREACK_OK (SYNTHETIC_ONLY)\n";
+
+        presenceCheck(unlink($marker), 'remove owned barrier');
+        $until = microtime(true) + 125;
+        while (time() <= (int) $lease) {
+            presenceCheck(microtime(true) < $until, 'actual transaction retry lease elapsed');
+            usleep(200000);
+        }
+        $retry = new Process([...$command, 'replay', (string) $run->id], $root, null, null, 40);
+        $workers[] = $retry;
+        $retry->run();
+        presenceCheck($retry->isSuccessful() && is_file($marker)
+            && trim((string) file_get_contents($marker)) === $original['uuid'] . ':2', 'same Redis message redelivered at attempt two');
+        $final = $run->fresh();
+        presenceCheck($final->status === 'present' && $final->reason === 'matching_file_observed'
+            && $final->matched_filename === 'backup_final.cfg'
+            && $final->getRawOriginal('first_observed_at_utc') !== null
+            && $final->getRawOriginal('first_observed_at_utc') === $final->getRawOriginal('last_observed_at_utc')
+            && $final->getRawOriginal('last_observed_at_utc') < $final->getRawOriginal('deadline_at_utc')
+            && $final->stability_baseline === null && $rule->runs()->count() === 1
+            && $queue->size('LocalBackupPresence') === 0 && DB::table('failed_jobs')->count() === $failedBefore, 'transaction crash recovered exact result');
+        if ($phase === 'postcommit') {
+            presenceCheck($final->getRawOriginal() === $snapshot, 'committed terminal evidence unchanged by redelivery');
+        }
+        $snapshot = $final->getRawOriginal();
+        $dispatch->run($app);
+        presenceCheck($queue->size('LocalBackupPresence') === 0 && $run->fresh()->getRawOriginal() === $snapshot, 'transaction crash terminal replay unchanged');
+        echo $phase === 'precommit'
+            ? "F02_PRESENCE_PRECOMMIT_REDELIVERY_OK (SYNTHETIC_ONLY)\n"
+            : "F02_PRESENCE_POSTCOMMIT_REDELIVERY_OK (SYNTHETIC_ONLY)\n";
+    } finally {
+        foreach ($workers as $worker) {
+            if ($worker->isRunning()) {
+                $worker->stop(1, SIGKILL);
+            }
+        }
+        if (is_file($marker)) {
+            unlink($marker);
+        }
+    }
+}
+
 if (getenv('GITHUB_ACTIONS') !== 'true' || getenv('RUNNER_ENVIRONMENT') !== 'github-hosted'
     || getenv('F02_SYNTHETIC_PRESENCE_HORIZON') !== '1' || getenv('APP_ENV') !== 'testing'
     || getenv('DB_HOST') !== '127.0.0.1' || getenv('DB_DATABASE') !== 'v8core_test'
@@ -154,12 +247,13 @@ if (getenv('GITHUB_ACTIONS') !== 'true' || getenv('RUNNER_ENVIRONMENT') !== 'git
 }
 
 $mode = getenv('F02_PRESENCE_LOAD');
-if ($mode !== false && ! in_array($mode, ['0', '1', '2'], true)) {
+if ($mode !== false && ! in_array($mode, ['0', '1', '2', '3', '4'], true)) {
     exit(2);
 }
 $load = $mode === '1';
 $crash = $mode === '2';
-$count = $load ? 100 : ($crash ? 1 : 2);
+$transactionCrash = in_array($mode, ['3', '4'], true);
+$count = $load ? 100 : ($crash || $transactionCrash ? 1 : 2);
 
 $failClosed = static function (Throwable $exception): never {
     $message = $exception->getMessage();
@@ -239,8 +333,8 @@ try {
             'relative_directory' => 'device-' . $index,
             'pattern_mode' => 'glob',
             'filename_pattern' => 'backup_*.cfg',
-            'quiet_seconds' => ! $load && ! $crash && $index === 1 ? 2 : null,
-            'deadline_seconds' => $crash ? 300 : ($load || $index === 1 ? 180 : 60),
+            'quiet_seconds' => ! $load && ! $crash && ! $transactionCrash && $index === 1 ? 2 : null,
+            'deadline_seconds' => $crash || $transactionCrash ? 300 : ($load || $index === 1 ? 180 : 60),
         ]);
         $rules[$index]->enabled = true;
         $rules[$index]->activated_at_utc = CarbonImmutable::now('UTC')->subMinute()->startOfMinute()->format('Y-m-d H:i:s');
@@ -300,6 +394,8 @@ try {
 
     if ($crash) {
         presenceCrashProbe($root, $rules[1], $runs[1], $dispatch, $app);
+    } elseif ($transactionCrash) {
+        presenceTransactionCrashProbe($root, $fixture, $mode === '3' ? 'precommit' : 'postcommit', $rules[1], $runs[1], $dispatch, $app);
     } else {
         $master = new Process([PHP_BINARY, 'artisan', 'horizon', '--environment=production'], $root, null, null, 150);
         $workerStart = hrtime(true);
@@ -379,6 +475,9 @@ try {
     }
     if ($crash) {
         echo "F02_PRESENCE_CRASH_CONCURRENCY_INTEGRITY_OK (SYNTHETIC_ONLY)\n";
+    }
+    if ($transactionCrash) {
+        echo "F02_PRESENCE_TRANSACTION_CRASH_INTEGRITY_OK (SYNTHETIC_ONLY)\n";
     }
     echo "F02_PRESENCE_TERMINAL_REPLAY_OK (SYNTHETIC_ONLY)\n";
 } catch (Throwable $exception) {
