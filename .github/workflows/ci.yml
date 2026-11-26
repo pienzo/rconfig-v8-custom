@@ -274,6 +274,19 @@ jobs:
           grep -Fxq 'F02_MANUAL_ADMISSION_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-manual-admission.log"
           grep -Fxq 'F02_MANUAL_ADMISSION_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-manual-admission.log"
 
+      - name: Test F02 real MySQL manual terminal restart and expiry contention (hosted only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l tools/f02/concurrency/manual_restart.php
+          php -l tools/f02/concurrency/manual_restart_worker.php
+          F02_SYNTHETIC_PRESENCE_ADMISSION=1 F02_SYNTHETIC_MANUAL_ADMISSION=1 F02_SYNTHETIC_MANUAL_RESTART=1 MAIL_MAILER=log \
+            php tools/f02/concurrency/manual_restart.php | tee "$RUNNER_TEMP/f02-manual-restart.log"
+          grep -Fxq 'F02_MANUAL_RESTART_COMMIT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-manual-restart.log"
+          grep -Fxq 'F02_MANUAL_RESTART_ROLLBACK_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-manual-restart.log"
+          grep -Fxq 'F02_MANUAL_RESTART_EXPIRY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-manual-restart.log"
+          grep -Fxq 'F02_MANUAL_RESTART_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-manual-restart.log"
+
       - name: Test F02 worker crash rollback and postcommit retry (synthetic only)
         # Only isolated PHP subprocesses on hosted Linux are SIGKILLed.
         # Requires APP_ENV=testing, v8core_test, and F02_SYNTHETIC_CONCURRENCY.
