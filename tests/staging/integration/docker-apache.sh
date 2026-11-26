@@ -7,10 +7,10 @@ test "$RUNNER_ENVIRONMENT" = github-hosted
 mode="${1:---apache-only}"
 test "$#" -le 1
 case "$mode" in
-    --apache-only|--combined|--recreate|--infra-restart) ;;
+    --apache-only|--combined|--recreate|--infra-restart|--bootstrap-crash) ;;
     *) exit 2 ;;
 esac
-if [[ "$mode" != --apache-only ]]; then
+if [[ "$mode" != --apache-only && "$mode" != --bootstrap-crash ]]; then
     source tests/staging/integration/docker-combined-roles.sh
 fi
 project="rconfig-apache-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
@@ -30,7 +30,7 @@ compose() {
 
 cleanup() {
     local status=$?
-    if [[ "$mode" != --apache-only ]]; then
+    if [[ "$mode" != --apache-only && "$mode" != --bootstrap-crash ]]; then
         if (( status != 0 )); then combined_roles_diagnostics || true; fi
         combined_roles_cleanup
     fi
@@ -110,6 +110,31 @@ expect_refusal 'staging operator bootstrap refused: ambient configuration overri
 expect_refusal 'staging operator bootstrap refused: ambient configuration override' \
     "${approval[@]}" --env RCONFIG_TELEGRAM_ENABLED=true
 printf '%s\n' 'STAGING_AMBIENT_OVERRIDE_REFUSED_OK (SYNTHETIC_ONLY)'
+if [[ "$mode" == --bootstrap-crash ]]; then
+    probe_file="$GITHUB_WORKSPACE/tests/staging/integration/docker-bootstrap-crash.php"
+    test -f "$probe_file" && test ! -L "$probe_file"
+    test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
+    run_crash_probe() {
+        docker run --rm --name "$bootstrap" --network "$network" \
+            "${common[@]}" "${admin[@]}" "${identity[@]}" \
+            --workdir /var/www/html/rconfig \
+            --env RUNNER_ENVIRONMENT=github-hosted \
+            --env RCONFIG_STAGING_BOOTSTRAP=core-synthetic-v1 \
+            --env RCONFIG_STAGING_CI_INTEGRATION=disposable-v1 \
+            --mount "type=bind,source=$probe_file,target=/tmp/ci-bootstrap-crash.php,readonly" \
+            --entrypoint php "$image" /tmp/ci-bootstrap-crash.php "$1"
+    }
+    status=0
+    run_crash_probe crash > "$RUNNER_TEMP/$project-bootstrap.log" 2>&1 || status=$?
+    grep -Fxq 'STAGING_STRICT_POSTMIGRATION_SIGKILL_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/$project-bootstrap.log"
+    test "$status" -eq 137
+    printf '%s\n' 'STAGING_STRICT_POSTMIGRATION_SIGKILL_OK (SYNTHETIC_ONLY)'
+    expect_refusal 'staging bootstrap container refused: previous bootstrap attempt exists; recovery required' "${approval[@]}"
+    run_crash_probe inspect-crash | tee "$RUNNER_TEMP/$project-http.log"
+    grep -Fxq 'STAGING_STRICT_POSTMIGRATION_INSPECT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/$project-http.log"
+    printf '%s\n' 'STAGING_STRICT_OPERATOR_RETRY_REFUSED_OK (SYNTHETIC_ONLY)'
+    exit 0
+fi
 apply_bootstrap "${approval[@]}" | tee "$RUNNER_TEMP/$project-bootstrap.log"
 grep -Fxq "STAGING_OPERATOR_BOOTSTRAP_OK (SYNTHETIC_ONLY)" "$RUNNER_TEMP/$project-bootstrap.log"
 rm -f "$RUNNER_TEMP/$project-bootstrap.log"
