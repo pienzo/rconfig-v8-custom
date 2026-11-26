@@ -91,3 +91,19 @@ test('destroy deletes task', function () {
 
 // Note: update (PATCH) is exercised by the SPA TasksControllerTest using
 // UpdateTaskRequest; the token-authenticated route shares the same controller.
+
+test('token API cannot delete or convert a managed F02 task into a native download', function (string $command) {
+    $task = Task::factory()->create(['task_command' => $command, 'is_paused' => 1]);
+    $before = $task->fresh()->getRawOriginal();
+    $this->withHeaders(tasksApiV1AuthHeader($this->token))
+        ->patchJson('/api/v1/tasks/' . $task->id, [
+            'id' => $task->id,
+            'task_name' => 'native-edit-refused',
+            'task_command' => 'rconfig:download-device',
+            'task_cron' => ['0', '0', '1', '1', '*'],
+            'device' => [['id' => 1]],
+        ])->assertStatus(409);
+    $this->withHeaders(tasksApiV1AuthHeader($this->token))
+        ->deleteJson('/api/v1/tasks/' . $task->id)->assertStatus(409);
+    expect($task->fresh()->getRawOriginal())->toBe($before);
+})->with(['rconfig:check-external-backup', 'rconfig:check-local-backup-presence']);

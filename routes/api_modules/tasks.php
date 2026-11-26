@@ -13,6 +13,17 @@ Route::prefix('tasks')->group(function () { // must be above the resource route
     Route::get('/external-backup-rules/{externalBackupRule}/files-preview', 'ExternalBackupFilePreviewController@preview');
     Route::get('/external-backup-rules/{externalBackupRule}/runs', 'ExternalBackupRunHistoryController@index');
     Route::post('/external-backup-rules/{externalBackupRule}/verify-now', 'ExternalBackupManualProbeController@check')->middleware('throttle:6,1');
+    Route::middleware(EnsureUserIsAdmin::class)->group(function () {
+        Route::post('/local-backup-presence-pattern-preview', 'ExternalBackupPatternPreviewController@preview')->middleware('throttle:12,1');
+        Route::get('/local-backup-presence-rules', 'LocalBackupPresenceRuleController@index');
+        Route::get('/local-backup-presence-rules/{localBackupPresenceRule}', 'LocalBackupPresenceRuleController@show');
+        Route::post('/local-backup-presence-rules', 'LocalBackupPresenceRuleController@store');
+        Route::patch('/local-backup-presence-rules/{localBackupPresenceRule}', 'LocalBackupPresenceRuleController@update');
+        Route::delete('/local-backup-presence-rules/{localBackupPresenceRule}', 'LocalBackupPresenceRuleController@destroy');
+        Route::patch('/local-backup-presence-rules/{localBackupPresenceRule}/activation', 'LocalBackupPresenceRuleController@activation');
+        Route::get('/local-backup-presence-rules/{localBackupPresenceRule}/runs', 'LocalBackupPresenceRunHistoryController@forRule');
+        Route::get('/local-backup-presence-runs', 'LocalBackupPresenceRunHistoryController@forDevice');
+    });
     Route::post('/validate-task', 'TaskController@validateTask');
     Route::post('/run-manual-task', 'TaskManualRunController@runManualTask');
     Route::get('/recent-failed-jobs-count', 'TaskController@failedJobsLast24HrsCount');

@@ -64,6 +64,98 @@ final class ExternalBackupDirectoryScanner
             throw new RuntimeException('External backup device directory is not a real direct child.');
         }
 
+        $result = $this->enumerate($directory, $pattern, $mode, $maxEntries, $maxMatches, $maxScanMillis);
+
+        // Detect in-scan replacement of either directory. Not an atomic openat()
+        // guarantee: a later safe-open adapter must still validate file handles.
+        if (! ExternalBackupDirectoryIdentity::same($rootBefore, $this->snapshot($root) ?? []) || ! ExternalBackupDirectoryIdentity::same($directoryBefore, $this->snapshot($directory) ?? [])) {
+            throw new RuntimeException('External backup directory changed during enumeration.');
+        }
+
+        return $result;
+    }
+
+    /**
+     * Scan an operator-authorized directory mapping, not an arbitrary API path.
+     *
+     * @return array{directory_present: bool, scanned_entries: int, files: list<array{filename: string, size: int, mtime: int, ctime: int, device: int, inode: int}>}
+     */
+    public function scanMapped(
+        LocalBackupDirectoryMap $mapping,
+        string $alias,
+        string $relativeDirectory,
+        string $pattern,
+        string $mode,
+        int $maxEntries = 1000,
+        int $maxMatches = 100,
+        int $maxScanMillis = 2000
+    ): array {
+        return $this->scanMappedObservation($mapping, $alias, $relativeDirectory, $pattern, $mode, $maxEntries, $maxMatches, $maxScanMillis)['scan'];
+    }
+
+    /**
+     * Bind metadata to the same checked directory chain across observations.
+     * The expected fingerprint is internal state, never a user authorization token.
+     *
+     * @return array{directory_identity: string, scan: array{directory_present: bool, scanned_entries: int, files: list<array{filename: string, size: int, mtime: int, ctime: int, device: int, inode: int}>}}
+     */
+    public function scanMappedObservation(
+        LocalBackupDirectoryMap $mapping,
+        string $alias,
+        string $relativeDirectory,
+        string $pattern,
+        string $mode,
+        int $maxEntries = 1000,
+        int $maxMatches = 100,
+        int $maxScanMillis = 2000,
+        ?string $expectedIdentity = null
+    ): array {
+        if ($expectedIdentity !== null && preg_match('/\\A[0-9a-f]{64}\\z/D', $expectedIdentity) !== 1) {
+            throw new InvalidArgumentException('Invalid expected backup directory identity.');
+        }
+
+        if ($maxEntries < 1 || $maxEntries > 10000 || $maxMatches < 1 || $maxMatches > 1000 || $maxMatches > $maxEntries || $maxScanMillis < 1 || $maxScanMillis > 10000) {
+            throw new InvalidArgumentException('Invalid external backup scanner bounds.');
+        }
+
+        $this->matcher->validatePattern($pattern, $mode);
+        $chain = $mapping->snapshot($alias, $relativeDirectory);
+        $directory = array_key_last($chain);
+        if ($directory === null) {
+            throw new RuntimeException('Approved backup directory is unavailable.');
+        }
+
+        $identity = $this->mappedDirectoryFingerprint($chain);
+        if ($expectedIdentity !== null && hash_equals($expectedIdentity, $identity) === false) {
+            throw new LocalBackupDirectoryChanged('Approved backup directory identity changed between observations.');
+        }
+
+        $result = $this->enumerate($directory, $pattern, $mode, $maxEntries, $maxMatches, $maxScanMillis);
+
+        $mapping->assertUnchanged($chain);
+
+        return ['directory_identity' => $identity, 'scan' => $result];
+    }
+
+    /**
+     * Ignore changing directory entry timestamps/size between scans: arrivals
+     * are normal. The existing in-scan check still detects concurrent changes.
+     *
+     * @param  array<string, array<string|int, int>>  $chain
+     */
+    private function mappedDirectoryFingerprint(array $chain): string
+    {
+        $components = [];
+        foreach ($chain as $path => $stat) {
+            $components[] = [$path, $stat['dev'], $stat['ino'], $stat['mode'], $stat['uid'], $stat['gid']];
+        }
+
+        return hash('sha256', json_encode(['version' => 1, 'components' => $components], JSON_THROW_ON_ERROR));
+    }
+
+    /** @return array{directory_present: bool, scanned_entries: int, files: list<array{filename: string, size: int, mtime: int, ctime: int, device: int, inode: int}>} */
+    private function enumerate(string $directory, string $pattern, string $mode, int $maxEntries, int $maxMatches, int $maxScanMillis): array
+    {
         $started = hrtime(true);
         $entries = 0;
         $matches = [];
@@ -113,12 +205,6 @@ final class ExternalBackupDirectoryScanner
             if (count($matches) > $maxMatches) {
                 throw new RuntimeException('Too many matching external backup files.');
             }
-        }
-
-        // Detect in-scan replacement of either directory. Not an atomic openat()
-        // guarantee: a later safe-open adapter must still validate file handles.
-        if (! ExternalBackupDirectoryIdentity::same($rootBefore, $this->snapshot($root) ?? []) || ! ExternalBackupDirectoryIdentity::same($directoryBefore, $this->snapshot($directory) ?? [])) {
-            throw new RuntimeException('External backup directory changed during enumeration.');
         }
 
         usort($matches, static fn (array $a, array $b): int => strcmp($a['filename'], $b['filename']));

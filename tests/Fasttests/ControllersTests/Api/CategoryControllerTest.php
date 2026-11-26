@@ -77,6 +77,7 @@ test('get all categories with generic filter', function () {
 
 test('create category does not require description', function () {
     $category = Category::factory()->make([
+        'categoryName' => 'SyntheticCategory_NoDescription',
         'categoryDescription' => null,
     ]);
 
@@ -90,7 +91,7 @@ test('create category does not require description', function () {
 });
 
 test('create category', function () {
-    $category = Category::factory()->make();
+    $category = Category::factory()->make(['categoryName' => 'SyntheticCategory_Create']);
     $response = $this->post('/api/categories', $category->toArray());
     $response->assertStatus(200);
 

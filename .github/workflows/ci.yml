@@ -55,7 +55,14 @@ jobs:
         uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda
 
       - name: Run Pint
-        run: vendor/bin/pint --test
+        id: pint_check
+        run: vendor/bin/pint --test -v
+
+      - name: Show formatter patch on failure (local checkout only)
+        if: ${{ failure() && steps.pint_check.outcome == 'failure' }}
+        run: |
+          vendor/bin/pint
+          git --no-pager diff --no-ext-diff
 
   phpstan:
     name: Static Analysis (PHPStan)
@@ -242,6 +249,31 @@ jobs:
         # Both subprocesses use distinct DB connections; no file receipts or backup success.
         run: F02_SYNTHETIC_CONCURRENCY=1 php tools/f02/concurrency/run.php
 
+      - name: Test F02 real MySQL Local Presence activation contention (hosted only)
+        # Real service, two independent PHP connections and an outer transaction.
+        # No worker, scheduler, filesystem scanner or external provider.
+        shell: bash
+        run: |
+          set -euo pipefail
+          F02_SYNTHETIC_PRESENCE_ADMISSION=1 MAIL_MAILER=log \
+            php tools/f02/concurrency/presence_admission.php | tee "$RUNNER_TEMP/f02-presence-admission.log"
+          grep -Fxq 'F02_PRESENCE_ADMISSION_COMMIT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-admission.log"
+          grep -Fxq 'F02_PRESENCE_ADMISSION_ROLLBACK_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-admission.log"
+          grep -Fxq 'F02_PRESENCE_ADMISSION_SUSPEND_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-admission.log"
+          grep -Fxq 'F02_PRESENCE_ADMISSION_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-admission.log"
+          grep -Fxq 'F02_PRESENCE_ADMISSION_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-admission.log"
+
+      - name: Test F02 real MySQL manual session admission contention (hosted only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          F02_SYNTHETIC_PRESENCE_ADMISSION=1 F02_SYNTHETIC_MANUAL_ADMISSION=1 MAIL_MAILER=log \
+            php tools/f02/concurrency/manual_admission.php | tee "$RUNNER_TEMP/f02-manual-admission.log"
+          grep -Fxq 'F02_MANUAL_ADMISSION_COMMIT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-manual-admission.log"
+          grep -Fxq 'F02_MANUAL_ADMISSION_ROLLBACK_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-manual-admission.log"
+          grep -Fxq 'F02_MANUAL_ADMISSION_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-manual-admission.log"
+          grep -Fxq 'F02_MANUAL_ADMISSION_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-manual-admission.log"
+
       - name: Test F02 worker crash rollback and postcommit retry (synthetic only)
         # Only isolated PHP subprocesses on hosted Linux are SIGKILLed.
         # Requires APP_ENV=testing, v8core_test, and F02_SYNTHETIC_CONCURRENCY.
@@ -369,6 +401,131 @@ jobs:
           grep -Fxq 'F03_WHATSAPP_SCHEDULE_QUEUE_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
           grep -Fxq 'F04_WHATSAPP_DRAFT_ISOLATED_MAPPING_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
           grep -Fxq 'F03_WHATSAPP_ACCEPTED_UNCERTAIN_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
+
+      - name: Test actual F02 local presence mixed outcomes, 100-rule load and Redis crash recovery (hosted only)
+        # Static operator config is changed only in this disposable checkout.
+        # No production mapping, secrets, provider calls or privileged access.
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$APP_ENV" = testing
+          test "$DB_HOST" = 127.0.0.1
+          test "$DB_DATABASE" = v8core_test
+          test "$REDIS_HOST" = 127.0.0.1
+          fixture="$(mktemp -d "$RUNNER_TEMP/rconfig-f02-presence.XXXXXXXX")"
+          fixture="$(realpath "$fixture")"
+          original="$(mktemp "$RUNNER_TEMP/rconfig-f02-config.XXXXXXXX")"
+          cp config/local-backup-presence.php "$original"
+          cleanup() {
+            cp "$original" config/local-backup-presence.php
+            rm -f -- "$original" "$RUNNER_TEMP/f02-presence-horizon.log"
+            rmdir -- "$fixture"
+          }
+          trap cleanup EXIT
+          export F02_PRESENCE_FIXTURE="$fixture"
+          php -r '
+            $path = "config/local-backup-presence.php";
+            $settings = require $path;
+            foreach (["runtime_enabled", "queue_enabled", "scheduler_enabled", "dispatch_enabled"] as $key) {
+                if ($settings[$key] !== false) { exit(2); }
+                $settings[$key] = true;
+            }
+            if ($settings["catchup_enabled"] !== false || $settings["roots"] !== []) { exit(2); }
+            $settings["roots"] = ["synthetic" => getenv("F02_PRESENCE_FIXTURE")];
+            if (file_put_contents($path, "<?php\n\nreturn " . var_export($settings, true) . ";\n") === false) { exit(2); }
+          '
+          run_presence_probe() {
+            F02_PRESENCE_LOAD="$1" F02_SYNTHETIC_PRESENCE_HORIZON=1 REDIS_DB=5 REDIS_CACHE_DB=6 \
+              HORIZON_PREFIX="f02_presence_ci_$(basename "$fixture")_$1:" CACHE_PREFIX="f02_presence_ci_$(basename "$fixture")_$1" \
+              QUEUE_CONNECTION=redis CACHE_DRIVER=redis CACHE_STORE=redis MAIL_MAILER=log \
+              RCONFIG_F02_RUNTIME_ENABLED=false RCONFIG_F02_QUEUE_ENABLED=false \
+              RCONFIG_CUSTOM_BACKUP_NOTIFICATIONS_ENABLED=false RCONFIG_NATIVE_BACKUP_NOTIFICATIONS_ENABLED=false \
+              RCONFIG_TELEGRAM_ENABLED=false RCONFIG_BACKUP_EMAIL_ENABLED=false RCONFIG_WHATSAPP_ENABLED=false \
+              php "${2:-tools/f02/queue/scheduled_presence.php}"
+          }
+          run_presence_probe 0 | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_DURABLE_SCHEDULE_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_REAL_HORIZON_MIXED_OUTCOMES_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_TERMINAL_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
+          run_presence_probe 1 | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_100_RULE_HORIZON_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_100_RULE_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Eq '^F02_PRESENCE_LOAD_METRICS rules=100 files=2500 reserve_ms=[0-9.]+ dispatch_ms=[0-9.]+ drain_ms=[0-9.]+$' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
+          run_presence_probe 2 | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_PREOBSERVATION_CRASH_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_REAL_REDELIVERY_CONCURRENT_RESERVATIONS_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_CRASH_CONCURRENCY_TERMINAL_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_CRASH_CONCURRENCY_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
+          run_presence_probe 3 | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_PRECOMMIT_ROLLBACK_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_PRECOMMIT_REDELIVERY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_TRANSACTION_CRASH_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
+          run_presence_probe 4 | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_POSTCOMMIT_PREACK_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_POSTCOMMIT_REDELIVERY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_TRANSACTION_CRASH_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
+          run_presence_probe 5 | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_WORKER_TIMEOUT_ROLLBACK_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_WORKER_TIMEOUT_REDELIVERY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_TRANSACTION_CRASH_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Eq '^F02_PRESENCE_TIMEOUT_METRICS elapsed_seconds=[0-9.]+$' "$RUNNER_TEMP/f02-presence-horizon.log"
+
+          test -z "$(ls -A "$fixture")"
+          php -r '
+            $path = "config/local-backup-presence.php";
+            $settings = require $path;
+            foreach (["manual_probe_enabled", "manual_dispatch_enabled"] as $key) {
+                if ($settings[$key] !== false) { exit(2); }
+                $settings[$key] = true;
+            }
+            if (file_put_contents($path, "<?php\n\nreturn " . var_export($settings, true) . ";\n") === false) { exit(2); }
+          '
+          run_presence_probe 6 | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_MIXED_DISPATCH_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_INITIAL_OBSERVATIONS_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_REAL_HORIZON_STABILITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_TERMINAL_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_MIXED_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_REAL_HORIZON_MIXED_OUTCOMES_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
+
+          run_presence_probe 7 tools/f02/queue/manual_presence_crash.php | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_PRECOMMIT_ROLLBACK_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_PRECOMMIT_REDELIVERY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_CRASH_STABILITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_CRASH_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
+          run_presence_probe 8 tools/f02/queue/manual_presence_crash.php | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_POSTCOMMIT_PREACK_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_POSTCOMMIT_REDELIVERY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_CRASH_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
+
+          run_presence_probe 9 | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_LOAD_BACKPRESSURE_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_LOAD_BOUNDED_BATCHES_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_LOAD_TERMINAL_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_LOAD_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_100_RULE_HORIZON_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_100_RULE_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Eq '^F02_PRESENCE_LOAD_METRICS rules=100 files=2500 reserve_ms=[0-9.]+ dispatch_ms=[0-9.]+ drain_ms=[0-9.]+$' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Eq '^F02_MANUAL_LOAD_METRICS sessions=10 batches=5 manual_ms=[0-9.]+$' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
+
+          run_presence_probe 10 tools/f02/queue/manual_presence_crash.php | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_TIMEOUT_ROLLBACK_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_TIMEOUT_REDELIVERY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_TIMEOUT_STABILITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_TIMEOUT_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Eq '^F02_MANUAL_TIMEOUT_METRICS elapsed_seconds=[0-9.]+$' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
 
       - name: Test F02 bounded metadata scanner load (hosted only)
         run: |

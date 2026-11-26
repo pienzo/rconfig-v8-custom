@@ -10,6 +10,10 @@ use App\Jobs\TaskDownloadRun;
 use App\Models\ExternalBackupRule;
 use App\Models\MonitoredScheduledTaskLogItems;
 use App\Models\Task;
+use App\Services\ExternalBackups\LocalBackupPresenceManualReconciler;
+use App\Services\ExternalBackups\LocalBackupPresenceOccurrenceClaim;
+use App\Services\ExternalBackups\LocalBackupPresencePendingReconciler;
+use App\Services\ExternalBackups\LocalBackupPresenceSchedulePlanner;
 use App\Services\Notifications\ExternalBackupNotificationReconciler;
 use App\Services\Notifications\NativeBackupNotificationReconciler;
 use App\Traits\LogsTaskActivity;
@@ -65,6 +69,11 @@ class Kernel extends ConsoleKernel
                     continue;
                 }
 
+                // Local presence has a separate lifecycle; never use native downloads.
+                if ($task->task_command === LocalBackupPresenceOccurrenceClaim::TASK_COMMAND) {
+                    continue;
+                }
+
                 // F02 has its own isolated queue and no native SSH/download job.
                 if ($task->task_command === 'rconfig:check-external-backup') {
                     if (config('external-backups.runtime_enabled', false) && config('external-backups.queue_enabled', false)) {
@@ -94,6 +103,37 @@ class Kernel extends ConsoleKernel
             $schedule->job(new ExternalBackupExpirePendingJob, 'ExternalBackupChecks', 'redis_external_backups')
                 ->name('f02-expire-pending')
                 ->everyMinute();
+        }
+
+        if (LocalBackupPresenceSchedulePlanner::enabled()
+            && Schema::hasTable('tasks')
+            && Schema::hasTable('local_backup_presence_rules')
+            && Schema::hasTable('local_backup_presence_runs')
+            && (config('local-backup-presence.catchup_enabled', false) !== true
+                || (Schema::hasColumn('local_backup_presence_rules', 'scheduler_checked_minute_utc')
+                    && Schema::hasColumn('local_backup_presence_rules', 'scheduler_revision')))) {
+            $schedule->call(static function (): void {
+                app(LocalBackupPresenceSchedulePlanner::class)->reserveDue();
+            })->name('f02-local-presence-reserve-due')->everyMinute()->withoutOverlapping(2);
+        }
+
+        if (LocalBackupPresencePendingReconciler::enabled()
+            && Schema::hasTable('tasks')
+            && Schema::hasTable('local_backup_presence_rules')
+            && Schema::hasTable('local_backup_presence_runs')
+            && Schema::hasColumn('local_backup_presence_runs', 'dispatch_not_before_utc')) {
+            $schedule->call(static function (): void {
+                app(LocalBackupPresencePendingReconciler::class)->enqueue();
+            })->name('f02-local-presence-reconcile-pending')->everyMinute()->withoutOverlapping(2);
+        }
+
+        if (LocalBackupPresenceManualReconciler::enabled()
+            && Schema::hasTable('local_backup_presence_activation_lock')
+            && Schema::hasTable('local_backup_presence_manual_sessions')
+            && Schema::hasColumn('local_backup_presence_manual_sessions', 'dispatch_not_before')) {
+            $schedule->call(static function (): void {
+                app(LocalBackupPresenceManualReconciler::class)->enqueue();
+            })->name('f02-local-presence-reconcile-manual')->everyMinute()->withoutOverlapping(2);
         }
 
         if (config('custom-backup-notifications.enabled', false) === true) {
