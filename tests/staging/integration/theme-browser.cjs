@@ -44,10 +44,56 @@ async function main() {
         reducedMotion: "reduce",
         serviceWorkers: "block",
     });
-    // Browser also shares only the internal app network namespace.
+    // Real authenticated application and live APIs are tested first. A
+    // separate, explicitly labelled pass injects read-only fixture responses
+    // only at the data boundary, to exercise populated rows and Monaco without
+    // creating devices/tasks or invoking backups. Never intercept auth or writes.
+    let fixtureMode = false;
+    const fixtureHits = new Set();
+    const device = {
+        id: 990001, device_name: "THEME-FIXTURE-ROUTER", device_ip: "192.0.2.10",
+        device_model: "Synthetic model", status: 1, device_added_by: 1,
+        category: [], vendor: [], tag: [], config_summary: { total_count: 2, download_status_0_count: 0 },
+    };
+    const created = new Date().toISOString();
+    const task = {
+        id: 990002, task_name: "THEME-FIXTURE-PAUSED", task_desc: "Synthetic visual fixture",
+        task_command: "rconfig:download-device", is_paused: 1, is_system: 0,
+        device: [device], category: [], tag: [], task_email_notify: 0,
+        download_report_notify: 0, verbose_download_report_notify: 0, cron_plain: "Daily",
+        created_at: created,
+    };
+    const configs = [0, 1].map(i => ({
+        id: 990003 + i, device_id: device.id, device_name: device.device_name,
+        config_filename: i ? "theme-after.cfg" : "theme-before.cfg",
+        command: "show running-config", config_version: i + 1, latest_version: i,
+        download_status: 1, config_downloaded: 1, config_filesize: 80, created_at: created,
+    }));
+    const contents = ["hostname THEME-BEFORE\ninterface Loopback0\n description SYNTHETIC\n",
+        "hostname THEME-AFTER\ninterface Loopback0\n description SYNTHETIC\n"];
+    const paginated = data => ({ data, current_page: 1, last_page: 1, total: data.length, per_page: 10, from: 1, to: data.length });
+    const fixtures = new Map([
+        ["/api/devices", paginated([device])],
+        ["/api/tasks", paginated([task])],
+        ["/api/configs", paginated(configs)],
+        ["/api/get-devices-filter-list", paginated([device])],
+        ["/api/configs/distinct-commands/" + device.id, { data: [{ command: "show running-config" }] }],
+        ["/api/configs/all-by-deviceid/" + device.id, paginated(configs)],
+        ...configs.flatMap((cfg, i) => [
+            ["/api/configs/" + cfg.id, cfg],
+            ["/api/configs/view-config/" + cfg.id, { data: { content: contents[i] } }],
+        ]),
+    ]);
     await context.route("**/*", route => {
         const url = new URL(route.request().url());
-        return url.origin === origin ? route.continue() : route.abort();
+        if (url.origin !== origin) return route.abort();
+        if (fixtureMode && route.request().method() === "GET" && fixtures.has(url.pathname)) {
+            fixtureHits.add(url.pathname);
+            return route.fulfill({ json: fixtures.get(url.pathname) });
+        }
+        // No real state-changing request during the fixture phase.
+        if (fixtureMode && !["GET", "HEAD"].includes(route.request().method())) return route.abort();
+        return route.continue();
     });
     const page = await context.newPage();
     page.setDefaultTimeout(20000);
@@ -103,6 +149,39 @@ async function main() {
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     }
 
+    async function elementContrast(element) {
+        await element.waitFor();
+        return element.evaluate(el => {
+            const ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+            const ancestors = [];
+            for (let node = el; node; node = node.parentElement) ancestors.unshift(node);
+            ctx.fillStyle = "#fff";
+            ctx.fillRect(0, 0, 1, 1);
+            for (const node of ancestors) {
+                ctx.fillStyle = getComputedStyle(node).backgroundColor;
+                ctx.fillRect(0, 0, 1, 1);
+            }
+            const luminance = () => [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3)
+                .map(v => v / 255)
+                .map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+                .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+            const bg = luminance();
+            ctx.fillStyle = getComputedStyle(el).color;
+            ctx.fillRect(0, 0, 1, 1);
+            const fg = luminance();
+            return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+        });
+    }
+
+    async function requireContrast(id, name, element, measurements) {
+        const ratio = await elementContrast(element);
+        measurements[name] = ratio;
+        if (!(ratio >= 4.5)) {
+            console.error("THEME_COMPONENT_CONTRAST_FAIL " + id + " " + name + " ratio=" + ratio.toFixed(3));
+            throw new Error("component contrast below 4.5");
+        }
+    }
+
     async function inspectNav() {
         const nav = page.locator("#nav-panel-1");
         const labels = ["Dashboard", "Inventory", "Config Tools", "Tasks"];
@@ -110,26 +189,7 @@ async function main() {
         for (const label of labels) {
             const element = nav.getByText(label, { exact: true }).first();
             await element.waitFor();
-            ratios[label] = await element.evaluate(el => {
-                const ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
-                const ancestors = [];
-                for (let node = el; node; node = node.parentElement) ancestors.unshift(node);
-                ctx.fillStyle = "#fff";
-                ctx.fillRect(0, 0, 1, 1);
-                for (const node of ancestors) {
-                    ctx.fillStyle = getComputedStyle(node).backgroundColor;
-                    ctx.fillRect(0, 0, 1, 1);
-                }
-                const luminance = () => [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3)
-                    .map(v => v / 255)
-                    .map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
-                    .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
-                const bg = luminance();
-                ctx.fillStyle = getComputedStyle(el).color;
-                ctx.fillRect(0, 0, 1, 1);
-                const fg = luminance();
-                return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
-            });
+            ratios[label] = await elementContrast(element);
         }
         const logo = nav.getByAltText("rConfig", { exact: true });
         await logo.waitFor();
@@ -209,7 +269,8 @@ async function main() {
         stage = "contrast-" + id;
         const result = await inspectTokens();
         const nav = await inspectNav();
-        evidence.push({ id, mode, ...result, nav });
+        const components = {};
+        evidence.push({ id, mode, ...result, nav, components });
         for (const [label, ratio] of Object.entries(nav.ratios)) {
             if (!(ratio >= 4.5)) {
                 console.error("THEME_NAV_CONTRAST_FAIL " + id + " " + label + " ratio=" + ratio.toFixed(3));
@@ -235,6 +296,9 @@ async function main() {
             assert.equal(new URL(page.url()).pathname, route);
             await waitForRoute(name);
             await page.screenshot({ path: "/evidence/" + id + "-" + name + ".png", animations: "disabled" });
+            if (name === "notifications") {
+                await requireContrast(id, "notification-warning", view.getByText(/^I template Email e Telegram sono collegati/), components);
+            }
             if (name === "tasks") {
                 stage = id + "-pattern-preview";
                 await view.getByRole("button", { name: "Test backup file pattern", exact: true }).click();
@@ -247,6 +311,8 @@ async function main() {
                 await results.waitFor();
                 assert.equal(await results.getByText("MATCH", { exact: true }).count(), 1);
                 assert.equal(await results.getByText("NO MATCH", { exact: true }).count(), 1);
+                await requireContrast(id, "match", results.getByText("MATCH", { exact: true }), components);
+                await requireContrast(id, "no-match", results.getByText("NO MATCH", { exact: true }), components);
                 await page.screenshot({ path: "/evidence/" + id + "-pattern-preview.png", animations: "disabled" });
                 await view.getByRole("button", { name: "Hide file pattern tester", exact: true }).click();
 
@@ -255,11 +321,80 @@ async function main() {
                 const dialog = page.getByRole("dialog");
                 await dialog.waitFor();
                 await dialog.getByText("Add Task", { exact: true }).waitFor();
+                const category = dialog.locator(".result-section").getByText("Config Downloads", { exact: true });
+                await requireContrast(id, "wizard-category", category, components);
+                await category.click();
+                await dialog.getByText("Devices", { exact: true }).waitFor();
                 await page.screenshot({ path: "/evidence/" + id + "-task-dialog.png", animations: "disabled" });
+                await dialog.getByText("Devices", { exact: true }).click();
+                await dialog.getByRole("button", { name: "Continue with Devices" }).click();
+                await dialog.getByRole("heading", { name: "Enter Task Details" }).waitFor();
+                await dialog.locator("#task_name").fill("THEME-UNSAVED");
+                await requireContrast(id, "wizard-step", dialog.getByText("Task Info", { exact: true }), components);
+                await page.screenshot({ path: "/evidence/" + id + "-task-details.png", animations: "disabled" });
                 await page.keyboard.press("Escape");
                 await dialog.waitFor({ state: "hidden" });
             }
         }
+        // Fixture pass: actual Vue/Monaco rendering, not real API storage or
+        // device operations. Keep the real empty-state screenshots above.
+        fixtureMode = true;
+        fixtureHits.clear();
+        try {
+            for (const [route, name, value] of [
+                ["/devices", "devices", device.device_name],
+                ["/tasks", "tasks", task.task_name],
+                ["/configs", "configs", configs[0].config_filename],
+            ]) {
+                stage = id + "-fixture-" + name;
+                assert((await page.goto(origin + route))?.ok());
+                await waitForRoute(name);
+                await expectPalette(id, mode);
+                const row = view.getByRole("row").filter({ hasText: value });
+                await row.waitFor();
+                await requireContrast(id, "fixture-" + name, row.getByText(value, { exact: true }), components);
+                await page.screenshot({ path: "/evidence/" + id + "-fixture-" + name + ".png", animations: "disabled" });
+            }
+            stage = id + "-fixture-diff-filter";
+            await page.evaluate(() => {
+                localStorage.setItem("rConfig.editordarkmode", "vs");
+                localStorage.setItem("rConfig.editorHideUnchanged", "false");
+            });
+            assert((await page.goto(origin + "/config-compare"))?.ok());
+            await waitForRoute("compare");
+            for (let side = 0; side < 2; side++) {
+                // Both cards start with the same placeholder; after the first
+                // selection only the second unselected trigger remains.
+                await view.getByText("Select devices", { exact: true }).first().click();
+                await page.getByPlaceholder("Search...", { exact: true }).waitFor();
+                await page.getByPlaceholder("Search...", { exact: true }).fill("THEME-FIXTURE-ROUTER");
+                const option = page.getByText(device.device_name, { exact: true }).filter({ visible: true }).last();
+                await option.click();
+                await view.getByRole("button", { name: "Filter", exact: true }).nth(side).click();
+                await view.getByRole("row").filter({ hasText: configs[side].config_filename }).nth(side).waitFor();
+                await view.getByRole("row").filter({ hasText: configs[side].config_filename }).nth(side).click();
+            }
+            stage = id + "-fixture-diff-editor";
+            await view.getByRole("button", { name: "Compare", exact: true }).click();
+            const editor = page.locator("#code-editor__code-pre .monaco-diff-editor");
+            await editor.waitFor();
+            await editor.locator(".view-lines").filter({ hasText: "THEME-BEFORE" }).waitFor();
+            await editor.locator(".view-lines").filter({ hasText: "THEME-AFTER" }).waitFor();
+            assert(fixtureHits.has("/api/configs/view-config/" + configs[0].id));
+            assert(fixtureHits.has("/api/configs/view-config/" + configs[1].id));
+            await editor.locator(".monaco-editor.vs").first().waitFor();
+            await page.screenshot({ path: "/evidence/" + id + "-fixture-diff-light.png", animations: "disabled" });
+            await page.getByTitle("Toggle bold", { exact: true }).click();
+            await editor.locator(".monaco-editor.vs-dark").first().waitFor();
+            await expectPalette(id, mode);
+            await page.screenshot({ path: "/evidence/" + id + "-fixture-diff-dark.png", animations: "disabled" });
+            for (const key of ["/api/devices", "/api/tasks", "/api/configs", "/api/get-devices-filter-list",
+                "/api/configs/all-by-deviceid/" + device.id]) assert(fixtureHits.has(key));
+            console.log("THEME_BROWSER_POPULATED_FIXTURE_OK " + id + " (MOCKED_READ_API_ONLY)");
+        } finally {
+            fixtureMode = false;
+        }
+        fs.writeFileSync("/evidence/contrast.json", JSON.stringify(evidence, null, 2));
         stage = "return-dashboard-" + id;
         await page.goto(origin + "/dashboard");
         await trigger.waitFor();

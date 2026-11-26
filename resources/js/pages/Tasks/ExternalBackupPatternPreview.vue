@@ -61,13 +61,13 @@ async function preview() {
             <textarea id="f02-preview-filenames" v-model="sampleNames" rows="3"
                 class="mt-1 block w-full rounded border p-2 font-mono text-xs bg-background" />
         </label>
-        <button type="button" :disabled="isLoading" class="mt-3 rounded bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-50" @click="preview">
+        <button type="button" :disabled="isLoading" class="mt-3 rounded bg-blue-700 px-3 py-2 text-sm text-white disabled:opacity-50" @click="preview">
             {{ isLoading ? "Testing..." : "Preview matches" }}
         </button>
-        <p v-if="errorMessage" role="alert" class="mt-2 text-sm text-red-500">{{ errorMessage }}</p>
+        <p v-if="errorMessage" role="alert" class="mt-2 text-sm text-red-700 dark:text-red-400">{{ errorMessage }}</p>
         <ul v-if="results.length" class="mt-3 space-y-1 text-xs" aria-label="Filename match results">
             <li v-for="(result, index) in results" :key="index" class="flex gap-3">
-                <span :class="result.matches ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'">
+                <span :class="result.matches ? 'text-green-800 dark:text-green-400' : 'text-amber-800 dark:text-amber-400'">
                     {{ result.matches ? "MATCH" : "NO MATCH" }}
                 </span>
                 <span class="break-all font-mono">{{ result.filename }}</span>

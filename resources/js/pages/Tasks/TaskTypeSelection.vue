@@ -43,7 +43,7 @@ const {
 			<h3 class="text-lg font-medium text-gray-900 dark:text-white">
 				Select Task Type
 			</h3>
-			<p class="text-sm text-gray-500 dark:text-gray-400">
+			<p class="text-sm text-muted-foreground">
 				Choose the type of task you want to create
 			</p>
 		</div>
@@ -81,7 +81,7 @@ const {
 						size="small" 
 						class="ml-1"
 						:class="{
-							'border-blue-300 text-blue-300 bg-blue-50 dark:border-blue-300 dark:text-blue-300 dark:bg-blue-900/20': category.key === 'config',
+							'border-blue-300 text-blue-800 bg-blue-50 dark:border-blue-300 dark:text-blue-300 dark:bg-blue-900/20': category.key === 'config',
 							'border-gray-400 text-gray-600 bg-gray-50 dark:border-gray-500 dark:text-gray-400 dark:bg-gray-800/20': category.key === 'all'
 						}"
 					>
@@ -105,17 +105,17 @@ const {
 					>
 						<ChevronRight
 							v-if="collapsedCategories.config"
-							class="w-4 h-4 mr-2 text-blue-300"
+							class="w-4 h-4 mr-2 text-blue-800 dark:text-blue-300"
 						/>
 						<ChevronDown
 							v-else
-							class="w-4 h-4 mr-2 text-blue-300"
+							class="w-4 h-4 mr-2 text-blue-800 dark:text-blue-300"
 						/>
 						<RcIcon
 							name="config-tools"
 							class="w-4 h-4 mr-3"
 						/>
-						<div class="w-full flex items-center text-blue-300 text-sm font-medium">
+						<div class="w-full flex items-center text-blue-800 dark:text-blue-300 text-sm font-medium">
 							<span>Config Downloads</span>
 							<div class="flex-1 mx-2 border-t border-blue-300 opacity-30"></div>
 							<span>({{ getCategoryTasks('config').length }})</span>
@@ -142,14 +142,14 @@ const {
 									<div class="font-medium text-gray-900 dark:text-white">
 										{{ command.label }}
 									</div>
-									<div class="text-xs text-gray-500 dark:text-gray-400">
+									<div class="text-xs text-muted-foreground">
 										{{ command.description }}
 									</div>
 								</div>
 							</div>
 							<div
 								v-if="selectedValue === command.command"
-								class="text-blue-300"
+								class="text-blue-800 dark:text-blue-300"
 							>
 								<svg
 									class="w-5 h-5"
@@ -176,7 +176,7 @@ const {
 					<h3 class="text-sm font-medium text-gray-900 dark:text-white mb-1">
 						No tasks found
 					</h3>
-					<p class="text-xs text-gray-500 dark:text-gray-400">
+					<p class="text-xs text-muted-foreground">
 						Try adjusting your search or filter criteria.
 					</p>
 				</div>
