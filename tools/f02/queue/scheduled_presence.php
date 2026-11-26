@@ -5,13 +5,16 @@
  * No production access, providers, native downloads or verified receipts.
  */
 
+use App\Jobs\LocalBackupPresenceManualObserveJob;
 use App\Jobs\LocalBackupPresenceObserveJob;
 use App\Models\Device;
 use App\Models\ExternalBackupCheckRun;
 use App\Models\ExternalBackupFileReceipt;
+use App\Models\LocalBackupPresenceManualSession;
 use App\Models\LocalBackupPresenceRule;
 use App\Models\LocalBackupPresenceRun;
 use App\Models\Task;
+use App\Services\ExternalBackups\LocalBackupPresenceManualSessions;
 use App\Services\ExternalBackups\LocalBackupPresenceOccurrenceClaim;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Console\Kernel;
@@ -268,9 +271,10 @@ if (getenv('GITHUB_ACTIONS') !== 'true' || getenv('RUNNER_ENVIRONMENT') !== 'git
 }
 
 $mode = getenv('F02_PRESENCE_LOAD');
-if ($mode !== false && ! in_array($mode, ['0', '1', '2', '3', '4', '5'], true)) {
+if ($mode !== false && ! in_array($mode, ['0', '1', '2', '3', '4', '5', '6'], true)) {
     exit(2);
 }
+$manual = $mode === '6';
 $load = $mode === '1';
 $crash = $mode === '2';
 $transactionCrash = in_array($mode, ['3', '4', '5'], true);
@@ -306,6 +310,10 @@ presenceCheck(is_string($fixture) && is_dir($fixture) && ! is_link($fixture)
 foreach (['runtime_enabled', 'queue_enabled', 'scheduler_enabled', 'dispatch_enabled'] as $flag) {
     presenceCheck(config('local-backup-presence.' . $flag) === true, 'local presence gate');
 }
+foreach (['manual_probe_enabled', 'manual_dispatch_enabled'] as $flag) {
+    presenceCheck(config('local-backup-presence.' . $flag) === $manual, 'manual presence gate matches test mode');
+}
+presenceCheck(LocalBackupPresenceManualSession::count() === 0, 'no preexisting manual diagnostics');
 foreach (['local-backup-presence.catchup_enabled', 'external-backups.runtime_enabled', 'external-backups.queue_enabled',
     'custom-backup-notifications.enabled', 'rconfig-native-backup-notifications.enabled', 'rconfig-telegram.enabled',
     'rconfig-backup-email.enabled', 'rconfig-whatsapp.enabled'] as $flag) {
@@ -324,6 +332,9 @@ $devices = [];
 $tasks = [];
 $rules = [];
 $folders = [];
+$manualRules = [];
+$manualTasks = [];
+$manualSessions = [];
 $master = null;
 $failed = false;
 
@@ -373,6 +384,35 @@ try {
         }
     }
 
+    if ($manual) {
+        // Separate dormant rules, sharing only the approved fixture folders.
+        foreach ([1, 2] as $index) {
+            $manualTasks[$index] = Task::factory()->create([
+                'task_command' => LocalBackupPresenceOccurrenceClaim::TASK_COMMAND,
+                'task_cron' => '* * * * *',
+                'task_devices' => true,
+                'task_categories' => false,
+                'task_tags' => false,
+                'task_email_notify' => false,
+                'download_report_notify' => false,
+                'verbose_download_report_notify' => false,
+                'is_system' => false,
+                'is_paused' => 1,
+            ]);
+            $manualTasks[$index]->device()->attach($devices[$index]->id);
+            $manualRules[$index] = LocalBackupPresenceRule::create([
+                'task_id' => $manualTasks[$index]->id,
+                'device_id' => $devices[$index]->id,
+                'directory_alias' => 'synthetic',
+                'relative_directory' => 'device-' . $index,
+                'pattern_mode' => 'glob',
+                'filename_pattern' => 'backup_*.cfg',
+                'quiet_seconds' => $index === 1 ? 2 : null,
+                'deadline_seconds' => 180,
+            ]);
+        }
+    }
+
     $schedule = $kernel->resolveConsoleSchedule();
     $find = static function (string $name) use ($schedule, $app) {
         $events = array_values(array_filter($schedule->events(), static fn ($event): bool => $event->description === $name));
@@ -382,6 +422,7 @@ try {
     };
     $reserve = $find('f02-local-presence-reserve-due');
     $dispatch = $find('f02-local-presence-reconcile-pending');
+    $manualDispatch = $manual ? $find('f02-local-presence-reconcile-manual') : null;
 
     // Start close to a real minute boundary, leaving time for the first
     // observation before the shorter 60-second deadline. No frozen clock.
@@ -412,6 +453,23 @@ try {
     $dispatch->run($app);
     presenceCheck($queue->size('LocalBackupPresence') === $count, 'exact jobs and cooldown replay');
     echo "F02_PRESENCE_DURABLE_SCHEDULE_OK (SYNTHETIC_ONLY)\n";
+
+    if ($manual) {
+        $sessions = app(LocalBackupPresenceManualSessions::class);
+        foreach ($manualRules as $index => $rule) {
+            $manualSessions[$index] = $sessions->start((int) $rule->id);
+            presenceCheck($manualSessions[$index]->status === 'queued'
+                && $sessions->start((int) $rule->id)->id === $manualSessions[$index]->id, 'manual admission replay');
+        }
+        $manualDispatch->run($app);
+        $manualDispatch->run($app);
+        presenceCheck($queue->size('LocalBackupPresence') === $count + 2, 'exact mixed queue and cooldown');
+        foreach ($manualSessions as $session) {
+            presenceCheck($session->fresh()->dispatch_not_before !== null
+                && $session->fresh()->next_observation_at === $session->requested_at, 'manual dispatch reservation preserves due time');
+        }
+        echo "F02_MANUAL_MIXED_DISPATCH_OK (SYNTHETIC_ONLY)\n";
+    }
 
     if ($crash) {
         presenceCrashProbe($root, $rules[1], $runs[1], $dispatch, $app);
@@ -463,9 +521,50 @@ try {
                 && $runs[2]->fresh()->reason === 'no_matching_file'
                 && $queue->size('LocalBackupPresence') === 0, 'actual initial worker observations');
             presenceCheck($runs[1]->fresh()->status === 'pending' && $runs[2]->fresh()->status === 'pending', 'initial outcomes pending');
+            if ($manual) {
+                $await(static fn (): bool => $manualSessions[1]->fresh()->status === 'pending'
+                    && $manualSessions[2]->fresh()->status === 'absent'
+                    && $queue->size('LocalBackupPresence') === 0, 'actual initial manual observations');
+                $pending = $manualSessions[1]->fresh();
+                $negative = $manualSessions[2]->fresh();
+                presenceCheck($pending->result['reason'] === 'stability_wait'
+                    && is_array($pending->continuation)
+                    && $pending->next_observation_at !== null
+                    && $negative->result['reason'] === 'no_matching_file'
+                    && $negative->continuation === null
+                    && $negative->next_observation_at === null, 'manual pending and immediate absence');
+                echo "F02_MANUAL_INITIAL_OBSERVATIONS_OK (SYNTHETIC_ONLY)\n";
+            }
             $deadline = CarbonImmutable::parse($runs[2]->getRawOriginal('deadline_at_utc'), 'UTC');
             $await(static fn (): bool => CarbonImmutable::now('UTC')->greaterThanOrEqualTo($deadline->addSecond()), 'real deadline elapsed', 70);
             $dispatch->run($app);
+            if ($manual) {
+                // Real quiet interval and cooldown; no clock or DB manipulation.
+                $await(static fn (): bool => time() >= max($pending->next_observation_at, $pending->dispatch_not_before), 'real manual continuation due', 65);
+                $manualDispatch->run($app);
+                $manualDispatch->run($app);
+                $await(static fn (): bool => $manualSessions[1]->fresh()->status === 'present'
+                    && $queue->size('LocalBackupPresence') === 0, 'actual manual stable completion');
+                $positive = $manualSessions[1]->fresh();
+                presenceCheck($positive->result['reason'] === 'stable_matching_file_observed'
+                    && $positive->result['filename'] === 'backup_final.cfg'
+                    && $positive->result['verified_success'] === false
+                    && $positive->result['persistent_check_run'] === false
+                    && $positive->continuation === null
+                    && $positive->next_observation_at === null
+                    && $positive->expires_at === $pending->expires_at
+                    && $negative->fresh()->getRawOriginal() === $negative->getRawOriginal(), 'exact manual terminal evidence');
+                echo "F02_MANUAL_REAL_HORIZON_STABILITY_OK (SYNTHETIC_ONLY)\n";
+
+                Bus::dispatch(new LocalBackupPresenceManualObserveJob((int) $manualRules[1]->id, $positive->id));
+                Bus::dispatch(new LocalBackupPresenceManualObserveJob((int) $manualRules[2]->id, $negative->id));
+                $await(static fn (): bool => $queue->size('LocalBackupPresence') === 0, 'actual terminal duplicate drain');
+                $manualDispatch->run($app);
+                presenceCheck($queue->size('LocalBackupPresence') === 0
+                    && $positive->fresh()->getRawOriginal() === $positive->getRawOriginal()
+                    && $negative->fresh()->getRawOriginal() === $negative->getRawOriginal(), 'manual terminal replay unchanged');
+                echo "F02_MANUAL_TERMINAL_REPLAY_OK (SYNTHETIC_ONLY)\n";
+            }
             $await(static fn (): bool => $runs[1]->fresh()->status === 'present'
                 && $runs[2]->fresh()->status === 'absent' && $queue->size('LocalBackupPresence') === 0, 'actual stable presence and deadline absence');
             $present = $runs[1]->fresh();
@@ -483,6 +582,9 @@ try {
     }
     foreach ($rules as $rule) {
         presenceCheck($rule->runs()->count() === 1, 'no extra occurrence');
+    }
+    foreach ($manualRules as $rule) {
+        presenceCheck($rule->runs()->count() === 0 && $rule->fresh()->enabled === false, 'no scheduled manual occurrence or activation');
     }
     foreach ($nativeQueues as $nativeQueue) {
         presenceCheck(Queue::connection('redis')->size($nativeQueue) === 0, 'no native work');
@@ -504,6 +606,9 @@ try {
     }
     if ($transactionCrash) {
         echo "F02_PRESENCE_TRANSACTION_CRASH_INTEGRITY_OK (SYNTHETIC_ONLY)\n";
+    }
+    if ($manual) {
+        echo "F02_MANUAL_MIXED_INTEGRITY_OK (SYNTHETIC_ONLY)\n";
     }
     echo "F02_PRESENCE_TERMINAL_REPLAY_OK (SYNTHETIC_ONLY)\n";
 } catch (Throwable $exception) {
@@ -528,6 +633,13 @@ try {
         $rule->delete();
     }
     foreach ($tasks as $task) {
+        $task->device()->detach();
+        $task->delete();
+    }
+    foreach ($manualRules as $rule) {
+        $rule->delete();
+    }
+    foreach ($manualTasks as $task) {
         $task->device()->detach();
         $task->delete();
     }
