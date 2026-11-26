@@ -402,14 +402,30 @@ try {
     $failed = true;
     scheduledReceiptFailure($exception);
 } finally {
-    if ($master !== null && $master->isRunning()) {
-        $master->signal(SIGINT);
-        $deadline = microtime(true) + 15;
-        while ($master->isRunning() && microtime(true) < $deadline) {
-            usleep(200000);
+    if ($master !== null) {
+        if (! $master->isRunning()) {
+            fwrite(STDERR, "F02 scheduled receipt probe failed: Horizon exited before shutdown request\n");
+            $failed = true;
+        } else {
+            // Hosted-only teardown budget, not a worker/job timeout. The
+            // queue has already drained on the success path. Allow supervisor
+            // polling to complete, but never accept forced termination.
+            $started = hrtime(true);
+            $master->signal(SIGINT);
+            $deadline = $started + 30_000_000_000;
+            while ($master->isRunning() && hrtime(true) < $deadline) {
+                usleep(200000);
+            }
+            if ($master->isRunning()) {
+                fwrite(STDERR, "F02 scheduled receipt probe failed: Horizon graceful shutdown exceeded 30 seconds\n");
+                $master->stop(2);
+                $failed = true;
+            } else {
+                printf("F02_RECEIPT_HORIZON_SHUTDOWN_SECONDS=%.3f\n", (hrtime(true) - $started) / 1_000_000_000);
+            }
         }
-        if ($master->isRunning()) {
-            $master->stop(2);
+        if (! $failed && $queue->size('ExternalBackupChecks') !== 0) {
+            fwrite(STDERR, "F02 scheduled receipt probe failed: queue not empty after shutdown\n");
             $failed = true;
         }
     }
@@ -445,6 +461,10 @@ try {
             }
         }
     }
+}
+
+if (! $failed) {
+    echo "F02_SCHEDULED_RECEIPT_CLEANUP_OK (SYNTHETIC_ONLY)\n";
 }
 
 exit($failed ? 1 : 0);
