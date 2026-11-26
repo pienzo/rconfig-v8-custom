@@ -6,13 +6,9 @@ namespace App\Models;
 class LocalBackupPresenceManualSession extends BaseModel
 {
     public $incrementing = false;
-
     public $timestamps = false;
-
     protected $keyType = 'string';
-
     protected $guarded = ['*'];
-
     protected $hidden = ['continuation', 'result'];
 
     protected function casts(): array
