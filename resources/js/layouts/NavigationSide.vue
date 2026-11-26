@@ -77,7 +77,7 @@ const toggleFavorite = (viewId) => {
 		class="dark:bg-rcgray-800"
 	>
 		<div class="grid h-full overflow-y-auto">
-			<div class="bg-gray-100 bg-muted/40 md:block">
+			<div class="bg-rcgray-900 dark:bg-gray-100 dark:bg-muted/40 md:block">
 				<div class="flex flex-col h-full max-h-screen gap-2">
 					<div class="flex justify-between w-full max-w-full px-2 py-1">
 						<div class="flex items-center my-2">
@@ -87,7 +87,7 @@ const toggleFavorite = (viewId) => {
 							>
 								<img
 									alt="rConfig"
-									class="pf-v5-c-brand max-h-12 ml-4"
+									class="pf-v5-c-brand max-h-12 ml-4 brightness-0 dark:brightness-100"
 									:src="image"
 								/>
 							</router-link>
@@ -109,7 +109,7 @@ const toggleFavorite = (viewId) => {
 											name="notification"
 											class="h-4"
 										/>
-										<div class="flex justify-between w-full p-1 text-gray-200">
+										<div class="flex justify-between w-full p-1 text-foreground dark:text-gray-200">
 											<span>Notifications</span>
 											<span
 												v-if="notificationsLength > 0"
@@ -136,7 +136,7 @@ const toggleFavorite = (viewId) => {
 										name="dashboard"
 										class="w-4"
 									/>
-									<div class="p-1 ml-2 text-left text-gray-200">
+									<div class="p-1 ml-2 text-left text-foreground dark:text-gray-200">
 										<div>Dashboard</div>
 									</div>
 								</router-link>
@@ -152,7 +152,7 @@ const toggleFavorite = (viewId) => {
 									>
 										<div class="flex items-center">
 											<RcIcon name="inventory" />
-											<div class="p-1 ml-2 text-left text-gray-200">
+											<div class="p-1 ml-2 text-left text-foreground dark:text-gray-200">
 												<div>Inventory</div>
 											</div>
 										</div>
@@ -176,7 +176,7 @@ const toggleFavorite = (viewId) => {
 												name="config-tools"
 												class="w-4"
 											/>
-											<div class="p-1 ml-2 text-left text-gray-200">
+											<div class="p-1 ml-2 text-left text-foreground dark:text-gray-200">
 												<div>Config Tools</div>
 											</div>
 										</div>
@@ -192,7 +192,7 @@ const toggleFavorite = (viewId) => {
 									:class="{ 'active-nav': $route.name === 'scheduled-tasks' }"
 								>
 									<RcIcon name="tasks" />
-									<div class="p-1 ml-2 text-left text-gray-200">
+									<div class="p-1 ml-2 text-left text-foreground dark:text-gray-200">
 										<div>Tasks</div>
 									</div>
 								</router-link>
@@ -226,11 +226,10 @@ const toggleFavorite = (viewId) => {
 															class="text-rcgray-500"
 														/>
 														<div
-															class="ml-2 text-left"
+															class="ml-2 text-left text-muted-foreground dark:text-[#86888d]"
 															data-truncate="false"
 															data-numeric="false"
 															data-uppercase="false"
-															style="color: rgb(134, 136, 141);"
 														>
 															<span>Settings</span>
 														</div>
@@ -247,7 +246,7 @@ const toggleFavorite = (viewId) => {
 												:class="{ 'active-nav': $route.name === 'integrations' }"
 											>
 												<RcIcon name="integrations" />
-												<div class="p-1 ml-2 text-left text-gray-200">
+												<div class="p-1 ml-2 text-left text-foreground dark:text-gray-200">
 													<div> Integrations </div>
 												</div>
 											</router-link>
@@ -257,7 +256,7 @@ const toggleFavorite = (viewId) => {
 												:class="{ 'active-nav': $route.name === 'users' }"
 											>
 												<RcIcon name="user" />
-												<div class="p-1 ml-2 text-left text-gray-200">
+												<div class="p-1 ml-2 text-left text-foreground dark:text-gray-200">
 													<div> Users </div>
 												</div>
 											</router-link>
@@ -267,7 +266,7 @@ const toggleFavorite = (viewId) => {
 												:class="{ 'active-nav': $route.name === 'settings' }"
 											>
 												<RcIcon name="settings" />
-												<div class="p-1 ml-2 text-left text-gray-200">
+												<div class="p-1 ml-2 text-left text-foreground dark:text-gray-200">
 													<div> System Settings </div>
 												</div>
 											</router-link>
@@ -304,11 +303,10 @@ const toggleFavorite = (viewId) => {
 															class="text-rcgray-500"
 														/>
 														<div
-															class="ml-2 text-left"
+															class="ml-2 text-left text-muted-foreground dark:text-[#86888d]"
 															data-truncate="false"
 															data-numeric="false"
 															data-uppercase="false"
-															style="color: rgb(134, 136, 141)"
 														>
 															<span>External Tools</span>
 														</div>
@@ -329,7 +327,7 @@ const toggleFavorite = (viewId) => {
 												class="transition ease-in-out delay-150 flex items-center mb-[0.1rem] text-sm rounded-md cursor-pointer hover:bg-rcgray-600"
 											>
 												<RcIcon name="sys-log-viewer" />
-												<div class="flex items-center justify-between w-full p-1 ml-2 text-left text-gray-200">
+												<div class="flex items-center justify-between w-full p-1 ml-2 text-left text-foreground dark:text-gray-200">
 													<div>System Log Viewer</div>
 													<ExternalLink
 														size="18"
@@ -343,7 +341,7 @@ const toggleFavorite = (viewId) => {
 												class="transition ease-in-out delay-150 flex items-center mb-[0.1rem] text-sm rounded-md cursor-pointer hover:bg-rcgray-600"
 											>
 												<RcIcon name="sys-queue-manager" />
-												<div class="flex items-center justify-between w-full p-1 ml-2 text-left text-gray-200">
+												<div class="flex items-center justify-between w-full p-1 ml-2 text-left text-foreground dark:text-gray-200">
 													<div>System Queue Manager</div>
 													<ExternalLink
 														size="18"
@@ -356,7 +354,7 @@ const toggleFavorite = (viewId) => {
 												<a
 													href="https://www.rconfig.com"
 													target="_blank"
-													class="flex items-center justify-between w-full p-1 ml-2 text-left text-gray-200"
+													class="flex items-center justify-between w-full p-1 ml-2 text-left text-foreground dark:text-gray-200"
 												>
 													<div>rConfig.com</div>
 													<ExternalLink
@@ -377,7 +375,7 @@ const toggleFavorite = (viewId) => {
 												<a
 													:href="link.url"
 													target="_blank"
-													class="flex items-center justify-between w-full p-1 ml-2 text-left text-gray-200"
+													class="flex items-center justify-between w-full p-1 ml-2 text-left text-foreground dark:text-gray-200"
 												>
 													<div>{{ link.name }}</div>
 												</a>
@@ -420,11 +418,10 @@ const toggleFavorite = (viewId) => {
 															class="text-rcgray-500"
 														/>
 														<div
-															class="ml-2 text-left"
+															class="ml-2 text-left text-muted-foreground dark:text-[#86888d]"
 															data-truncate="false"
 															data-numeric="false"
 															data-uppercase="false"
-															style="color: rgb(134, 136, 141)"
 														>
 															Favorites
 														</div>
@@ -453,7 +450,7 @@ const toggleFavorite = (viewId) => {
 												>
 													<div class="flex items-center">
 														<RcIcon :name="item.icon" />
-														<div class="p-1 ml-2 text-left text-gray-200">
+														<div class="p-1 ml-2 text-left text-foreground dark:text-gray-200">
 															<div>{{ item.label }}</div>
 														</div>
 													</div>
@@ -494,7 +491,7 @@ const toggleFavorite = (viewId) => {
 								class="text-rcgray-400"
 								size="18"
 							/>
-							<div class="p-1 ml-2 text-left text-gray-200">
+							<div class="p-1 ml-2 text-left text-foreground dark:text-gray-200">
 								<div>Getting started & Help</div>
 							</div>
 						</a>

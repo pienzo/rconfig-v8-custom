@@ -162,14 +162,14 @@ const showServerName = computed(() => {
 									class="w-4 h-4 text-yellow-500/50 group-hover:text-yellow-500 transition-all duration-300 group-hover:rotate-12 group-hover:scale-110"
 									:fill="'currentColor'"
 								/>
-								<span class="text-xs font-medium text-white group-hover:text-blue-400 transition-colors duration-300 leading-none">
+								<span class="text-xs font-medium text-foreground dark:text-white group-hover:text-blue-700 dark:group-hover:text-blue-400 transition-colors duration-300 leading-none">
 									Star us on GitHub
 								</span>
 								<!-- Subtle glow effect on hover -->
 								<div class="absolute inset-0 bg-blue-500/5 rounded-md filter blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10"></div>
 							</button>
 						</TooltipTrigger>
-						<TooltipContent class="text-white bg-rcgray-800 border border-blue-500/30">
+						<TooltipContent class="text-foreground dark:text-white bg-rcgray-800 border border-blue-500/30">
 							<p>Click to star our repo - Takes 2 seconds!</p>
 						</TooltipContent>
 					</Tooltip>
@@ -222,7 +222,7 @@ const showServerName = computed(() => {
 								/>
 							</Button>
 						</TooltipTrigger>
-						<TooltipContent class="text-white bg-rcgray-800 border border-blue-500/30">
+						<TooltipContent class="text-foreground dark:text-white bg-rcgray-800 border border-blue-500/30">
 							<p>Dashboard Widgets</p>
 						</TooltipContent>
 					</Tooltip>
@@ -299,7 +299,7 @@ const showServerName = computed(() => {
 								/>
 							</div>
 						</TooltipTrigger>
-						<TooltipContent class="text-white bg-rcgray-800 border border-blue-500/30">
+						<TooltipContent class="text-foreground dark:text-white bg-rcgray-800 border border-blue-500/30">
 							<p>{{ versionStatus.label }}</p>
 						</TooltipContent>
 					</Tooltip>
@@ -317,7 +317,7 @@ const showServerName = computed(() => {
 								<HelpCircle class="absolute h-[1.2rem] w-[1.2rem] text-blue-400" />
 							</Button>
 						</TooltipTrigger>
-						<TooltipContent class="text-white bg-rcgray-800 border border-blue-500/30">
+						<TooltipContent class="text-foreground dark:text-white bg-rcgray-800 border border-blue-500/30">
 							<p>About</p>
 						</TooltipContent>
 					</Tooltip>
@@ -353,7 +353,7 @@ const showServerName = computed(() => {
 							class="hover:bg-rcgray-600 transition-transform duration-200 hover:scale-105"
 						>
 							<MoreVertical
-								class="text-gray-300"
+								class="text-foreground dark:text-gray-300"
 								size="16"
 							/>
 						</Button>
@@ -370,7 +370,7 @@ const showServerName = computed(() => {
 									name="user"
 									class="mr-2 w-5 h-5 text-blue-400"
 								/>
-								<span class="text-gray-200">My Profile</span>
+								<span class="text-foreground dark:text-gray-200">My Profile</span>
 							</router-link>
 						</DropdownMenuItem>
 						<DropdownMenuSeparator class="bg-rcgray-700" />
@@ -384,7 +384,7 @@ const showServerName = computed(() => {
 									name="logout"
 									class="mr-2 text-blue-400"
 								/>
-								<span class="text-gray-200">Sign Out</span>
+								<span class="text-foreground dark:text-gray-200">Sign Out</span>
 							</Button>
 						</DropdownMenuItem>
 					</DropdownMenuContent>

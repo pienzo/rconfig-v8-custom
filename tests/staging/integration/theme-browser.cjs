@@ -75,6 +75,68 @@ async function main() {
     await page.waitForURL(url => url.pathname === "/dashboard", { timeout: 30000 });
     const trigger = page.getByRole("button", { name: "Choose appearance theme", exact: true });
     await trigger.waitFor();
+    const view = page.locator("#main-content .flex-grow.overflow-y-auto");
+    async function waitForRoute(name) {
+        // The global loading screen occupies a full viewport even when
+        // controls below it are technically visible to Playwright.
+        await page.locator("#main-loading-container").waitFor({ state: "hidden" });
+        await page.locator("#main-content").waitFor({ state: "visible" });
+        const markers = {
+            dashboard: view.getByText("Device Count", { exact: true }),
+            devices: view.getByPlaceholder("Filter [id, name, ip]..."),
+            tasks: view.getByPlaceholder("Filter tasks..."),
+            configs: view.getByPlaceholder("Filter [id, device_name]"),
+            compare: view.getByRole("heading", { name: "Config Compare", exact: true }),
+            notifications: view.getByRole("region", { name: "Notification template editor" }),
+        };
+        const marker = markers[name];
+        await marker.waitFor();
+        await view.getByText("Loading", { exact: true }).waitFor({ state: "hidden" });
+        await page.waitForFunction(() => {
+            const nav = document.querySelector("#nav-panel-1");
+            const rect = nav?.getBoundingClientRect();
+            const main = document.querySelector("#main-content")?.getBoundingClientRect();
+            return rect && main && rect.width > 0 && rect.top < innerHeight
+                && rect.bottom > 0 && main.top >= -1 && main.top < 10;
+        });
+        await page.evaluate(() => document.fonts.ready);
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    }
+
+    async function inspectNav() {
+        const nav = page.locator("#nav-panel-1");
+        const labels = ["Dashboard", "Inventory", "Config Tools", "Tasks"];
+        const ratios = {};
+        for (const label of labels) {
+            const element = nav.getByText(label, { exact: true }).first();
+            await element.waitFor();
+            ratios[label] = await element.evaluate(el => {
+                const ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+                const ancestors = [];
+                for (let node = el; node; node = node.parentElement) ancestors.unshift(node);
+                ctx.fillStyle = "#fff";
+                ctx.fillRect(0, 0, 1, 1);
+                for (const node of ancestors) {
+                    ctx.fillStyle = getComputedStyle(node).backgroundColor;
+                    ctx.fillRect(0, 0, 1, 1);
+                }
+                const luminance = () => [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3)
+                    .map(v => v / 255)
+                    .map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+                    .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+                const bg = luminance();
+                ctx.fillStyle = getComputedStyle(el).color;
+                ctx.fillRect(0, 0, 1, 1);
+                const fg = luminance();
+                return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+            });
+        }
+        const logo = nav.getByAltText("rConfig", { exact: true });
+        await logo.waitFor();
+        await page.waitForFunction(() => document.querySelector("#nav-panel-1 img[alt='rConfig']")?.naturalWidth > 0);
+        const logoFilter = await logo.evaluate(el => getComputedStyle(el).filter);
+        return { ratios, logoFilter };
+    }
 
     async function expectPalette(id, mode) {
         await page.waitForFunction(({ id, mode }) => {
@@ -86,6 +148,7 @@ async function main() {
         assert.equal(await page.evaluate(() => localStorage.getItem("rconfig-theme-preset")), id);
     }
     await expectPalette("sand", "light");
+    await waitForRoute("dashboard");
     console.log("THEME_FORCED_LOGIN_PREFERENCE_OK (SYNTHETIC_ONLY)");
     const evidence = [];
     const shells = new Set();
@@ -134,6 +197,7 @@ async function main() {
         await page.reload();
         await trigger.waitFor();
         await expectPalette(id, mode);
+        await waitForRoute("dashboard");
         await trigger.focus();
         await page.keyboard.press("Enter");
         await menu.waitFor();
@@ -144,7 +208,16 @@ async function main() {
         assert(await trigger.evaluate(el => document.activeElement === el));
         stage = "contrast-" + id;
         const result = await inspectTokens();
-        evidence.push({ id, mode, ...result });
+        const nav = await inspectNav();
+        evidence.push({ id, mode, ...result, nav });
+        for (const [label, ratio] of Object.entries(nav.ratios)) {
+            if (!(ratio >= 4.5)) {
+                console.error("THEME_NAV_CONTRAST_FAIL " + id + " " + label + " ratio=" + ratio.toFixed(3));
+                throw new Error("navigation contrast below 4.5");
+            }
+        }
+        if (mode === "light") assert.match(nav.logoFilter, /brightness\(0\)/);
+        if (mode === "dark") assert.doesNotMatch(nav.logoFilter, /brightness\(0\)/);
         shells.add(result.shell);
         fs.writeFileSync("/evidence/contrast.json", JSON.stringify(evidence, null, 2));
         for (const [pair, ratio] of Object.entries(result.contrast)) {
@@ -160,16 +233,38 @@ async function main() {
             await trigger.waitFor();
             await expectPalette(id, mode);
             assert.equal(new URL(page.url()).pathname, route);
-            await page.waitForFunction(() => {
-                const view = document.querySelector("#main-content .flex-grow.overflow-y-auto");
-                return view && view.innerText.trim().length > 0;
-            });
+            await waitForRoute(name);
             await page.screenshot({ path: "/evidence/" + id + "-" + name + ".png", animations: "disabled" });
+            if (name === "tasks") {
+                stage = id + "-pattern-preview";
+                await view.getByRole("button", { name: "Test backup file pattern", exact: true }).click();
+                const tester = view.getByRole("region", { name: "External backup filename pattern tester" });
+                await tester.waitFor();
+                await tester.locator("#f02-preview-pattern").fill("backup_*.cfg");
+                await tester.locator("#f02-preview-filenames").fill("backup_router.cfg\nother.txt");
+                await tester.getByRole("button", { name: "Preview matches", exact: true }).click();
+                const results = tester.getByRole("list", { name: "Filename match results" });
+                await results.waitFor();
+                assert.equal(await results.getByText("MATCH", { exact: true }).count(), 1);
+                assert.equal(await results.getByText("NO MATCH", { exact: true }).count(), 1);
+                await page.screenshot({ path: "/evidence/" + id + "-pattern-preview.png", animations: "disabled" });
+                await view.getByRole("button", { name: "Hide file pattern tester", exact: true }).click();
+
+                stage = id + "-task-dialog";
+                await view.getByRole("button", { name: /^New Task/ }).click();
+                const dialog = page.getByRole("dialog");
+                await dialog.waitFor();
+                await dialog.getByText("Add Task", { exact: true }).waitFor();
+                await page.screenshot({ path: "/evidence/" + id + "-task-dialog.png", animations: "disabled" });
+                await page.keyboard.press("Escape");
+                await dialog.waitFor({ state: "hidden" });
+            }
         }
         stage = "return-dashboard-" + id;
         await page.goto(origin + "/dashboard");
         await trigger.waitFor();
         await expectPalette(id, mode);
+        await waitForRoute("dashboard");
         console.log("THEME_BROWSER_PRESET_OK " + id + " (SYNTHETIC_ONLY)");
     }
     stage = "distinct-shells-and-js-errors";
