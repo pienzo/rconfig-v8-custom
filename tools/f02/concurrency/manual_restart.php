@@ -9,8 +9,8 @@ use App\Models\LocalBackupPresenceRun;
 use App\Models\Task;
 use App\Services\ExternalBackups\LocalBackupPresenceManualSessions;
 use App\Services\ExternalBackups\LocalBackupPresenceManualWorker;
-use Carbon\CarbonImmutable;
 use App\Services\ExternalBackups\LocalBackupPresenceRuleLifecycle;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -47,7 +47,7 @@ try {
         && DB::transactionLevel() === 0, 'empty manual admission fixture');
     admissionCheck(mkdir($folder, 0700), 'private manual barrier directory');
     $before = manualAdmissionIntegrity();
-    $device = Device::factory()->create(['device_name' => 'F02-MANUAL-ADMISSION-CI', 'device_ip' => '192.0.2.101']);
+    $device = Device::factory()->create(['device_name' => 'F02-MANUAL-RESTART-CI', 'device_ip' => '192.0.2.101']);
     $lifecycle = app(LocalBackupPresenceRuleLifecycle::class);
     $service = app(LocalBackupPresenceManualSessions::class);
     $criteria = [
@@ -135,7 +135,8 @@ try {
             if ($kill) {
                 $holder->signal(SIGKILL);
                 $holder->wait();
-                admissionCheck(! $holder->isSuccessful(), 'owned manual holder interrupted');
+                admissionCheck(! $holder->isSuccessful() && $holder->hasBeenSignaled()
+                    && $holder->getTermSignal() === SIGKILL, 'owned manual holder interrupted');
             } else {
                 admissionMark($holderMarker . '.release', "release\n");
                 $holder->wait();

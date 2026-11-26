@@ -1,12 +1,15 @@
 <?php
 
 use App\Models\LocalBackupPresenceManualSession;
-use Carbon\CarbonImmutable;
-use Illuminate\Support\Str;
 use App\Services\ExternalBackups\LocalBackupPresenceManualSessions;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
+if (getenv('F02_SYNTHETIC_MANUAL_RESTART') !== '1') {
+    exit(2);
+}
 require __DIR__ . '/manual_admission_boot.php';
 
 try {
