@@ -10,6 +10,7 @@ use App\Jobs\TaskDownloadRun;
 use App\Models\ExternalBackupRule;
 use App\Models\MonitoredScheduledTaskLogItems;
 use App\Models\Task;
+use App\Services\ExternalBackups\LocalBackupPresenceManualReconciler;
 use App\Services\ExternalBackups\LocalBackupPresenceOccurrenceClaim;
 use App\Services\ExternalBackups\LocalBackupPresencePendingReconciler;
 use App\Services\ExternalBackups\LocalBackupPresenceSchedulePlanner;
@@ -124,6 +125,15 @@ class Kernel extends ConsoleKernel
             $schedule->call(static function (): void {
                 app(LocalBackupPresencePendingReconciler::class)->enqueue();
             })->name('f02-local-presence-reconcile-pending')->everyMinute()->withoutOverlapping(2);
+        }
+
+        if (LocalBackupPresenceManualReconciler::enabled()
+            && Schema::hasTable('local_backup_presence_activation_lock')
+            && Schema::hasTable('local_backup_presence_manual_sessions')
+            && Schema::hasColumn('local_backup_presence_manual_sessions', 'dispatch_not_before')) {
+            $schedule->call(static function (): void {
+                app(LocalBackupPresenceManualReconciler::class)->enqueue();
+            })->name('f02-local-presence-reconcile-manual')->everyMinute()->withoutOverlapping(2);
         }
 
         if (config('custom-backup-notifications.enabled', false) === true) {

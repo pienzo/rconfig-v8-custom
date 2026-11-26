@@ -9,7 +9,7 @@ class LocalBackupPresenceManualSession extends BaseModel
     public $timestamps = false;
     protected $keyType = 'string';
     protected $guarded = ['*'];
-    protected $hidden = ['continuation', 'result'];
+    protected $hidden = ['continuation', 'result', 'dispatch_not_before'];
 
     protected function casts(): array
     {
@@ -17,6 +17,7 @@ class LocalBackupPresenceManualSession extends BaseModel
             'requested_at' => 'integer',
             'expires_at' => 'integer',
             'next_observation_at' => 'integer',
+            'dispatch_not_before' => 'integer',
             'continuation' => 'array',
             'result' => 'array',
         ];
