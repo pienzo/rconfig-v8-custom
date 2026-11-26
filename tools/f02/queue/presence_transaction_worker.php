@@ -17,20 +17,20 @@ use Illuminate\Support\Facades\Event;
 
 if ($argc !== 3 || getenv('GITHUB_ACTIONS') !== 'true' || getenv('RUNNER_ENVIRONMENT') !== 'github-hosted'
     || getenv('APP_ENV') !== 'testing' || getenv('F02_SYNTHETIC_PRESENCE_HORIZON') !== '1'
-    || ! in_array(getenv('F02_PRESENCE_LOAD'), ['3', '4', '5', '7', '8', '10'], true)
+    || ! in_array(getenv('F02_PRESENCE_LOAD'), ['3', '4', '5', '7', '8', '10', '11'], true)
     || getenv('DB_HOST') !== '127.0.0.1' || getenv('DB_DATABASE') !== 'v8core_test'
     || getenv('REDIS_HOST') !== '127.0.0.1' || getenv('REDIS_DB') !== '5' || getenv('REDIS_CACHE_DB') !== '6') {
     exit(2);
 }
 
 $phase = $argv[1];
-$manual = in_array(getenv('F02_PRESENCE_LOAD'), ['7', '8', '10'], true);
+$manual = in_array(getenv('F02_PRESENCE_LOAD'), ['7', '8', '10', '11'], true);
 $runId = $manual
     ? (preg_match('/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/D', $argv[2]) === 1 ? $argv[2] : false)
     : filter_var($argv[2], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $manualPhase = match (getenv('F02_PRESENCE_LOAD')) {
     '7' => 'precommit',
-    '8' => 'postcommit',
+    '8', '11' => 'postcommit',
     '10' => 'timeout',
     default => null,
 };
@@ -83,9 +83,17 @@ if ($manual && (config('local-backup-presence.manual_probe_enabled') !== true
     || config('local-backup-presence.dispatch_enabled') !== true)) {
     exit(2);
 }
-$run = $manual
-    ? LocalBackupPresenceManualSession::query()->findOrFail($runId)
-    : LocalBackupPresenceRun::query()->findOrFail($runId);
+if (getenv('F02_PRESENCE_LOAD') === '11' && $phase === 'replay') {
+    // This dedicated replay scenario requires the original row to be gone.
+    if (LocalBackupPresenceManualSession::query()->whereKey($runId)->exists()) {
+        exit(2);
+    }
+    $run = null;
+} else {
+    $run = $manual
+        ? LocalBackupPresenceManualSession::query()->findOrFail($runId)
+        : LocalBackupPresenceRun::query()->findOrFail($runId);
+}
 if ($phase !== 'replay' && $run->status !== ($manual ? 'queued' : 'pending')) {
     exit(2);
 }

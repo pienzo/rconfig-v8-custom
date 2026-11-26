@@ -544,6 +544,15 @@ jobs:
           grep -Eq '^F02_MANUAL_TIMEOUT_METRICS elapsed_seconds=[0-9.]+$' "$RUNNER_TEMP/f02-presence-horizon.log"
           test -z "$(ls -A "$fixture")"
 
+          php -l tools/f02/queue/manual_restart_replay.php
+          run_presence_probe 11 tools/f02/queue/manual_restart_replay.php | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_RESTART_RESERVED_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_RESTART_REDELIVERY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_RESTART_NEW_OBSERVATION_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_EXPIRY_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_RESTART_REPLAY_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
+
       - name: Test F02 bounded metadata scanner load (hosted only)
         run: |
           test "$RUNNER_ENVIRONMENT" = github-hosted
