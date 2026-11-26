@@ -370,6 +370,9 @@ async function main() {
                 await page.getByPlaceholder("Search...", { exact: true }).fill("THEME-FIXTURE-ROUTER");
                 const option = page.getByText(device.device_name, { exact: true }).filter({ visible: true }).last();
                 await option.click();
+                if (await page.getByPlaceholder("Search...", { exact: true }).isVisible()) {
+                    await page.keyboard.press("Escape");
+                }
                 await view.getByRole("button", { name: "Filter", exact: true }).nth(side).click();
                 await view.getByRole("row").filter({ hasText: configs[side].config_filename }).nth(side).waitFor();
                 await view.getByRole("row").filter({ hasText: configs[side].config_filename }).nth(side).click();
