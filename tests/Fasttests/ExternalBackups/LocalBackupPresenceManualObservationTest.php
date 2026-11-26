@@ -158,3 +158,99 @@ test('inconsistent task linkage refuses manual observation', function () {
     expect($this->rule->runs()->count())->toBe(0);
     Bus::assertNothingDispatched();
 });
+
+test('manual continuation waits without rescanning and confirms actual stable metadata after quiet interval', function () {
+    $this->rule->update(['quiet_seconds' => 30, 'maximum_age_seconds' => null]);
+    $path = $this->folder . '/backup_a.cfg';
+    File::put($path, 'synthetic');
+    $first = $this->service->probe($this->rule->id);
+    expect($first['result']['status'])->toBe('pending')
+        ->and($first['retry_after_seconds'])->toBe(30);
+    CarbonImmutable::setTestNow($this->instant->addSeconds(10));
+    // A temporarily absent file must not be scanned before the quiet interval.
+    rename($this->folder, $this->sandbox . '/temporarily-unavailable');
+    $early = $this->service->probe($this->rule->id, $first['continuation']);
+    expect($early['continuation'])->toBe($first['continuation'])
+        ->and($early['retry_after_seconds'])->toBe(20)
+        ->and($early['result']['status'])->toBe('pending');
+    rename($this->sandbox . '/temporarily-unavailable', $this->folder);
+    CarbonImmutable::setTestNow($this->instant->addSeconds(30));
+    $last = app(LocalBackupPresenceManualObservation::class)->probe($this->rule->id, $first['continuation']);
+    expect($last['result']['status'])->toBe('present')
+        ->and($last['result']['reason'])->toBe('stable_matching_file_observed')
+        ->and($last['continuation'])->toBeNull()
+        ->and(File::get($path))->toBe('synthetic');
+    expect($this->rule->runs()->count())->toBe(0);
+    Bus::assertNothingDispatched();
+});
+
+test('replacement resets manual baseline without extending expiry', function () {
+    $this->rule->update(['quiet_seconds' => 30, 'maximum_age_seconds' => null]);
+    $path = $this->folder . '/backup_a.cfg';
+    File::put($path, 'original');
+    $first = $this->service->probe($this->rule->id);
+    rename($path, $this->folder . '/previous.txt');
+    File::put($path, 'replaced');
+    touch($path, $first['continuation']['scan']['files'][0]['mtime']);
+    CarbonImmutable::setTestNow($this->instant->addSeconds(30));
+    $second = $this->service->probe($this->rule->id, $first['continuation']);
+    expect($second['result']['status'])->toBe('pending')
+        ->and($second['continuation']['deadline_at'])->toBe($first['continuation']['deadline_at'])
+        ->and($second['continuation']['scan']['files'][0]['inode'])->not->toBe($first['continuation']['scan']['files'][0]['inode']);
+    CarbonImmutable::setTestNow($this->instant->addSeconds(60));
+    $last = $this->service->probe($this->rule->id, $second['continuation']);
+    expect($last['result']['status'])->toBe('present')
+        ->and($last['continuation'])->toBeNull();
+    Bus::assertNothingDispatched();
+});
+
+test('manual continuation expires without reporting a scheduled absence', function () {
+    $this->rule->update(['quiet_seconds' => 30, 'maximum_age_seconds' => null]);
+    File::put($this->folder . '/backup_a.cfg', 'synthetic');
+    $first = $this->service->probe($this->rule->id);
+    CarbonImmutable::setTestNow($this->instant->addSeconds(180));
+    $last = $this->service->probe($this->rule->id, $first['continuation']);
+    expect($last['result']['status'])->toBe('error')
+        ->and($last['result']['reason'])->toBe('manual_probe_expired')
+        ->and($last['continuation'])->toBeNull()
+        ->and($last['retry_after_seconds'])->toBe(0);
+    expect($this->rule->runs()->count())->toBe(0);
+});
+
+test('manual continuation rejects changed criteria mappings and directory identity', function (string $change, string $reason) {
+    $this->rule->update(['quiet_seconds' => 30, 'maximum_age_seconds' => null]);
+    File::put($this->folder . '/backup_a.cfg', 'synthetic');
+    $first = $this->service->probe($this->rule->id);
+    if ($change === 'criteria') {
+        $this->rule->update(['minimum_bytes' => 5]);
+    } elseif ($change === 'mapping') {
+        config(['local-backup-presence.roots' => ['synthetic' => $this->sandbox . '/other']]);
+    } else {
+        rename($this->folder, $this->sandbox . '/old');
+        File::ensureDirectoryExists($this->folder);
+        File::put($this->folder . '/backup_a.cfg', 'synthetic');
+    }
+    CarbonImmutable::setTestNow($this->instant->addSeconds(30));
+    $last = $this->service->probe($this->rule->id, $first['continuation']);
+    expect($last['result']['status'])->toBe('error')
+        ->and($last['result']['reason'])->toBe($reason)
+        ->and($last['continuation'])->toBeNull();
+    Bus::assertNothingDispatched();
+})->with([
+    ['criteria', 'manual_probe_changed_or_invalid'],
+    ['mapping', 'manual_probe_changed_or_invalid'],
+    ['directory', 'directory_identity_changed'],
+]);
+
+test('manual continuation rejects a backwards clock and unrelated rule state', function () {
+    $this->rule->update(['quiet_seconds' => 30, 'maximum_age_seconds' => null]);
+    File::put($this->folder . '/backup_a.cfg', 'synthetic');
+    $first = $this->service->probe($this->rule->id);
+    CarbonImmutable::setTestNow($this->instant->subSecond());
+    expect($this->service->probe($this->rule->id, $first['continuation'])['result']['reason'])->toBe('manual_probe_changed_or_invalid');
+    CarbonImmutable::setTestNow($this->instant->addSeconds(30));
+    $other = $first['continuation'];
+    $other['rule_id'] = $this->rule->id + 1;
+    expect($this->service->probe($this->rule->id, $other)['result']['reason'])->toBe('manual_probe_changed_or_invalid');
+    Bus::assertNothingDispatched();
+});
