@@ -320,6 +320,7 @@ jobs:
             RCONFIG_TELEGRAM_ENABLED=false RCONFIG_BACKUP_EMAIL_ENABLED=false RCONFIG_WHATSAPP_ENABLED=false \
             php tools/f02/queue/scheduled_receipt.php | tee "$RUNNER_TEMP/f02-scheduled-receipt.log"
           grep -Fxq 'F02 REAL_SCHEDULE_EVENT_HORIZON_NATIVE_RECEIPT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-scheduled-receipt.log"
+          grep -Fxq 'F02_SCHEDULED_RECEIPT_CLEANUP_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-scheduled-receipt.log"
 
       - name: Test actual SFTP file through scheduled Horizon receipt (hosted only)
         shell: bash
@@ -376,6 +377,7 @@ jobs:
           grep -Fxq 'F02_SFTP_PUBLISHED_INODE_READY (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-receipt.log"
           grep -Fxq 'F02_REAL_SFTP_SCHEDULE_HORIZON_RECEIPT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-receipt.log"
           grep -Fxq 'F02 REAL_SCHEDULE_EVENT_HORIZON_NATIVE_RECEIPT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-receipt.log"
+          grep -Fxq 'F02_SCHEDULED_RECEIPT_CLEANUP_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-receipt.log"
           # Only the disposable root created above; first worker has stopped.
           sudo find "$inbox" -xdev -mindepth 1 -maxdepth 2 -delete
           test -z "$(ls -A "$inbox")"
@@ -384,6 +386,7 @@ jobs:
           grep -Fxq 'F02_MULTI_DEVICE_EXACT_RECEIPTS_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-multi-receipt.log"
           grep -Fxq 'F02_MULTI_DEVICE_RECEIPT_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-multi-receipt.log"
           grep -Fxq 'F02 REAL_SCHEDULE_EVENT_HORIZON_NATIVE_RECEIPT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-multi-receipt.log"
+          grep -Fxq 'F02_SCHEDULED_RECEIPT_CLEANUP_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-multi-receipt.log"
           sudo find "$inbox" -xdev -mindepth 1 -maxdepth 2 -delete
           test -z "$(ls -A "$inbox")"
           run_sftp_probe 7 8 1 1 | tee "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
@@ -401,6 +404,7 @@ jobs:
           grep -Fxq 'F03_WHATSAPP_SCHEDULE_QUEUE_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
           grep -Fxq 'F04_WHATSAPP_DRAFT_ISOLATED_MAPPING_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
           grep -Fxq 'F03_WHATSAPP_ACCEPTED_UNCERTAIN_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
+          grep -Fxq 'F02_SCHEDULED_RECEIPT_CLEANUP_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-sftp-mixed-receipt.log"
 
       - name: Test actual F02 local presence mixed outcomes, 100-rule load and Redis crash recovery (hosted only)
         # Static operator config is changed only in this disposable checkout.

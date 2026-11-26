@@ -4,9 +4,9 @@
 **Purpose:** durable handoff between ChatGPT conversations. **Operational checkpoint:** [PROGRESS.md](PROGRESS.md). **Source audit:** [UPSTREAM_AUDIT.md](UPSTREAM_AUDIT.md). **Original requirements:** `rConfig_V8_Custom_Piano_Sviluppo_MASTER.md` v2.0 in the ChatGPT project (not committed).
 **Evidence rule:** GitHub commits, PRs, issue records, and CI are authoritative for repository changes; only approved staging results can establish deployment or end-to-end behavior. Never infer completed work merely from a plan.
 
-## 2026-11-26 — Strict staging crash accepted; theme review active
+## 2026-11-26 — Strict crash and receipt teardown accepted; browser review candidate
 
-#274 passed 10/10 including all strict crash markers; merged 29967a2e. #273 closed. #66 closed as superseded after audit and successful replacement coverage, original branch retained; #57 not closed by inference. #199 sole remaining open PR at checkpoint; refresh against accepted custom, no overlapping changed blobs, current CI and browser review pending. Resume F02 after UI gate, or explicitly document any justified deferral in #272. No VM change.
+#274 accepted 10/10 and merged 29967a2e; #273 closed, #66 retired superseded (branch retained). #276 accepted 5/5 and merged f80912d4; #275 closed, four graceful receipt cleanup markers each 2.202s. #199 same-head rerun passed 11/11; now sole open PR and refreshed against custom with hosted-only real Chromium candidate. See PROGRESS for exact evidence and browser scope. Still require new CI and screenshot/component review; no staging deployment, no claim of full accessibility. #57 and #272 remain separately tracked. Resume F02 after UI gate.
 
 ## 2026-11-26 — Mandatory governance and deferred work
 
