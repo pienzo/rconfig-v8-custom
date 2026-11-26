@@ -466,6 +466,25 @@ jobs:
           grep -Fxq 'F02_PRESENCE_TRANSACTION_CRASH_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
           grep -Eq '^F02_PRESENCE_TIMEOUT_METRICS elapsed_seconds=[0-9.]+$' "$RUNNER_TEMP/f02-presence-horizon.log"
 
+          test -z "$(ls -A "$fixture")"
+          php -r '
+            $path = "config/local-backup-presence.php";
+            $settings = require $path;
+            foreach (["manual_probe_enabled", "manual_dispatch_enabled"] as $key) {
+                if ($settings[$key] !== false) { exit(2); }
+                $settings[$key] = true;
+            }
+            if (file_put_contents($path, "<?php\n\nreturn " . var_export($settings, true) . ";\n") === false) { exit(2); }
+          '
+          run_presence_probe 6 | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_MIXED_DISPATCH_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_INITIAL_OBSERVATIONS_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_REAL_HORIZON_STABILITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_TERMINAL_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_MIXED_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_REAL_HORIZON_MIXED_OUTCOMES_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
+
       - name: Test F02 bounded metadata scanner load (hosted only)
         run: |
           test "$RUNNER_ENVIRONMENT" = github-hosted
