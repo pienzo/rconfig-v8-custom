@@ -33,6 +33,8 @@ export default defineConfig({
       }
     })
   ],
+  // Monaco worker entries are ESM and may contain module imports.
+  worker: { format: 'es' },
   build: {
     // Monaco's editor.api2 chunk is inherently large and already code-split out.
     chunkSizeWarningLimit: 4000,

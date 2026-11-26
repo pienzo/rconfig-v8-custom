@@ -49,8 +49,8 @@ onUnmounted(() => {
 });
 
 function initCodeEditor() {
-  originalModel = monaco.editor.createModel(props.configResultsLeft.filecontent, 'text/plain');
-  modifiedModel = monaco.editor.createModel(props.configResultsRight.filecontent, 'text/plain');
+  originalModel = monaco.editor.createModel(props.configResultsLeft.filecontent, 'plaintext');
+  modifiedModel = monaco.editor.createModel(props.configResultsRight.filecontent, 'plaintext');
 
   diffEditor = initDiffEditor('code-editor__code-pre', 'rconfig');
 

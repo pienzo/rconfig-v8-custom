@@ -100,6 +100,17 @@ async function main() {
     page.setDefaultTimeout(20000);
     let errors = 0;
     const pageErrors = [];
+    function editorWorkerAsset(worker) {
+        try {
+            const url = new URL(worker.url());
+            if (url.origin !== origin || !/^\/build\/assets\/editor\.worker-[\w-]+\.js$/.test(url.pathname)) return null;
+            return url.pathname.split("/").pop();
+        } catch { return null; }
+    }
+    page.on("worker", worker => {
+        const asset = editorWorkerAsset(worker);
+        if (asset) console.log("THEME_LOCAL_EDITOR_WORKER stage=" + stage + " asset=" + asset);
+    });
     // Preserve the zero-uncaught-exception gate; record only safe static
     // classifications and same-origin build asset frames, never raw messages.
     page.on("pageerror", error => {
@@ -419,6 +430,13 @@ async function main() {
             const after = modifiedPane.locator(".view-lines").filter({ hasText: "THEME-AFTER" });
             await before.waitFor();
             await after.waitFor();
+            checkpoint = "computed-diff";
+            // Both texts may render even when Monaco's worker is broken.
+            // Require computed change decorations in both independent panes.
+            await originalPane.locator(".line-delete, .char-delete").first().waitFor({ state: "attached" });
+            await modifiedPane.locator(".line-insert, .char-insert").first().waitFor({ state: "attached" });
+            assert(page.workers().some(worker => editorWorkerAsset(worker) !== null), "local editor worker not active");
+            console.log("THEME_COMPUTED_DIFF_OK " + id + " (SYNTHETIC_ONLY)");
             async function expectVisibleDiffPanes() {
                 const bounds = await editor.boundingBox();
                 const left = await originalPane.boundingBox(), right = await modifiedPane.boundingBox();
@@ -446,6 +464,8 @@ async function main() {
             await editor.locator(".monaco-editor.vs-dark").first().waitFor();
             await expectPalette(id, mode);
             await expectVisibleDiffPanes();
+            await originalPane.locator(".line-delete, .char-delete").first().waitFor({ state: "attached" });
+            await modifiedPane.locator(".line-insert, .char-insert").first().waitFor({ state: "attached" });
             await page.screenshot({ path: "/evidence/" + id + "-fixture-diff-dark.png", animations: "disabled" });
             for (const key of ["/api/devices", "/api/tasks", "/api/configs", "/api/get-devices-filter-list",
                 "/api/configs/all-by-deviceid/" + device.id]) assert(fixtureHits.has(key));

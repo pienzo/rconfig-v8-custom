@@ -1,3 +1,4 @@
+import "@/appimports/monacoWorkers";
 import useMonacoDarkmodeTheme from "@/composables/MonacoDarkmodeTheme.js";
 //import userConfigPolicyLanguage from "@/composables/rConfigPolicyLanguage.js";
 //import userConfigPolicyLanguageAutoComplete from "@/composables/rConfigPolicyLanguageAutoComplete.js";
