@@ -51,8 +51,8 @@ const commandPlaceholder = computed(() => {
 				</div>
 
 				<transition name="fade">
-					<div v-if="!isLoading" class="grid gap-3">
-						<div class="grid items-center">
+					<div v-if="!isLoading" class="grid grid-cols-1 min-w-0 gap-3">
+						<div class="grid grid-cols-1 min-w-0 items-center">
 							<DeviceMultiSelect id="selectedModelArray" v-model="model.device" :single-select="true" class="w-full" />
 							<!-- <Input
                 v-model="model.device_name"
@@ -66,7 +66,7 @@ const commandPlaceholder = computed(() => {
 							</p>
 						</div>
 
-						<div class="grid items-center">
+						<div class="grid grid-cols-1 min-w-0 items-center">
 							<Select v-model="model.selectedCommand" :disabled="!hasDevice || isLoadingCommands || commands.length === 0">
 								<SelectTrigger class="w-full">
 									<SelectValue class="placeholder:text-muted-foreground" :placeholder="commandPlaceholder" />
@@ -84,8 +84,8 @@ const commandPlaceholder = computed(() => {
 							</p>
 						</div>
 
-						<div class="flex flex-col items-start w-full space-x-2">
-							<ConfigSearchFilterCardDateRangePicker class="w-full" @date-change="setDates($event)" />
+						<div class="flex flex-col items-start w-full min-w-0">
+							<ConfigSearchFilterCardDateRangePicker width="w-full min-w-0 overflow-hidden whitespace-normal" @date-change="setDates($event)" />
 							<p class="ml-1 text-xs text-muted-foreground">
 								Set date range. Last 7 days by default
 							</p>
@@ -97,7 +97,7 @@ const commandPlaceholder = computed(() => {
 				<Button v-if="!isLoading" variant="outline" class="flex items-center h-6 px-2 py-1 ml-2 text-xs text-muted-foreground" @click="clearAll()">
 					Clear
 				</Button>
-				<Button v-if="!isLoading" variant="primary" class="h-6 px-2 py-1 ml-2 text-xs bg-blue-600 hover:bg-blue-700 hover:animate-pulse" @click="performFilter(comparePosition)">
+				<Button v-if="!isLoading" variant="primary" class="h-6 px-2 py-1 ml-2 text-xs bg-blue-700 text-white hover:bg-blue-800 hover:animate-pulse" @click="performFilter(comparePosition)">
 					Filter
 				</Button>
 			</CardFooter>

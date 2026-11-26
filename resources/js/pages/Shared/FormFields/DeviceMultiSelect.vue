@@ -199,15 +199,15 @@ onMounted(() => {
 
 <template>
 	<Popover>
-		<PopoverTrigger class="flex items-center">
+		<PopoverTrigger as-child>
 			<Button
 				variant="ghost"
-				class="flex items-center justify-start p-1 pl-2 border h-fit gap-1 min-w-2xl"
-				:class="selectedDevs.length === 0 ? 'text-muted-foreground' : ''"
+				class="flex items-center justify-start p-1 pl-2 border h-fit gap-1"
+				:class="[props.singleSelect ? 'w-full min-w-0' : 'min-w-2xl', selectedDevs.length === 0 ? 'text-muted-foreground' : '']"
 			>
 				<RcIcon
 					name="device"
-					class="flex-shrink-0 mx-2"
+					class="flex-shrink-0 mx-1"
 				/>
 				<span
 					v-if="selectedDevs && selectedDevs.length === 0"

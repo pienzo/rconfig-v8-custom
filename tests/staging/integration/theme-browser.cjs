@@ -99,7 +99,27 @@ async function main() {
     const page = await context.newPage();
     page.setDefaultTimeout(20000);
     let errors = 0;
-    page.on("pageerror", () => { errors++; });
+    const pageErrors = [];
+    // Preserve the zero-uncaught-exception gate; record only safe static
+    // classifications and same-origin build asset frames, never raw messages.
+    page.on("pageerror", error => {
+        errors++;
+        const message = String(error?.message ?? "");
+        const kind = ["TypeError", "ReferenceError", "SyntaxError", "RangeError", "Error", "DOMException"].includes(error?.name)
+            ? error.name : "other";
+        const signature = /ResizeObserver loop/i.test(message) ? "resize-observer"
+            : /MonacoEnvironment|getWorkerUrl|web worker/i.test(message) ? "editor-worker"
+            : /Cannot read properties of (undefined|null).*status/i.test(message) ? "missing-response-status"
+            : /Cannot read properties of (undefined|null)/i.test(message) ? "missing-property"
+            : /is not a function/i.test(message) ? "not-a-function"
+            : /AbortError|aborted/i.test(message) ? "aborted"
+            : "unclassified";
+        const frames = [...String(error?.stack ?? "").matchAll(/http:\/\/127\.0\.0\.1\/build\/assets\/([\w.-]{1,100}\.js):(\d{1,8}):(\d{1,8})/g)]
+            .slice(0, 4).map(([, asset, line, column]) => ({ asset, line, column }));
+        const entry = { stage, checkpoint, kind, signature, frames };
+        if (pageErrors.length < 50) pageErrors.push(entry);
+        if (errors <= 50) console.error("THEME_PAGE_ERROR " + JSON.stringify(entry));
+    });
     stage = "login";
     let response;
     for (let attempt = 0; attempt < 30; attempt++) {
@@ -393,15 +413,37 @@ async function main() {
             await view.getByRole("button", { name: "Compare", exact: true }).click();
             const editor = page.locator("#code-editor__code-pre .monaco-diff-editor");
             await editor.waitFor();
-            await editor.locator(".view-lines").filter({ hasText: "THEME-BEFORE" }).waitFor();
-            await editor.locator(".view-lines").filter({ hasText: "THEME-AFTER" }).waitFor();
+            const before = editor.locator(".editor.original .view-lines").filter({ hasText: "THEME-BEFORE" });
+            const after = editor.locator(".editor.modified .view-lines").filter({ hasText: "THEME-AFTER" });
+            await before.waitFor();
+            await after.waitFor();
+            async function expectVisibleDiffPanes() {
+                const bounds = await editor.boundingBox();
+                const left = await before.boundingBox(), right = await after.boundingBox();
+                const viewport = page.viewportSize();
+                assert(bounds && left && right && viewport);
+                assert(left.width > 100 && right.width > 100);
+                assert(bounds.x >= -1 && bounds.x + bounds.width <= viewport.width + 1);
+                assert(left.x >= bounds.x - 1 && right.x >= left.x + left.width - 2
+                    && right.x + right.width <= bounds.x + bounds.width + 2);
+            }
+            checkpoint = "verify-diff-panes";
+            await expectVisibleDiffPanes();
+            await page.getByText("Comparing configurations...", { exact: true }).waitFor({ state: "hidden" });
+            for (const title of ["Copy configuration", "Export compared configuration sources", "Toggle editor dark mode", "Line Numbers", "Show only differences"]) {
+                const control = page.getByTitle(title, { exact: true });
+                await control.waitFor();
+                await control.locator("svg").waitFor();
+            }
             assert(fixtureHits.has("/api/configs/view-config/" + configs[0].id));
             assert(fixtureHits.has("/api/configs/view-config/" + configs[1].id));
             await editor.locator(".monaco-editor.vs").first().waitFor();
             await page.screenshot({ path: "/evidence/" + id + "-fixture-diff-light.png", animations: "disabled" });
-            await page.getByTitle("Toggle bold", { exact: true }).click();
+            checkpoint = "toggle-editor-mode";
+            await page.getByTitle("Toggle editor dark mode", { exact: true }).click();
             await editor.locator(".monaco-editor.vs-dark").first().waitFor();
             await expectPalette(id, mode);
+            await expectVisibleDiffPanes();
             await page.screenshot({ path: "/evidence/" + id + "-fixture-diff-dark.png", animations: "disabled" });
             for (const key of ["/api/devices", "/api/tasks", "/api/configs", "/api/get-devices-filter-list",
                 "/api/configs/all-by-deviceid/" + device.id]) assert(fixtureHits.has(key));
@@ -418,7 +460,12 @@ async function main() {
         console.log("THEME_BROWSER_PRESET_OK " + id + " (SYNTHETIC_ONLY)");
     }
     stage = "distinct-shells-and-js-errors";
+    checkpoint = "distinct-shells";
+    console.log("THEME_DISTINCT_SHELLS count=" + shells.size);
     assert.equal(shells.size, 6);
+    checkpoint = "uncaught-page-errors";
+    console.log("THEME_UNCAUGHT_PAGE_ERRORS count=" + errors);
+    fs.writeFileSync("/evidence/page-errors.json", JSON.stringify({ count: errors, entries: pageErrors }, null, 2));
     assert.equal(errors, 0);
     console.log("THEME_BROWSER_SIX_PRESETS_OK (SYNTHETIC_ONLY)");
     await context.close();
