@@ -508,6 +508,17 @@ jobs:
           grep -Fxq 'F02_MANUAL_CRASH_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
           test -z "$(ls -A "$fixture")"
 
+          run_presence_probe 9 | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_LOAD_BACKPRESSURE_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_LOAD_BOUNDED_BATCHES_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_LOAD_TERMINAL_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_LOAD_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_100_RULE_HORIZON_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_PRESENCE_100_RULE_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Eq '^F02_PRESENCE_LOAD_METRICS rules=100 files=2500 reserve_ms=[0-9.]+ dispatch_ms=[0-9.]+ drain_ms=[0-9.]+$' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Eq '^F02_MANUAL_LOAD_METRICS sessions=10 batches=5 manual_ms=[0-9.]+$' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
+
       - name: Test F02 bounded metadata scanner load (hosted only)
         run: |
           test "$RUNNER_ENVIRONMENT" = github-hosted

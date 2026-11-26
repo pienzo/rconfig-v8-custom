@@ -271,11 +271,12 @@ if (getenv('GITHUB_ACTIONS') !== 'true' || getenv('RUNNER_ENVIRONMENT') !== 'git
 }
 
 $mode = getenv('F02_PRESENCE_LOAD');
-if ($mode !== false && ! in_array($mode, ['0', '1', '2', '3', '4', '5', '6'], true)) {
+if ($mode !== false && ! in_array($mode, ['0', '1', '2', '3', '4', '5', '6', '9'], true)) {
     exit(2);
 }
-$manual = $mode === '6';
-$load = $mode === '1';
+$mixedLoad = $mode === '9';
+$manual = $mode === '6' || $mixedLoad;
+$load = $mode === '1' || $mixedLoad;
 $crash = $mode === '2';
 $transactionCrash = in_array($mode, ['3', '4', '5'], true);
 $count = $load ? 100 : ($crash || $transactionCrash ? 1 : 2);
@@ -328,6 +329,7 @@ foreach ($nativeQueues as $nativeQueue) {
     presenceCheck(Queue::connection('redis')->size($nativeQueue) === 0, 'native queue empty');
 }
 $before = [ExternalBackupCheckRun::count(), ExternalBackupFileReceipt::count(), DB::table('custom_backup_notification_deliveries')->count()];
+$failedJobsBefore = DB::table('failed_jobs')->count();
 $devices = [];
 $tasks = [];
 $rules = [];
@@ -386,7 +388,7 @@ try {
 
     if ($manual) {
         // Separate dormant rules, sharing only the approved fixture folders.
-        foreach ([1, 2] as $index) {
+        foreach ($mixedLoad ? range(1, 10) : [1, 2] as $index) {
             $manualTasks[$index] = Task::factory()->create([
                 'task_command' => LocalBackupPresenceOccurrenceClaim::TASK_COMMAND,
                 'task_cron' => '* * * * *',
@@ -406,9 +408,9 @@ try {
                 'directory_alias' => 'synthetic',
                 'relative_directory' => 'device-' . $index,
                 'pattern_mode' => 'glob',
-                'filename_pattern' => 'backup_*.cfg',
-                'quiet_seconds' => $index === 1 ? 2 : null,
-                'deadline_seconds' => 180,
+                'filename_pattern' => $mixedLoad && $index % 2 === 0 ? 'missing_*.cfg' : 'backup_*.cfg',
+                'quiet_seconds' => ! $mixedLoad && $index === 1 ? 2 : null,
+                'deadline_seconds' => $mixedLoad ? 600 : 180,
             ]);
         }
     }
@@ -461,14 +463,23 @@ try {
             presenceCheck($manualSessions[$index]->status === 'queued'
                 && $sessions->start((int) $rule->id)->id === $manualSessions[$index]->id, 'manual admission replay');
         }
-        $manualDispatch->run($app);
-        $manualDispatch->run($app);
-        presenceCheck($queue->size('LocalBackupPresence') === $count + 2, 'exact mixed queue and cooldown');
-        foreach ($manualSessions as $session) {
-            presenceCheck($session->fresh()->dispatch_not_before !== null
-                && $session->fresh()->next_observation_at === $session->requested_at, 'manual dispatch reservation preserves due time');
+        if ($mixedLoad) {
+            $manualDispatch->run($app);
+            presenceCheck($queue->size('LocalBackupPresence') === 100, 'scheduled backlog blocks manual dispatch');
+            foreach ($manualSessions as $session) {
+                presenceCheck($session->fresh()->getRawOriginal() === $session->getRawOriginal(), 'manual session unchanged under backlog');
+            }
+            echo "F02_MANUAL_LOAD_BACKPRESSURE_OK (SYNTHETIC_ONLY)\n";
+        } else {
+            $manualDispatch->run($app);
+            $manualDispatch->run($app);
+            presenceCheck($queue->size('LocalBackupPresence') === $count + 2, 'exact mixed queue and cooldown');
+            foreach ($manualSessions as $session) {
+                presenceCheck($session->fresh()->dispatch_not_before !== null
+                    && $session->fresh()->next_observation_at === $session->requested_at, 'manual dispatch reservation preserves due time');
+            }
+            echo "F02_MANUAL_MIXED_DISPATCH_OK (SYNTHETIC_ONLY)\n";
         }
-        echo "F02_MANUAL_MIXED_DISPATCH_OK (SYNTHETIC_ONLY)\n";
     }
 
     if ($crash) {
@@ -481,7 +492,7 @@ try {
         };
         presenceTransactionCrashProbe($root, $fixture, $phase, $rules[1], $runs[1], $dispatch, $app);
     } else {
-        $master = new Process([PHP_BINARY, 'artisan', 'horizon', '--environment=production'], $root, null, null, 150);
+        $master = new Process([PHP_BINARY, 'artisan', 'horizon', '--environment=production'], $root, null, null, $mixedLoad ? 430 : 150);
         $workerStart = hrtime(true);
         $master->start();
         $await = static function (Closure $condition, string $label, int $timeout = 40) use ($master): void {
@@ -516,6 +527,57 @@ try {
             printf("F02_PRESENCE_LOAD_METRICS rules=%d files=%d reserve_ms=%.2f dispatch_ms=%.2f drain_ms=%.2f\n",
                 $count, $count * 25, $reservationMillis, $dispatchMillis, $drainMillis);
             echo "F02_PRESENCE_100_RULE_HORIZON_OK (SYNTHETIC_ONLY)\n";
+            if ($mixedLoad) {
+                $manualIds = array_map(static fn ($session): string => $session->id, $manualSessions);
+                $completed = static fn (): int => LocalBackupPresenceManualSession::whereIn('id', $manualIds)
+                    ->whereIn('status', ['present', 'absent'])->count();
+                $reservedCount = static fn (): int => LocalBackupPresenceManualSession::whereIn('id', $manualIds)
+                    ->whereNotNull('dispatch_not_before')->count();
+                $manualStart = hrtime(true);
+                $lastTick = intdiv(time(), 60);
+                for ($batch = 1; $batch <= 5; $batch++) {
+                    // Real minute boundaries, no clock, lease or cooldown overrides.
+                    $await(static fn (): bool => intdiv(time(), 60) > $lastTick, 'next real manual scheduler minute', 65);
+                    $lastTick = intdiv(time(), 60);
+                    presenceCheck($manualDispatch->isDue($app)
+                        && $queue->size('LocalBackupPresence') === 0
+                        && $reservedCount() === ($batch - 1) * 2, 'manual batch preflight');
+                    $manualDispatch->run($app);
+                    presenceCheck($reservedCount() === $batch * 2, 'exact two new manual dispatch reservations');
+                    $await(static fn (): bool => $completed() === $batch * 2
+                        && $queue->size('LocalBackupPresence') === 0, 'manual batch terminal drain', 40);
+                }
+                $manualMillis = (hrtime(true) - $manualStart) / 1000000;
+                presenceCheck($manualMillis <= 360000 && LocalBackupPresenceManualSession::count() === 10, 'bounded manual load completion');
+                $manualTerminal = [];
+                foreach ($manualSessions as $index => $session) {
+                    $final = $session->fresh();
+                    $positive = $index % 2 !== 0;
+                    presenceCheck($final->status === ($positive ? 'present' : 'absent')
+                        && $final->result['reason'] === ($positive ? 'matching_file_observed' : 'no_matching_file')
+                        && ($final->result['filename'] ?? null) === ($positive ? 'backup_final.cfg' : null)
+                        && $final->result['verified_success'] === false
+                        && $final->result['persistent_check_run'] === false
+                        && $final->continuation === null && $final->next_observation_at === null
+                        && $final->expires_at === $session->expires_at
+                        && time() < $final->expires_at, 'exact manual load evidence');
+                    $manualTerminal[$index] = $final->getRawOriginal();
+                    Bus::dispatch(new LocalBackupPresenceManualObserveJob((int) $manualRules[$index]->id, $session->id));
+                }
+                $await(static fn (): bool => $queue->size('LocalBackupPresence') === 0, 'manual load duplicate drain');
+                $manualDispatch->run($app);
+                $dispatch->run($app);
+                presenceCheck($queue->size('LocalBackupPresence') === 0, 'mixed load terminal replay queue empty');
+                foreach ($manualSessions as $index => $session) {
+                    presenceCheck($session->fresh()->getRawOriginal() === $manualTerminal[$index], 'manual load terminal replay unchanged');
+                }
+                foreach ($runs as $index => $run) {
+                    presenceCheck($run->fresh()->getRawOriginal() === $terminal[$index], 'scheduled terminal unchanged during manual batches');
+                }
+                printf("F02_MANUAL_LOAD_METRICS sessions=10 batches=5 manual_ms=%.2f\n", $manualMillis);
+                echo "F02_MANUAL_LOAD_BOUNDED_BATCHES_OK (SYNTHETIC_ONLY)\n";
+                echo "F02_MANUAL_LOAD_TERMINAL_REPLAY_OK (SYNTHETIC_ONLY)\n";
+            }
         } else {
             $await(static fn (): bool => $runs[1]->fresh()->reason === 'stability_wait'
                 && $runs[2]->fresh()->reason === 'no_matching_file'
@@ -610,6 +672,11 @@ try {
     if ($manual) {
         echo "F02_MANUAL_MIXED_INTEGRITY_OK (SYNTHETIC_ONLY)\n";
     }
+    if ($mixedLoad) {
+        presenceCheck(DB::table('failed_jobs')->count() === $failedJobsBefore
+            && LocalBackupPresenceManualSession::count() === 10, 'mixed load no failed jobs or extra sessions');
+        echo "F02_MANUAL_LOAD_INTEGRITY_OK (SYNTHETIC_ONLY)\n";
+    }
     echo "F02_PRESENCE_TERMINAL_REPLAY_OK (SYNTHETIC_ONLY)\n";
 } catch (Throwable $exception) {
     $failed = true;
@@ -662,6 +729,10 @@ try {
             rmdir($folder);
         }
     }
+}
+
+if ($mixedLoad && LocalBackupPresenceManualSession::count() !== 0) {
+    $failed = true;
 }
 
 exit($failed ? 1 : 0);
