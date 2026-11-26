@@ -104,7 +104,7 @@ final class LocalBackupPresenceManualObservation
                         || $continuation['started_at'] < 0
                         || $continuation['observed_at'] < $continuation['started_at']
                         || $continuation['observed_at'] >= $continuation['deadline_at']
-                        || $continuation['deadline_at'] - $continuation['started_at'] !== $window
+                        || $window !== $continuation['deadline_at'] - $continuation['started_at']
                         || $started < $continuation['observed_at']) {
                         return $this->finished('error', 'manual_probe_changed_or_invalid');
                     }
