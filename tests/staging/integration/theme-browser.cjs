@@ -413,13 +413,15 @@ async function main() {
             await view.getByRole("button", { name: "Compare", exact: true }).click();
             const editor = page.locator("#code-editor__code-pre .monaco-diff-editor");
             await editor.waitFor();
-            const before = editor.locator(".editor.original .view-lines").filter({ hasText: "THEME-BEFORE" });
-            const after = editor.locator(".editor.modified .view-lines").filter({ hasText: "THEME-AFTER" });
+            const originalPane = editor.locator(".editor.original");
+            const modifiedPane = editor.locator(".editor.modified");
+            const before = originalPane.locator(".view-lines").filter({ hasText: "THEME-BEFORE" });
+            const after = modifiedPane.locator(".view-lines").filter({ hasText: "THEME-AFTER" });
             await before.waitFor();
             await after.waitFor();
             async function expectVisibleDiffPanes() {
                 const bounds = await editor.boundingBox();
-                const left = await before.boundingBox(), right = await after.boundingBox();
+                const left = await originalPane.boundingBox(), right = await modifiedPane.boundingBox();
                 const viewport = page.viewportSize();
                 assert(bounds && left && right && viewport);
                 assert(left.width > 100 && right.width > 100);
@@ -430,7 +432,7 @@ async function main() {
             checkpoint = "verify-diff-panes";
             await expectVisibleDiffPanes();
             await page.getByText("Comparing configurations...", { exact: true }).waitFor({ state: "hidden" });
-            for (const title of ["Copy configuration", "Export compared configuration sources", "Toggle editor dark mode", "Line Numbers", "Show only differences"]) {
+            for (const title of ["Copy compared configuration sources", "Export compared configuration sources", "Toggle editor dark mode", "Line Numbers", "Show only differences"]) {
                 const control = page.getByTitle(title, { exact: true });
                 await control.waitFor();
                 await control.locator("svg").waitFor();

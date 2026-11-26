@@ -13,7 +13,7 @@ const props = defineProps({
 });
 
 const toggleStateMultiple = ref([]); //'dark', 'lineNumbers', 'hideUnchanged', 'minimap', 'stickyscroll'
-const { checkDarkModeIsSet, checkHideUnchangedIsSet, checkLineNumbersIsSet, checkMiniMapIsSet, checkStickyScrollIsSet, copyItem, downloadCompare, initDiffEditor, toggleEditorDarkMode, toggleEditorLineNumbers, toggleHideUnchanged, toggleEditorMinimap, toggleStickyScroll } = useCodeEditor(monaco);
+const { checkDarkModeIsSet, checkHideUnchangedIsSet, checkLineNumbersIsSet, checkMiniMapIsSet, checkStickyScrollIsSet, copyContent, downloadCompare, initDiffEditor, toggleEditorDarkMode, toggleEditorLineNumbers, toggleHideUnchanged, toggleEditorMinimap, toggleStickyScroll } = useCodeEditor(monaco);
 
 onMounted(() => {
   initializeToggleStates();
@@ -32,11 +32,14 @@ let diffEditor = null;
 let originalModel = null;
 let modifiedModel = null;
 
-function downloadComparedSources() {
+function comparedSources() {
   const leftText = props.configResultsLeft?.filecontent ?? '';
   const rightText = props.configResultsRight?.filecontent ?? '';
-  const exportText = '=== ORIGINAL CONFIGURATION ===\n' + leftText + '\n\n=== MODIFIED CONFIGURATION ===\n' + rightText;
-  downloadCompare(exportText, `rconfig-compare-${props.leftSelectedId?.[0] ?? 'left'}-${props.rightSelectedId?.[0] ?? 'right'}.txt`, 'compare');
+  return '=== ORIGINAL CONFIGURATION ===\n' + leftText + '\n\n=== MODIFIED CONFIGURATION ===\n' + rightText;
+}
+
+function downloadComparedSources() {
+  downloadCompare(comparedSources(), `rconfig-compare-${props.leftSelectedId?.[0] ?? 'left'}-${props.rightSelectedId?.[0] ?? 'right'}.txt`, 'compare');
 }
 
 onUnmounted(() => {
@@ -52,6 +55,9 @@ function initCodeEditor() {
   diffEditor = initDiffEditor('code-editor__code-pre', 'rconfig');
 
   if (diffEditor) {
+    // Keep side-by-side comparison at normal desktop panel widths; Monaco
+    // retains its inline fallback for genuinely narrow viewports.
+    diffEditor.updateOptions({ renderSideBySide: true, renderSideBySideInlineBreakpoint: 600 });
     diffEditor.setModel({
       original: originalModel,
       modified: modifiedModel
@@ -69,8 +75,8 @@ function initCodeEditor() {
 			<div>
 				<Button
 					variant="ghost"
-					title="Copy configuration" aria-label="Copy configuration"
-					@click="copyItem"
+					title="Copy compared configuration sources" aria-label="Copy compared configuration sources"
+					@click="copyContent(comparedSources(), 'compare')"
 				>
 					<Copy class="w-4 h-4" aria-hidden="true" />
 				</Button>
