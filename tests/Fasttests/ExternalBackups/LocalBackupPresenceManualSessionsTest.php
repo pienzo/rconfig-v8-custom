@@ -158,6 +158,7 @@ test('explicit restart replaces only selected terminal diagnostic with a fresh U
     $old->next_observation_at = null;
     $old->dispatch_not_before = $old->requested_at + 55;
     $old->save();
+    $old->refresh();
     $before = $this->rule->fresh()->getRawOriginal();
     $taskBefore = $this->rule->task()->firstOrFail()->getRawOriginal();
     CarbonImmutable::setTestNow($this->instant->addSeconds(60));
