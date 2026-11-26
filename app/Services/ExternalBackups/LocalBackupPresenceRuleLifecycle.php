@@ -63,6 +63,7 @@ final class LocalBackupPresenceRuleLifecycle
             $rule = LocalBackupPresenceRule::query()->whereKey($ruleId)->lockForUpdate()->firstOrFail();
             $task = $this->lockedDormantTask($rule);
             $task->update(['task_name' => $name, 'task_cron' => $cron]);
+            DB::table('local_backup_presence_manual_sessions')->where('rule_id', $rule->id)->delete();
             $rule->fill($fields);
             $rule->scheduler_checked_minute_utc = null;
             $rule->scheduler_revision = null;
