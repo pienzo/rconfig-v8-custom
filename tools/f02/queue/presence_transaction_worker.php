@@ -5,6 +5,7 @@
  * transaction barriers. Never install these listeners in application code.
  */
 
+use App\Models\LocalBackupPresenceManualSession;
 use App\Models\LocalBackupPresenceRun;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Events\QueryExecuted;
@@ -16,14 +17,20 @@ use Illuminate\Support\Facades\Event;
 
 if ($argc !== 3 || getenv('GITHUB_ACTIONS') !== 'true' || getenv('RUNNER_ENVIRONMENT') !== 'github-hosted'
     || getenv('APP_ENV') !== 'testing' || getenv('F02_SYNTHETIC_PRESENCE_HORIZON') !== '1'
-    || ! in_array(getenv('F02_PRESENCE_LOAD'), ['3', '4', '5'], true)
+    || ! in_array(getenv('F02_PRESENCE_LOAD'), ['3', '4', '5', '7', '8'], true)
     || getenv('DB_HOST') !== '127.0.0.1' || getenv('DB_DATABASE') !== 'v8core_test'
     || getenv('REDIS_HOST') !== '127.0.0.1' || getenv('REDIS_DB') !== '5' || getenv('REDIS_CACHE_DB') !== '6') {
     exit(2);
 }
 
 $phase = $argv[1];
-$runId = filter_var($argv[2], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+$manual = in_array(getenv('F02_PRESENCE_LOAD'), ['7', '8'], true);
+$runId = $manual
+    ? (preg_match('/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/D', $argv[2]) === 1 ? $argv[2] : false)
+    : filter_var($argv[2], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+if ($manual && ! in_array($phase, [getenv('F02_PRESENCE_LOAD') === '7' ? 'precommit' : 'postcommit', 'replay'], true)) {
+    exit(2);
+}
 $fixture = getenv('F02_PRESENCE_FIXTURE');
 if (! in_array($phase, ['precommit', 'postcommit', 'timeout', 'replay'], true) || $runId === false
     || ! is_string($fixture) || ! is_dir($fixture) || is_link($fixture)
@@ -64,8 +71,16 @@ if (! $app->environment('testing') || config('database.default') !== 'mysql'
     || config('mail.default') !== 'log' || config('rConfig.is_demo', false) !== false) {
     exit(2);
 }
-$run = LocalBackupPresenceRun::query()->findOrFail($runId);
-if ($phase !== 'replay' && $run->status !== 'pending') {
+if ($manual && (config('local-backup-presence.manual_probe_enabled') !== true
+    || config('local-backup-presence.manual_dispatch_enabled') !== true
+    || config('local-backup-presence.scheduler_enabled') !== true
+    || config('local-backup-presence.dispatch_enabled') !== true)) {
+    exit(2);
+}
+$run = $manual
+    ? LocalBackupPresenceManualSession::query()->findOrFail($runId)
+    : LocalBackupPresenceRun::query()->findOrFail($runId);
+if ($phase !== 'replay' && $run->status !== ($manual ? 'queued' : 'pending')) {
     exit(2);
 }
 
@@ -106,9 +121,12 @@ if ($phase === 'replay') {
         });
     }
     $observedWrite = false;
-    DB::listen(static function (QueryExecuted $event) use ($phase, $barrier, &$observedWrite): void {
-        if (! str_starts_with(strtolower($event->sql), 'update `local_backup_presence_runs`')
-            || ! in_array('present', $event->bindings, true)) {
+    DB::listen(static function (QueryExecuted $event) use ($phase, $barrier, &$observedWrite, $manual, $runId): void {
+        $table = $manual ? 'local_backup_presence_manual_sessions' : 'local_backup_presence_runs';
+        $status = $manual && $phase === 'precommit' ? 'pending' : 'present';
+        if (! str_starts_with(strtolower($event->sql), 'update `' . $table . '`')
+            || ! in_array($status, $event->bindings, true)
+            || ($manual && ! in_array($runId, $event->bindings, true))) {
             return;
         }
         if ($event->connection->transactionLevel() < 1) {

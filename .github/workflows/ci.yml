@@ -432,7 +432,7 @@ jobs:
               RCONFIG_F02_RUNTIME_ENABLED=false RCONFIG_F02_QUEUE_ENABLED=false \
               RCONFIG_CUSTOM_BACKUP_NOTIFICATIONS_ENABLED=false RCONFIG_NATIVE_BACKUP_NOTIFICATIONS_ENABLED=false \
               RCONFIG_TELEGRAM_ENABLED=false RCONFIG_BACKUP_EMAIL_ENABLED=false RCONFIG_WHATSAPP_ENABLED=false \
-              php tools/f02/queue/scheduled_presence.php
+              php "${2:-tools/f02/queue/scheduled_presence.php}"
           }
           run_presence_probe 0 | tee "$RUNNER_TEMP/f02-presence-horizon.log"
           grep -Fxq 'F02_PRESENCE_DURABLE_SCHEDULE_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
@@ -483,6 +483,18 @@ jobs:
           grep -Fxq 'F02_MANUAL_TERMINAL_REPLAY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
           grep -Fxq 'F02_MANUAL_MIXED_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
           grep -Fxq 'F02_PRESENCE_REAL_HORIZON_MIXED_OUTCOMES_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
+
+          run_presence_probe 7 tools/f02/queue/manual_presence_crash.php | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_PRECOMMIT_ROLLBACK_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_PRECOMMIT_REDELIVERY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_CRASH_STABILITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_CRASH_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          test -z "$(ls -A "$fixture")"
+          run_presence_probe 8 tools/f02/queue/manual_presence_crash.php | tee "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_POSTCOMMIT_PREACK_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_POSTCOMMIT_REDELIVERY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
+          grep -Fxq 'F02_MANUAL_CRASH_INTEGRITY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/f02-presence-horizon.log"
           test -z "$(ls -A "$fixture")"
 
       - name: Test F02 bounded metadata scanner load (hosted only)
