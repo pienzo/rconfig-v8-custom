@@ -22,6 +22,7 @@ const routes = [
 ];
 
 let stage = "identity";
+let checkpoint = "start";
 let browser;
 async function main() {
     assert.equal(process.env.GITHUB_ACTIONS, "true");
@@ -174,8 +175,10 @@ async function main() {
     }
 
     async function requireContrast(id, name, element, measurements) {
+        checkpoint = "contrast-" + name;
         const ratio = await elementContrast(element);
         measurements[name] = ratio;
+        console.log("THEME_COMPONENT_CONTRAST " + id + " " + name + " ratio=" + ratio.toFixed(3));
         if (!(ratio >= 4.5)) {
             console.error("THEME_COMPONENT_CONTRAST_FAIL " + id + " " + name + " ratio=" + ratio.toFixed(3));
             throw new Error("component contrast below 4.5");
@@ -289,6 +292,7 @@ async function main() {
         }
         for (const [route, name] of routes) {
             stage = id + "-" + name;
+            checkpoint = "route-load";
             const response = await page.goto(origin + route);
             assert(response?.ok());
             await trigger.waitFor();
@@ -297,7 +301,10 @@ async function main() {
             await waitForRoute(name);
             await page.screenshot({ path: "/evidence/" + id + "-" + name + ".png", animations: "disabled" });
             if (name === "notifications") {
-                await requireContrast(id, "notification-warning", view.getByText(/^I template Email e Telegram sono collegati/), components);
+                const panel = view.getByRole("region", { name: "Notification template editor" });
+                const warning = panel.locator("p").filter({ hasText: "I template Email e Telegram sono collegati al sistema automatico;" });
+                assert.equal(await warning.count(), 1);
+                await requireContrast(id, "notification-warning", warning, components);
             }
             if (name === "tasks") {
                 stage = id + "-pattern-preview";
@@ -356,6 +363,7 @@ async function main() {
                 await page.screenshot({ path: "/evidence/" + id + "-fixture-" + name + ".png", animations: "disabled" });
             }
             stage = id + "-fixture-diff-filter";
+            checkpoint = "compare-route";
             await page.evaluate(() => {
                 localStorage.setItem("rConfig.editordarkmode", "vs");
                 localStorage.setItem("rConfig.editorHideUnchanged", "false");
@@ -365,19 +373,23 @@ async function main() {
             for (let side = 0; side < 2; side++) {
                 // Both cards start with the same placeholder; after the first
                 // selection only the second unselected trigger remains.
+                checkpoint = "select-device-" + side;
                 await view.getByText("Select devices", { exact: true }).first().click();
-                await page.getByPlaceholder("Search...", { exact: true }).waitFor();
-                await page.getByPlaceholder("Search...", { exact: true }).fill("THEME-FIXTURE-ROUTER");
-                const option = page.getByText(device.device_name, { exact: true }).filter({ visible: true }).last();
-                await option.click();
-                if (await page.getByPlaceholder("Search...", { exact: true }).isVisible()) {
-                    await page.keyboard.press("Escape");
-                }
+                const search = page.getByPlaceholder("Search...", { exact: true });
+                await search.waitFor();
+                // One known fixture is already in the initial response; no
+                // debounced search/re-fetch needed for this visual scenario.
+                const popover = page.getByRole("dialog").filter({ has: search });
+                await popover.getByText(device.device_name, { exact: true }).click();
+                if (await search.isVisible()) await page.keyboard.press("Escape");
+                await search.waitFor({ state: "hidden" });
+                checkpoint = "filter-device-" + side;
                 await view.getByRole("button", { name: "Filter", exact: true }).nth(side).click();
                 await view.getByRole("row").filter({ hasText: configs[side].config_filename }).nth(side).waitFor();
                 await view.getByRole("row").filter({ hasText: configs[side].config_filename }).nth(side).click();
             }
             stage = id + "-fixture-diff-editor";
+            checkpoint = "open-compare";
             await view.getByRole("button", { name: "Compare", exact: true }).click();
             const editor = page.locator("#code-editor__code-pre .monaco-diff-editor");
             await editor.waitFor();
@@ -412,8 +424,11 @@ async function main() {
     await context.close();
 }
 
-main().catch(() => {
+main().catch(error => {
+    // Only allowlisted error classifications and static probe labels.
     // No browser call logs, URLs, credentials, DOM contents or traces.
-    console.error("THEME_BROWSER_FAILED stage=" + stage);
+    const kind = error?.name === "TimeoutError" ? "timeout"
+        : error?.name === "AssertionError" ? "assertion" : "other";
+    console.error("THEME_BROWSER_FAILED stage=" + stage + " checkpoint=" + checkpoint + " kind=" + kind);
     process.exitCode = 1;
 }).finally(async () => { if (browser) await browser.close(); });
