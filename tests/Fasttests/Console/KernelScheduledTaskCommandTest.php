@@ -165,3 +165,27 @@ test('pending reconciliation scheduler is separately gated and absent in demo', 
     config(['rConfig.is_demo' => true]);
     expect($events())->toBeEmpty();
 });
+
+test('manual presence reconciliation is separately gated and follows scheduled reconciliation', function () {
+    $events = fn () => scheduledTaskCommandEvents()->filter(
+        fn (Event $event) => $event->description === 'f02-local-presence-reconcile-manual'
+    );
+    config([
+        'local-backup-presence.runtime_enabled' => true,
+        'local-backup-presence.queue_enabled' => true,
+        'local-backup-presence.scheduler_enabled' => true,
+        'local-backup-presence.dispatch_enabled' => true,
+        'local-backup-presence.manual_probe_enabled' => true,
+        'local-backup-presence.manual_dispatch_enabled' => false,
+        'rConfig.is_demo' => false,
+    ]);
+    expect($events())->toBeEmpty();
+    config(['local-backup-presence.manual_dispatch_enabled' => true]);
+    expect($events())->toHaveCount(1);
+    expect($events()->first()->expression)->toBe('* * * * *');
+    $names = scheduledTaskCommandEvents()->pluck('description')->all();
+    expect(array_search('f02-local-presence-reconcile-manual', $names, true))
+        ->toBeGreaterThan(array_search('f02-local-presence-reconcile-pending', $names, true));
+    config(['rConfig.is_demo' => true]);
+    expect($events())->toBeEmpty();
+});
