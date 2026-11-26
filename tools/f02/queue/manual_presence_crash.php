@@ -26,7 +26,7 @@ function manualCrashCheck(bool $ok, string $stage): void
 $mode = getenv('F02_PRESENCE_LOAD');
 if (getenv('GITHUB_ACTIONS') !== 'true' || getenv('RUNNER_ENVIRONMENT') !== 'github-hosted'
     || getenv('F02_SYNTHETIC_PRESENCE_HORIZON') !== '1' || getenv('APP_ENV') !== 'testing'
-    || ! in_array($mode, ['7', '8'], true)
+    || ! in_array($mode, ['7', '8', '10'], true)
     || getenv('DB_HOST') !== '127.0.0.1' || getenv('DB_DATABASE') !== 'v8core_test'
     || getenv('REDIS_HOST') !== '127.0.0.1' || getenv('REDIS_DB') !== '5' || getenv('REDIS_CACHE_DB') !== '6') {
     exit(2);
@@ -84,10 +84,16 @@ $integrity = static fn (): array => [
     DB::table('custom_backup_notification_deliveries')->count(), DB::table('failed_jobs')->count(),
 ];
 $before = $integrity();
-$phase = $mode === '7' ? 'precommit' : 'postcommit';
+$phase = match ($mode) {
+    '7' => 'precommit',
+    '8' => 'postcommit',
+    '10' => 'timeout',
+};
+$pendingWrite = in_array($phase, ['precommit', 'timeout'], true);
 $folder = $fixture . '/manual-device';
 $file = $folder . '/backup_final.cfg';
 $marker = $fixture . '/transaction-barrier';
+$timeoutMarker = $fixture . '/timeout-event';
 $bytes = "synthetic manual crash fixture\n";
 $device = null;
 $rule = null;
@@ -105,7 +111,7 @@ try {
         'filename_pattern' => 'backup_*.cfg',
         'minimum_bytes' => 1,
         'maximum_age_seconds' => null,
-        'quiet_seconds' => $phase === 'precommit' ? 2 : null,
+        'quiet_seconds' => $pendingWrite ? 2 : null,
         'deadline_seconds' => 420,
         'max_entries' => 100,
         'max_matches' => 10,
@@ -124,6 +130,7 @@ try {
     $command = [PHP_BINARY, $root . '/tools/f02/queue/presence_transaction_worker.php'];
     $child = new Process([...$command, $phase, $session->id], $root, null, null, 40);
     $children[] = $child;
+    $started = hrtime(true);
     $child->start();
     $until = microtime(true) + 15;
     while (! is_file($marker) || trim((string) file_get_contents($marker)) !== $phase) {
@@ -138,7 +145,7 @@ try {
     manualCrashCheck(is_string($original['uuid'] ?? null) && ($original['attempts'] ?? null) === 1
         && is_numeric($lease) && (int) $lease > time() && (int) $lease <= time() + 120, 'original lease');
     $visible = $session->fresh();
-    if ($phase === 'precommit') {
+    if ($pendingWrite) {
         manualCrashCheck($visible->getRawOriginal() === $snapshot, 'uncommitted baseline invisible');
     } else {
         manualCrashCheck($visible->status === 'present' && $visible->result['reason'] === 'matching_file_observed'
@@ -146,11 +153,28 @@ try {
             && $visible->next_observation_at === null, 'terminal committed before acknowledgement');
     }
     $visibleSnapshot = $visible->getRawOriginal();
-    $child->signal(SIGKILL);
-    $child->wait();
+    if ($phase === 'timeout') {
+        // No signal from the parent: require Laravel's own alarm and event.
+        while ($child->isRunning()) {
+            manualCrashCheck((hrtime(true) - $started) / 1000000000 < 40, 'manual worker self-termination deadline');
+            usleep(100000);
+        }
+        $elapsed = (hrtime(true) - $started) / 1000000000;
+        manualCrashCheck(! $child->isSuccessful() && $elapsed >= 29 && $elapsed < 40
+            && is_file($timeoutMarker)
+            && trim((string) file_get_contents($timeoutMarker)) === $original['uuid'] . ':1', 'actual manual JobTimedOut and autonomous exit');
+        printf("F02_MANUAL_TIMEOUT_METRICS elapsed_seconds=%.3f\n", $elapsed);
+    } else {
+        $child->signal(SIGKILL);
+        $child->wait();
+    }
     manualCrashCheck(! $child->isSuccessful() && $session->fresh()->getRawOriginal() === $visibleSnapshot
         && $queue->size('LocalBackupPresence') === 1 && count($redis->zrange($reservedKey, 0, -1)) === 1, 'state survives interruption');
-    echo $phase === 'precommit' ? "F02_MANUAL_PRECOMMIT_ROLLBACK_OK (SYNTHETIC_ONLY)\n" : "F02_MANUAL_POSTCOMMIT_PREACK_OK (SYNTHETIC_ONLY)\n";
+    echo match ($phase) {
+        'precommit' => "F02_MANUAL_PRECOMMIT_ROLLBACK_OK (SYNTHETIC_ONLY)\n",
+        'timeout' => "F02_MANUAL_TIMEOUT_ROLLBACK_OK (SYNTHETIC_ONLY)\n",
+        'postcommit' => "F02_MANUAL_POSTCOMMIT_PREACK_OK (SYNTHETIC_ONLY)\n",
+    };
 
     manualCrashCheck(unlink($marker), 'remove owned barrier');
     $until = microtime(true) + 125;
@@ -166,11 +190,13 @@ try {
         && $queue->size('LocalBackupPresence') === 0, 'same Redis message acknowledged at attempt two');
 
     $replayed = $session->fresh();
-    if ($phase === 'precommit') {
+    if ($pendingWrite) {
         manualCrashCheck($replayed->status === 'pending' && $replayed->result['reason'] === 'stability_wait'
             && is_array($replayed->continuation) && $replayed->next_observation_at !== null
             && $replayed->expires_at === $session->expires_at, 'durable baseline recovered');
-        echo "F02_MANUAL_PRECOMMIT_REDELIVERY_OK (SYNTHETIC_ONLY)\n";
+        echo $phase === 'timeout'
+            ? "F02_MANUAL_TIMEOUT_REDELIVERY_OK (SYNTHETIC_ONLY)\n"
+            : "F02_MANUAL_PRECOMMIT_REDELIVERY_OK (SYNTHETIC_ONLY)\n";
         $until = microtime(true) + 15;
         while (time() < max($replayed->next_observation_at, $replayed->dispatch_not_before)) {
             manualCrashCheck(microtime(true) < $until, 'real continuation due');
@@ -187,7 +213,9 @@ try {
             && $final->result['reason'] === 'stable_matching_file_observed'
             && $final->result['filename'] === 'backup_final.cfg' && $final->continuation === null
             && $final->next_observation_at === null && $final->expires_at === $session->expires_at, 'stable completion after recovery');
-        echo "F02_MANUAL_CRASH_STABILITY_OK (SYNTHETIC_ONLY)\n";
+        echo $phase === 'timeout'
+            ? "F02_MANUAL_TIMEOUT_STABILITY_OK (SYNTHETIC_ONLY)\n"
+            : "F02_MANUAL_CRASH_STABILITY_OK (SYNTHETIC_ONLY)\n";
     } else {
         $final = $replayed;
         manualCrashCheck($final->getRawOriginal() === $visibleSnapshot, 'terminal replay immutable');
@@ -201,7 +229,9 @@ try {
     foreach ($nativeQueues as $nativeQueue) {
         manualCrashCheck(Queue::connection('redis')->size($nativeQueue) === 0, 'no native work');
     }
-    echo "F02_MANUAL_CRASH_INTEGRITY_OK (SYNTHETIC_ONLY)\n";
+    echo $phase === 'timeout'
+        ? "F02_MANUAL_TIMEOUT_INTEGRITY_OK (SYNTHETIC_ONLY)\n"
+        : "F02_MANUAL_CRASH_INTEGRITY_OK (SYNTHETIC_ONLY)\n";
 } catch (Throwable $exception) {
     $failed = true;
     $message = $exception->getMessage();
@@ -219,7 +249,7 @@ try {
     if ($device !== null) {
         $device->delete();
     }
-    foreach ([$marker, $file] as $owned) {
+    foreach ([$marker, $timeoutMarker, $file] as $owned) {
         if (is_file($owned)) {
             unlink($owned);
         }
