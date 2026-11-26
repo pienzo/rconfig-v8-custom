@@ -22,6 +22,21 @@ final class LocalBackupPresenceManualSessions
 
     public function start(int $ruleId): LocalBackupPresenceManualSession
     {
+        return $this->admit($ruleId, null);
+    }
+
+    /** Replace only the explicitly selected, unexpired terminal diagnostic. */
+    public function restart(int $ruleId, string $expectedSessionId): LocalBackupPresenceManualSession
+    {
+        if (! Str::isUuid($expectedSessionId)) {
+            throw new InvalidArgumentException('Invalid manual session identifier.');
+        }
+
+        return $this->admit($ruleId, $expectedSessionId);
+    }
+
+    private function admit(int $ruleId, ?string $expectedSessionId): LocalBackupPresenceManualSession
+    {
         if (config('local-backup-presence.runtime_enabled', false) !== true
             || config('local-backup-presence.manual_probe_enabled', false) !== true
             || config('rConfig.is_demo', false)) {
@@ -31,7 +46,7 @@ final class LocalBackupPresenceManualSessions
             throw new InvalidArgumentException('Invalid local backup rule identifier.');
         }
 
-        return DB::transaction(function () use ($ruleId): LocalBackupPresenceManualSession {
+        return DB::transaction(function () use ($ruleId, $expectedSessionId): LocalBackupPresenceManualSession {
             $this->lockAdmission();
             $rule = LocalBackupPresenceRule::query()->whereKey($ruleId)->lockForUpdate()->firstOrFail();
             $task = $rule->task()->lockForUpdate()->firstOrFail();
@@ -64,7 +79,14 @@ final class LocalBackupPresenceManualSessions
             // Expired rows are disposable diagnostics, not backup history.
             LocalBackupPresenceManualSession::query()->where('expires_at', '<=', $now)->delete();
             $existing = LocalBackupPresenceManualSession::query()->where('rule_id', $ruleId)->lockForUpdate()->first();
-            if ($existing !== null) {
+            if ($expectedSessionId !== null) {
+                if ($existing === null || $existing->id !== $expectedSessionId
+                    || ! in_array($existing->status, ['present', 'absent', 'error'], true)) {
+                    throw new DomainException('Manual local backup session is no longer restartable.');
+                }
+                // The old UUID is never reused. Late jobs cannot observe the replacement.
+                $existing->delete();
+            } elseif ($existing !== null) {
                 return $existing;
             }
             // Current locking read, not a repeatable-read snapshot.

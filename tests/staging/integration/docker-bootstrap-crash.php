@@ -100,7 +100,6 @@ try {
         }
     }
 
-
     if ($argv[1] === 'crash') {
         // Fork before framework bootstrap; PID 1 is not the fault target.
         $child = pcntl_fork();
