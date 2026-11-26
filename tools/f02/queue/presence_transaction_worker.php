@@ -17,18 +17,24 @@ use Illuminate\Support\Facades\Event;
 
 if ($argc !== 3 || getenv('GITHUB_ACTIONS') !== 'true' || getenv('RUNNER_ENVIRONMENT') !== 'github-hosted'
     || getenv('APP_ENV') !== 'testing' || getenv('F02_SYNTHETIC_PRESENCE_HORIZON') !== '1'
-    || ! in_array(getenv('F02_PRESENCE_LOAD'), ['3', '4', '5', '7', '8'], true)
+    || ! in_array(getenv('F02_PRESENCE_LOAD'), ['3', '4', '5', '7', '8', '10'], true)
     || getenv('DB_HOST') !== '127.0.0.1' || getenv('DB_DATABASE') !== 'v8core_test'
     || getenv('REDIS_HOST') !== '127.0.0.1' || getenv('REDIS_DB') !== '5' || getenv('REDIS_CACHE_DB') !== '6') {
     exit(2);
 }
 
 $phase = $argv[1];
-$manual = in_array(getenv('F02_PRESENCE_LOAD'), ['7', '8'], true);
+$manual = in_array(getenv('F02_PRESENCE_LOAD'), ['7', '8', '10'], true);
 $runId = $manual
     ? (preg_match('/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/D', $argv[2]) === 1 ? $argv[2] : false)
     : filter_var($argv[2], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-if ($manual && ! in_array($phase, [getenv('F02_PRESENCE_LOAD') === '7' ? 'precommit' : 'postcommit', 'replay'], true)) {
+$manualPhase = match (getenv('F02_PRESENCE_LOAD')) {
+    '7' => 'precommit',
+    '8' => 'postcommit',
+    '10' => 'timeout',
+    default => null,
+};
+if ($manual && ! in_array($phase, [$manualPhase, 'replay'], true)) {
     exit(2);
 }
 $fixture = getenv('F02_PRESENCE_FIXTURE');
@@ -123,7 +129,7 @@ if ($phase === 'replay') {
     $observedWrite = false;
     DB::listen(static function (QueryExecuted $event) use ($phase, $barrier, &$observedWrite, $manual, $runId): void {
         $table = $manual ? 'local_backup_presence_manual_sessions' : 'local_backup_presence_runs';
-        $status = $manual && $phase === 'precommit' ? 'pending' : 'present';
+        $status = $manual && in_array($phase, ['precommit', 'timeout'], true) ? 'pending' : 'present';
         if (! str_starts_with(strtolower($event->sql), 'update `' . $table . '`')
             || ! in_array($status, $event->bindings, true)
             || ($manual && ! in_array($runId, $event->bindings, true))) {
