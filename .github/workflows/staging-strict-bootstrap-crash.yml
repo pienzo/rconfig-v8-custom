@@ -1,0 +1,71 @@
+name: Staging strict post-migration crash (synthetic)
+
+on:
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'compose.staging.yaml'
+      - 'compose.bootstrap.yaml'
+      - 'docker/staging/provision-env.sh'
+      - 'app/Services/Staging/**'
+      - 'database/migrations/**'
+      - 'docker/staging/**'
+      - 'tests/staging/integration/docker-apache.sh'
+      - 'tests/staging/integration/docker-bootstrap-crash.php'
+      - '.github/workflows/staging-strict-bootstrap-crash.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write # Buildx layer cache only; never writes repository content.
+
+concurrency:
+  group: staging-strict-bootstrap-crash-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-core-first-install:
+    name: Strict Docker post-migration SIGKILL and retry refusal
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      STAGING_APP_IMAGE: rconfig-custom-ci:apache
+
+    steps:
+      - name: Checkout exact PR test source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build source image pinned to tested GitHub commit
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ env.STAGING_APP_IMAGE }}
+          build-args: |
+            SOURCE_REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=staging-strict-bootstrap-crash
+          cache-to: type=gha,mode=max,scope=staging-strict-bootstrap-crash
+
+      - name: Validate hosted fault probe and shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          grep -Fxq tests .dockerignore
+          bash -n tests/staging/integration/docker-apache.sh
+          docker run --rm --network none --user 1000:33 \
+            --entrypoint php \
+            -v "$GITHUB_WORKSPACE/tests/staging/integration/docker-bootstrap-crash.php:/tmp/ci-bootstrap-crash.php:ro" \
+            "$STAGING_APP_IMAGE" -l /tmp/ci-bootstrap-crash.php
+
+      - name: Real strict Docker migration and post-migration crash refusal
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/staging/integration/docker-apache.sh --bootstrap-crash
