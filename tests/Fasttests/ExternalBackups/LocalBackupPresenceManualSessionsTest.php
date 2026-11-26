@@ -4,6 +4,7 @@ use App\Models\Device;
 use App\Models\LocalBackupPresenceManualSession;
 use App\Models\LocalBackupPresenceRun;
 use App\Services\ExternalBackups\LocalBackupPresenceManualSessions;
+use App\Services\ExternalBackups\LocalBackupPresenceManualWorker;
 use App\Services\ExternalBackups\LocalBackupPresenceRuleActivation;
 use App\Services\ExternalBackups\LocalBackupPresenceRuleLifecycle;
 use Carbon\CarbonImmutable;
@@ -147,5 +148,96 @@ test('manual admission rejects unknown mapping and missing admission mutex', fun
     DB::table('local_backup_presence_activation_lock')->where('id', 1)->delete();
     expect(fn () => $this->service->start($this->rule->id))->toThrow(DomainException::class);
     expect(LocalBackupPresenceManualSession::where('rule_id', $this->rule->id)->exists())->toBeFalse();
+    Bus::assertNothingDispatched();
+});
+
+test('explicit restart replaces only selected terminal diagnostic with a fresh UUID', function (string $status) {
+    $old = $this->service->start($this->rule->id);
+    $old->status = $status;
+    $old->result = ['status' => $status];
+    $old->next_observation_at = null;
+    $old->dispatch_not_before = $old->requested_at + 55;
+    $old->save();
+    $old->refresh();
+    $before = $this->rule->fresh()->getRawOriginal();
+    $taskBefore = $this->rule->task()->firstOrFail()->getRawOriginal();
+    CarbonImmutable::setTestNow($this->instant->addSeconds(60));
+    expect($this->service->start($this->rule->id)->getRawOriginal())->toBe($old->getRawOriginal());
+    $new = $this->service->restart($this->rule->id, $old->id);
+    expect($new->id)->not->toBe($old->id)
+        ->and($old->fresh())->toBeNull()
+        ->and($new->status)->toBe('queued')
+        ->and($new->requested_at)->toBe($this->instant->addSeconds(60)->getTimestamp())
+        ->and($new->expires_at)->toBe($this->instant->addSeconds(240)->getTimestamp())
+        ->and($new->next_observation_at)->toBe($new->requested_at)
+        ->and($new->result)->toBeNull()
+        ->and($new->continuation)->toBeNull()
+        ->and($new->dispatch_not_before)->toBeNull();
+    $snapshot = $new->getRawOriginal();
+    expect(fn () => $this->service->restart($this->rule->id, $old->id))->toThrow(DomainException::class);
+    config(['local-backup-presence.queue_enabled' => true]);
+    app(LocalBackupPresenceManualWorker::class)->process($this->rule->id, $old->id);
+    expect($new->fresh()->getRawOriginal())->toBe($snapshot)
+        ->and($this->rule->fresh()->getRawOriginal())->toBe($before)
+        ->and($this->rule->task()->firstOrFail()->getRawOriginal())->toBe($taskBefore)
+        ->and($this->rule->runs()->count())->toBe(0);
+    Bus::assertNothingDispatched();
+})->with(['present', 'absent', 'error']);
+
+test('manual restart refuses queued and pending states, invalid and wrong rule UUIDs', function () {
+    $old = $this->service->start($this->rule->id);
+    $other = $this->lifecycle->create($this->device->id, 'Other restart rule', '* * * * *', $this->criteria);
+    $otherSession = $this->service->start($other->id);
+    expect(fn () => $this->service->restart($this->rule->id, 'not-a-uuid'))->toThrow(InvalidArgumentException::class);
+    expect(fn () => $this->service->restart($this->rule->id, $old->id))->toThrow(DomainException::class);
+    $old->status = 'pending';
+    $old->save();
+    $snapshot = $old->getRawOriginal();
+    expect(fn () => $this->service->restart($this->rule->id, $old->id))->toThrow(DomainException::class);
+    expect(fn () => $this->service->restart($this->rule->id, $otherSession->id))->toThrow(DomainException::class);
+    expect($old->fresh()->getRawOriginal())->toBe($snapshot)
+        ->and($otherSession->fresh()->getRawOriginal())->toBe($otherSession->getRawOriginal());
+    Bus::assertNothingDispatched();
+});
+
+test('manual restart at capacity replaces one slot and outer rollback restores the original', function () {
+    $old = $this->service->start($this->rule->id);
+    $old->status = 'present';
+    $old->next_observation_at = null;
+    $old->save();
+    for ($index = 1; $index < LocalBackupPresenceManualSessions::CAPACITY; $index++) {
+        $other = $this->lifecycle->create($this->device->id, 'Restart capacity ' . $index, '* * * * *', $this->criteria);
+        $this->service->start($other->id);
+    }
+    $snapshot = $old->getRawOriginal();
+    DB::beginTransaction();
+    try {
+        $new = $this->service->restart($this->rule->id, $old->id);
+        expect($new->id)->not->toBe($old->id)
+            ->and(LocalBackupPresenceManualSession::count())->toBe(10);
+    } finally {
+        DB::rollBack();
+    }
+    expect($old->fresh()->getRawOriginal())->toBe($snapshot)
+        ->and($new->fresh())->toBeNull()
+        ->and(LocalBackupPresenceManualSession::count())->toBe(10);
+    Bus::assertNothingDispatched();
+});
+
+test('manual restart refuses expired or unapproved terminal diagnostic', function () {
+    $old = $this->service->start($this->rule->id);
+    $old->status = 'error';
+    $old->next_observation_at = null;
+    $old->save();
+    $snapshot = $old->getRawOriginal();
+    config(['local-backup-presence.manual_probe_enabled' => false]);
+    expect(fn () => $this->service->restart($this->rule->id, $old->id))->toThrow(DomainException::class);
+    config(['local-backup-presence.manual_probe_enabled' => true]);
+    CarbonImmutable::setTestNow($this->instant->addSeconds(180));
+    expect(fn () => $this->service->restart($this->rule->id, $old->id))->toThrow(DomainException::class);
+    expect($old->fresh()->getRawOriginal())->toBe($snapshot);
+    $new = $this->service->start($this->rule->id);
+    expect($new->id)->not->toBe($old->id)
+        ->and($old->fresh())->toBeNull();
     Bus::assertNothingDispatched();
 });
