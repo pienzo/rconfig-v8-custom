@@ -116,6 +116,7 @@ final class LocalBackupPresenceRuleActivation
             $task->is_paused = $enabled ? 0 : 1;
             $task->task_desc = $enabled ? 'Local backup file presence check' : 'Local backup file presence check (inactive)';
             $task->save();
+            DB::table('local_backup_presence_manual_sessions')->where('rule_id', $rule->id)->delete();
 
             return $rule;
         }, 3);
