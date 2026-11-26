@@ -4,15 +4,15 @@ import "highlight.js/styles/base16/tomorrow-night.css";
 import * as AuthComponents from "./appimports/authComponentImports";
 import * as UIComponents from "./appimports/uiComponentImports";
 import { NavigationSide, NavigationTop } from "./appimports/navComponentImports";
-import { applyStoredTheme } from "./appimports/themeHandler";
-import { createApp } from "vue";
+import { applyStoredTheme, applyThemePalette } from "./appimports/themeHandler";
+import { findThemePreset } from "./appimports/themePresets";
+import { computed, createApp, ref } from "vue";
 import { initializeLoadingHandlers } from "./appimports/loadingHandlers";
 import { registerComponents } from "./appimports/registerComponents";
 import { setupGlobalProperties } from "./appimports/globalProperties";
 import { setupPlugins } from "./appimports/setupPlugins";
 import { useFormatters } from "./composables/useFormatters";
 import { RCONFIG_DOCS_URL } from "./config/constants";
-import { useColorMode } from "@vueuse/core";
 
 // Initialize app
 const app = createApp({});
@@ -34,7 +34,7 @@ try {
 
 // Setup and configuration
 setupPlugins(app); // icons imported here
-applyStoredTheme();
+const initialPalette = applyStoredTheme();
 setupGlobalProperties(app);
 
 // Prepare global composables
@@ -60,7 +60,20 @@ app.provide("serverDisplayColor", globalProperties.$serverDisplayColor);
 app.provide("serverDisplaySize", globalProperties.$serverDisplaySize); // New
 
 // provide colorMode globally so it can be injected in any component without needing to import useColorMode everywhere
-const colorMode = useColorMode({ initialValue: "dark" });
+const activePalette = ref(initialPalette);
+const themePalette = computed({
+	get: () => activePalette.value,
+	set: (id) => { activePalette.value = applyThemePalette(id); },
+});
+const colorMode = computed({
+	get: () => findThemePreset(activePalette.value)?.mode ?? "dark",
+	set: (mode) => {
+		if ((mode === "dark" || mode === "light") && mode !== colorMode.value) {
+			themePalette.value = mode;
+		}
+	},
+});
+app.provide("themePalette", themePalette);
 app.provide("colorMode", colorMode);
 
 // Mount the Vue app with error handling

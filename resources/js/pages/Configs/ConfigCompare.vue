@@ -4,7 +4,6 @@ import ConfigCompareFilterConfigResults from "@/pages/Configs/ConfigCompare/Conf
 import ConfigCompareResults from "@/pages/Configs/ConfigCompare/ConfigCompareResults.vue";
 import NavCloseButton from "@/pages/Shared/Buttons/NavCloseButton.vue";
 import NavOpenButton from "@/pages/Shared/Buttons/NavOpenButton.vue";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useConfigCompare } from "./useConfigCompare";
 import { X, CircleAlert, BookOpenCheck } from "lucide-vue-next";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -14,7 +13,7 @@ const { close, closeNav, leftConfigData, leftConfigFilterKey, leftConfigResultsK
 
 <template>
 	<div
-		class="w-screen h-[calc(100vh-72px)] border"
+		class="w-full min-w-0 h-[calc(100vh-72px)] border"
 		style="display: flex; flex-direction: column; border-radius: 16px; margin: 4px 8px 8px; max-width: calc(100% - 16px); overflow: hidden;"
 	>
 		<div class="flex justify-between w-full p-2 border-b">
@@ -37,7 +36,7 @@ const { close, closeNav, leftConfigData, leftConfigFilterKey, leftConfigResultsK
 				<div v-if="leftSelectedId.length > 0 && rightSelectedId.length > 0">
 					<Badge
 						variant="outline"
-						class="py-1 mt-1 bg-rcgray-200 dark:bg-rcgray-800"
+						class="py-1 mt-1 bg-muted text-muted-foreground"
 					>
 						<RcIcon
 							name="status-green"
@@ -76,7 +75,7 @@ const { close, closeNav, leftConfigData, leftConfigFilterKey, leftConfigResultsK
 				:min-size="10"
 				collapsible
 				:collapsed-size="0"
-				class="flex flex-col"
+				class="flex flex-col min-w-0"
 			>
 				<!-- Fixed header -->
 				<div class="flex items-center justify-between p-2 mb-2 border-b flex-shrink-0">
@@ -90,7 +89,7 @@ const { close, closeNav, leftConfigData, leftConfigFilterKey, leftConfigResultsK
 				</div>
 
 				<!-- Scrollable content -->
-				<ScrollArea class="flex-1 min-h-0">
+				<div class="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
 					<div class="relative flex flex-col items-center px-2">
 						<!-- First element -->
 						<div class="w-full mb-4">
@@ -114,13 +113,13 @@ const { close, closeNav, leftConfigData, leftConfigFilterKey, leftConfigResultsK
 						</div>
 						<div class="w-full my-4 border-t"></div>
 					</div>
-				</ScrollArea>
+				</div>
 			</ResizablePanel>
 			<ResizableHandle with-handle />
-			<ResizablePanel class="min-h-[86vh]">
-				<ScrollArea class="border border-none rounded-md">
+			<ResizablePanel class="min-h-[86vh] min-w-0">
+				<div class="min-w-0 w-full h-full overflow-y-auto rounded-md">
 					<!-- SEARCH RESULTS -->
-					<div class="h-[80dvh]">
+					<div class="h-[80dvh] w-full min-w-0">
 						<div class="flex items-center justify-between p-2 mb-2 border-b">
 							<div class="flex items-center">
 								<NavOpenButton
@@ -178,7 +177,7 @@ const { close, closeNav, leftConfigData, leftConfigFilterKey, leftConfigResultsK
 
 						<div
 							v-if="!loadComparison"
-							class="relative flex flex-col items-center"
+							class="relative flex flex-col items-center w-full min-w-0"
 						>
 							<ConfigCompareFilterConfigResults
 								:key="leftConfigResultsKey"
@@ -196,7 +195,7 @@ const { close, closeNav, leftConfigData, leftConfigFilterKey, leftConfigResultsK
 							/>
 						</div>
 
-						<div v-if="loadComparison">
+						<div v-if="loadComparison" class="w-full min-w-0">
 							<ConfigCompareResults
 								:left-selected-id="leftSelectedId"
 								:right-selected-id="rightSelectedId"
@@ -204,7 +203,7 @@ const { close, closeNav, leftConfigData, leftConfigFilterKey, leftConfigResultsK
 						</div>
 					</div>
 					<!-- SEARCH RESULTS -->
-				</ScrollArea>
+				</div>
 			</ResizablePanel>
 		</ResizablePanelGroup>
 	</div>

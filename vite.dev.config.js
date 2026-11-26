@@ -56,6 +56,8 @@ export default defineConfig({
       }
     })
   ],
+  // Monaco worker entries are ESM and may contain module imports.
+  worker: { format: 'es' },
   build: {
     chunkSizeWarningLimit: 3500
   }

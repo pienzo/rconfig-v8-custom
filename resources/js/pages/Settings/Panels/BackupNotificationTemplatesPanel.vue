@@ -130,7 +130,7 @@ onMounted(load);
     <section class="w-full space-y-4 rounded-lg border p-5 text-left" aria-label="Notification template editor">
         <h3 class="text-xl font-semibold">Template notifiche backup</h3>
         <p class="text-sm text-muted-foreground">Oggetto/titolo e corpo email o Telegram. L'anteprima usa solo dati sintetici.</p>
-        <p class="text-sm text-amber-600 dark:text-amber-400">
+        <p class="text-sm text-amber-800 dark:text-amber-400">
             I template Email e Telegram sono collegati al sistema automatico; l'attivazione richiede la configurazione del server.
         </p>
         <label class="block text-sm">Canale ed evento
@@ -152,14 +152,14 @@ onMounted(load);
             Variabili: {{ tokenHelp }}
         </p>
         <div class="flex flex-wrap gap-2">
-            <button type="button" :disabled="busy || !current" class="rounded bg-blue-600 px-3 py-2 text-white disabled:opacity-50" @click="save">Salva</button>
+            <button type="button" :disabled="busy || !current" class="rounded bg-blue-700 px-3 py-2 text-white disabled:opacity-50" @click="save">Salva</button>
             <button type="button" :disabled="busy || !current" class="rounded border px-3 py-2 disabled:opacity-50" @click="showPreview">Anteprima</button>
             <button v-if="current?.channel === 'email'" type="button" :disabled="busy" class="rounded border px-3 py-2 disabled:opacity-50" @click="sendEmailTest">Invia test email</button>
             <button v-if="current?.channel === 'telegram'" type="button" :disabled="busy" class="rounded border px-3 py-2 disabled:opacity-50" @click="sendTelegramTest">Invia test Telegram</button>
             <button type="button" :disabled="busy || !current" class="rounded border px-3 py-2 disabled:opacity-50" @click="restoreDefaults">Ripristina</button>
         </div>
-        <p v-if="error" role="alert" class="text-red-500">{{ error }}</p>
-        <p v-if="message" role="status" class="text-green-600">{{ message }}</p>
+        <p v-if="error" role="alert" class="text-red-700 dark:text-red-400">{{ error }}</p>
+        <p v-if="message" role="status" class="text-green-800 dark:text-green-400">{{ message }}</p>
         <div v-if="preview" class="rounded border bg-muted p-3 text-sm">
             <h4 class="font-semibold">Anteprima (nessun invio)</h4>
             <p class="my-2 font-semibold whitespace-pre-wrap">{{ preview.title }}</p>

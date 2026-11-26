@@ -2,7 +2,7 @@
 import * as monaco from 'monaco-editor';
 import useCodeEditor from '@/composables/codeEditorFunctions';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { Icon } from '@iconify/vue';
+import { Copy, Download, SunMoon, Hash, FoldVertical } from 'lucide-vue-next';
 import { ref, onMounted, onUnmounted } from 'vue';
 
 const props = defineProps({
@@ -13,7 +13,7 @@ const props = defineProps({
 });
 
 const toggleStateMultiple = ref([]); //'dark', 'lineNumbers', 'hideUnchanged', 'minimap', 'stickyscroll'
-const { checkDarkModeIsSet, checkHideUnchangedIsSet, checkLineNumbersIsSet, checkMiniMapIsSet, checkStickyScrollIsSet, copyItem, downloadCompare, initDiffEditor, toggleEditorDarkMode, toggleEditorLineNumbers, toggleHideUnchanged, toggleEditorMinimap, toggleStickyScroll } = useCodeEditor(monaco);
+const { checkDarkModeIsSet, checkHideUnchangedIsSet, checkLineNumbersIsSet, checkMiniMapIsSet, checkStickyScrollIsSet, copyContent, downloadCompare, initDiffEditor, toggleEditorDarkMode, toggleEditorLineNumbers, toggleHideUnchanged, toggleEditorMinimap, toggleStickyScroll } = useCodeEditor(monaco);
 
 onMounted(() => {
   initializeToggleStates();
@@ -32,11 +32,14 @@ let diffEditor = null;
 let originalModel = null;
 let modifiedModel = null;
 
-function downloadComparedSources() {
+function comparedSources() {
   const leftText = props.configResultsLeft?.filecontent ?? '';
   const rightText = props.configResultsRight?.filecontent ?? '';
-  const exportText = '=== ORIGINAL CONFIGURATION ===\n' + leftText + '\n\n=== MODIFIED CONFIGURATION ===\n' + rightText;
-  downloadCompare(exportText, `rconfig-compare-${props.leftSelectedId?.[0] ?? 'left'}-${props.rightSelectedId?.[0] ?? 'right'}.txt`, 'compare');
+  return '=== ORIGINAL CONFIGURATION ===\n' + leftText + '\n\n=== MODIFIED CONFIGURATION ===\n' + rightText;
+}
+
+function downloadComparedSources() {
+  downloadCompare(comparedSources(), `rconfig-compare-${props.leftSelectedId?.[0] ?? 'left'}-${props.rightSelectedId?.[0] ?? 'right'}.txt`, 'compare');
 }
 
 onUnmounted(() => {
@@ -46,12 +49,15 @@ onUnmounted(() => {
 });
 
 function initCodeEditor() {
-  originalModel = monaco.editor.createModel(props.configResultsLeft.filecontent, 'text/plain');
-  modifiedModel = monaco.editor.createModel(props.configResultsRight.filecontent, 'text/plain');
+  originalModel = monaco.editor.createModel(props.configResultsLeft.filecontent, 'plaintext');
+  modifiedModel = monaco.editor.createModel(props.configResultsRight.filecontent, 'plaintext');
 
   diffEditor = initDiffEditor('code-editor__code-pre', 'rconfig');
 
   if (diffEditor) {
+    // Keep side-by-side comparison at normal desktop panel widths; Monaco
+    // retains its inline fallback for genuinely narrow viewports.
+    diffEditor.updateOptions({ renderSideBySide: true, renderSideBySideInlineBreakpoint: 600 });
     diffEditor.setModel({
       original: originalModel,
       modified: modifiedModel
@@ -61,7 +67,7 @@ function initCodeEditor() {
 </script>
 
 <template>
-	<div class="flex flex-col">
+	<div class="flex flex-col w-full min-w-0">
 		<div class="flex items-center p-2">
 			<div class="flex items-center gap-2"></div>
 
@@ -69,19 +75,19 @@ function initCodeEditor() {
 			<div>
 				<Button
 					variant="ghost"
-					title="copyItem"
-					@click="copyItem"
+					title="Copy compared configuration sources" aria-label="Copy compared configuration sources"
+					@click="copyContent(comparedSources(), 'compare')"
 				>
-					<Icon icon="mdi:content-copy"></Icon>
+					<Copy class="w-4 h-4" aria-hidden="true" />
 				</Button>
 
 				<Button
 					variant="ghost"
 					class="ml-1"
-					title="Export compared configuration sources"
+					title="Export compared configuration sources" aria-label="Export compared configuration sources"
 					@click="downloadComparedSources"
 				>
-					<Icon icon="mingcute:download-fill"></Icon>
+					<Download class="w-4 h-4" aria-hidden="true" />
 				</Button>
 
 				<!-- <Button
@@ -107,33 +113,24 @@ function initCodeEditor() {
 				>
 					<ToggleGroupItem
 						value="dark"
-						title="Toggle bold"
+						title="Toggle editor dark mode" aria-label="Toggle editor dark mode"
 						@click="toggleEditorDarkMode()"
 					>
-						<Icon
-							icon="mdi:theme-light-dark"
-							class="w-4 h-4"
-						/>
+						<SunMoon class="w-4 h-4" aria-hidden="true" />
 					</ToggleGroupItem>
 					<ToggleGroupItem
 						value="lineNumbers"
-						title="Line Numbers"
+						title="Line Numbers" aria-label="Toggle line numbers"
 						@click="toggleEditorLineNumbers()"
 					>
-						<Icon
-							icon="mingcute:numbers-09-sort-ascending-line"
-							class="w-4 h-4"
-						/>
+						<Hash class="w-4 h-4" aria-hidden="true" />
 					</ToggleGroupItem>
 					<ToggleGroupItem
 						value="hideUnchanged"
-						title="Show only differences"
+						title="Show only differences" aria-label="Show only differences"
 						@click="toggleHideUnchanged()"
 					>
-						<Icon
-							icon="mdi:arrow-collapse-vertical"
-							class="w-4 h-4"
-						/>
+						<FoldVertical class="w-4 h-4" aria-hidden="true" />
 					</ToggleGroupItem>
 					<!-- <ToggleGroupItem
             value="minimap"
@@ -157,7 +154,7 @@ function initCodeEditor() {
 	</div>
 	<div
 		id="code-editor__code-pre"
-		class="code-editor__code-pre"
+		class="code-editor__code-pre w-full min-w-0"
 		style="height: calc(80vh)"
 	></div>
 	<!-- EDITOR -->

@@ -126,7 +126,7 @@ onUnmounted(() => {
                 </Button>
 				<Button
 					type="submit"
-					class="px-2 py-1 ml-2 text-sm bg-blue-600 hover:bg-blue-700 hover:animate-pulse"
+					class="px-2 py-1 ml-2 text-sm bg-blue-700 text-white hover:bg-blue-800 hover:animate-pulse"
 					size="sm"
 					variant="primary"
 					@click.prevent="createTask"

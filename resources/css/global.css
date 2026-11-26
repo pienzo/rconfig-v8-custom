@@ -18,6 +18,7 @@
 @import './tables.css' layer(base);
 @import './toast.css' layer(base);
 @import './typography.css' layer(base);
+@import './theme-presets.css';
 
 @source "../vendor/laravel/framework/src/Illuminate/Pagination/resources/views";
 @source "../storage/framework/views";

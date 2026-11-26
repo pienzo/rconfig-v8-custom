@@ -85,7 +85,7 @@ const completionPercentage = computed(() => {
 					<div 
 						class="relative z-10 w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all duration-300 hover:scale-110"
 						:class="{
-							'bg-gray-800 border-gray-600': getStepStatus(step) === 'pending',
+							'bg-muted border-input dark:bg-gray-800 dark:border-gray-600': getStepStatus(step) === 'pending',
 							'border-gray-500 shadow-lg': getStepStatus(step) === 'active',
 							'completed-step-circle': getStepStatus(step) === 'completed',
 						}"
@@ -113,7 +113,7 @@ const completionPercentage = computed(() => {
 						/>
 						<span 
 							v-else
-							class="text-xs font-medium text-gray-400"
+							class="text-xs font-medium text-muted-foreground dark:text-gray-400"
 						>
 							{{ index + 1 }}
 						</span>
@@ -124,22 +124,20 @@ const completionPercentage = computed(() => {
 						<div 
 							class="font-medium transition-all duration-300"
 							:class="{
-								'text-gray-400': getStepStatus(step) === 'pending',
-								'text-white': getStepStatus(step) === 'active' || getStepStatus(step) === 'completed',
+								'text-muted-foreground dark:text-gray-400': getStepStatus(step) === 'pending',
+								'text-foreground dark:text-white': getStepStatus(step) === 'active' || getStepStatus(step) === 'completed',
 							}"
-							:style="getStepStatus(step) === 'active' ? { color: step.color } : {}"
 						>
 							{{ step.label }}
 						</div>
-						<div class="text-xs text-gray-500 mt-1">
+						<div class="text-xs text-muted-foreground mt-1">
 							{{ step.description }}
 						</div>
                         
 						<!-- Active Step Indicator -->
 						<div 
 							v-if="getStepStatus(step) === 'active'"
-							class="mt-1.5 flex items-center text-xs font-medium animate-pulse"
-							:style="{ color: step.color }"
+							class="mt-1.5 flex items-center text-xs font-medium text-foreground animate-pulse"
 						>
 							<div
 								class="w-1.5 h-1.5 rounded-full mr-2"
@@ -153,10 +151,10 @@ const completionPercentage = computed(() => {
 		</div>
 
 		<!-- Bottom Summary -->
-		<div class="p-3 bg-gray-800/30 rounded-lg border border-gray-700/50 mr-4">
+		<div class="p-3 bg-muted rounded-lg border border-border mr-4">
 			<div class="flex items-center justify-between text-xs">
-				<span class="text-gray-400">Status:</span>
-				<span class="text-white font-medium">
+				<span class="text-muted-foreground">Status:</span>
+				<span class="text-foreground font-medium">
 					Step {{ props.currentStep - 1 }} of {{ steps.length }}
 				</span>
 			</div>

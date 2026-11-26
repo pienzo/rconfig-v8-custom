@@ -7,10 +7,10 @@ test "$RUNNER_ENVIRONMENT" = github-hosted
 mode="${1:---apache-only}"
 test "$#" -le 1
 case "$mode" in
-    --apache-only|--combined|--recreate|--infra-restart|--bootstrap-crash) ;;
+    --apache-only|--combined|--recreate|--infra-restart|--bootstrap-crash|--theme-browser) ;;
     *) exit 2 ;;
 esac
-if [[ "$mode" != --apache-only && "$mode" != --bootstrap-crash ]]; then
+if [[ "$mode" != --apache-only && "$mode" != --bootstrap-crash && "$mode" != --theme-browser ]]; then
     source tests/staging/integration/docker-combined-roles.sh
 fi
 project="rconfig-apache-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
@@ -30,7 +30,7 @@ compose() {
 
 cleanup() {
     local status=$?
-    if [[ "$mode" != --apache-only && "$mode" != --bootstrap-crash ]]; then
+    if [[ "$mode" != --apache-only && "$mode" != --bootstrap-crash && "$mode" != --theme-browser ]]; then
         if (( status != 0 )); then combined_roles_diagnostics || true; fi
         combined_roles_cleanup
     fi
@@ -157,6 +157,24 @@ start_apache() {
     fi
 }
 start_apache
+if [[ "$mode" == --theme-browser ]]; then
+    test "$THEME_BROWSER_DIR" = "$RUNNER_TEMP/rconfig-theme-browser"
+    test "$THEME_BROWSER_OUTPUT" = "$RUNNER_TEMP/rconfig-theme-evidence"
+    test -d "$THEME_BROWSER_DIR/node_modules/playwright" && test -f "$THEME_BROWSER_DIR/theme-browser.cjs"
+    test -d "$THEME_BROWSER_OUTPUT" && test ! -L "$THEME_BROWSER_OUTPUT"
+    test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
+    docker run --rm --init --network "container:$app" \
+        --user "$(id -u):33" --cap-drop ALL --security-opt no-new-privileges \
+        --read-only --tmpfs /tmp:rw,nosuid,nodev,mode=1777 --shm-size 512m \
+        --env HOME=/tmp --env GITHUB_ACTIONS=true --env RUNNER_ENVIRONMENT=github-hosted \
+        --env RCONFIG_THEME_BROWSER=synthetic-v1 \
+        "${admin[@]}" \
+        --mount "type=bind,source=$THEME_BROWSER_DIR,target=/probe,readonly" \
+        --mount "type=bind,source=$THEME_BROWSER_OUTPUT,target=/evidence" \
+        --entrypoint node mcr.microsoft.com/playwright:v1.64.1-noble /probe/theme-browser.cjs
+    test "$(docker inspect --format '{{.State.Running}}' "$app")" = true
+    exit 0
+fi
 # In combined mode, require live native Horizon workers and a genuine
 # scheduled heartbeat before testing HTTP with all three services running.
 if [[ "$mode" != --apache-only ]]; then

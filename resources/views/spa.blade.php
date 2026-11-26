@@ -1,8 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ app()->getLocale() }}" class="dark layout-pf layout-pf-fixed h-full" data-theme="dark" data-force-dark="true">
-<!--When we are ready to have light mode: 
-    <html lang="{{ app()->getLocale() }}" class="layout-pf layout-pf-fixed" :class="{ 'dark': darkMode }" data-theme="auto">
--->
+<html lang="{{ app()->getLocale() }}" class="dark layout-pf layout-pf-fixed h-full" data-theme="dark" data-palette="dark">
 
 <head>
     @include('includes.head')
@@ -20,11 +17,11 @@
             <main-loading></main-loading>
         </div>
 
-        <div id="main-content" class="bg-gray-100 dark:bg-rcgray-800 h-screen">
+        <div id="main-content" class="bg-rcgray-800 h-screen">
             <resizable-panel-group
                 id="nav-group-1"
                 direction="horizontal"
-                class="h-full rounded-lg border dark:bg-rcgray-900"
+                class="h-full rounded-lg border bg-rcgray-900"
                 auto-save-id="any-id"
                 :default-size="['10%', '90%']"
             >
