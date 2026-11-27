@@ -2,6 +2,7 @@
 
 /** Hosted disposable CI only: stale manual UUIDs after restart and expiry. */
 
+use App\Jobs\LocalBackupPresenceManualObserveJob;
 use App\Models\Device;
 use App\Models\ExternalBackupCheckRun;
 use App\Models\ExternalBackupFileReceipt;
@@ -130,7 +131,7 @@ try {
     $payloadFor = static function (string $raw, string $sessionId): array {
         $payload = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
         manualCrashCheck(is_string($payload['uuid'] ?? null)
-            && ($payload['data']['commandName'] ?? null) === App\Jobs\LocalBackupPresenceManualObserveJob::class
+            && ($payload['data']['commandName'] ?? null) === LocalBackupPresenceManualObserveJob::class
             && is_string($payload['data']['command'] ?? null)
             && str_contains($payload['data']['command'], $sessionId), 'exact manual payload identity');
 
