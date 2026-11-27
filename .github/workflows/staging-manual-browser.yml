@@ -13,6 +13,8 @@ on:
       - 'docker/staging/**'
       - 'tests/staging/integration/docker-apache.sh'
       - 'tests/staging/integration/manual-browser.cjs'
+      - 'tests/staging/integration/activation-browser.cjs'
+      - 'tests/staging/integration/docker-activation-browser.php'
       - '.github/workflows/staging-manual-browser.yml'
       - 'tests/staging/integration/docker-manual-http.php'
       - 'tests/staging/integration/docker-apache.php'
@@ -40,7 +42,17 @@ concurrency:
 
 jobs:
   manual-browser:
-    name: Actual Chromium wizard and Verify Now to Horizon
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: manual-browser
+            script: manual-browser.cjs
+            name: Actual Chromium wizard and Verify Now to Horizon
+          - mode: activation-browser
+            script: activation-browser.cjs
+            name: Actual Chromium scheduled activation and suspension
     runs-on: ubuntu-latest
     timeout-minutes: 55
     env:
@@ -64,7 +76,7 @@ jobs:
           build-args: |
             SOURCE_REVISION=${{ github.sha }}
           cache-from: type=gha,scope=staging-manual-browser
-          cache-to: type=gha,mode=max,scope=staging-manual-browser
+          cache-to: type=gha,mode=max,scope=staging-${{ matrix.mode }}
 
       - name: Prepare version-matched hosted browser tools
         shell: bash
@@ -73,11 +85,11 @@ jobs:
           test "$RUNNER_ENVIRONMENT" = github-hosted
           grep -Fxq tests .dockerignore
           bash -n tests/staging/integration/docker-apache.sh
-          node --check tests/staging/integration/manual-browser.cjs
+          node --check tests/staging/integration/"${{ matrix.script }}"
           browser_dir="$RUNNER_TEMP/rconfig-manual-browser"
           evidence="$RUNNER_TEMP/rconfig-manual-browser-evidence"
           mkdir -m 0700 "$browser_dir" "$evidence"
-          cp tests/staging/integration/manual-browser.cjs "$browser_dir/"
+          cp tests/staging/integration/"${{ matrix.script }}" "$browser_dir/"
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --prefix "$browser_dir" --no-save --ignore-scripts --no-audit --no-fund playwright@1.64.1
           docker pull mcr.microsoft.com/playwright:v1.64.1-noble
           echo "MANUAL_BROWSER_DIR=$browser_dir" >> "$GITHUB_ENV"
@@ -87,13 +99,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash tests/staging/integration/docker-apache.sh --manual-browser
+          bash tests/staging/integration/docker-apache.sh --${{ matrix.mode }}
 
       - name: Retain synthetic terminal screenshots only
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: synthetic-manual-browser-evidence
+          name: synthetic-${{ matrix.mode }}-evidence
           path: |
             ${{ runner.temp }}/rconfig-manual-browser-evidence/*.png
           if-no-files-found: warn
