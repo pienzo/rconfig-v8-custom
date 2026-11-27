@@ -7,7 +7,7 @@ test "$RUNNER_ENVIRONMENT" = github-hosted
 mode="${1:---apache-only}"
 test "$#" -le 1
 case "$mode" in
-    --apache-only|--combined|--recreate|--infra-restart|--bootstrap-crash|--theme-browser) ;;
+    --apache-only|--combined|--recreate|--infra-restart|--bootstrap-crash|--theme-browser|--manual-http) ;;
     *) exit 2 ;;
 esac
 if [[ "$mode" != --apache-only && "$mode" != --bootstrap-crash && "$mode" != --theme-browser ]]; then
@@ -39,8 +39,14 @@ cleanup() {
     compose down --volumes --remove-orphans >/dev/null 2>&1 || true
     sudo rm -f -- "$root/config/.env" "$root/secrets/mariadb_root_password" \
         "$root/secrets/mariadb_app_password" "$root/secrets/redis.conf" "$root/admin"
+    if [[ "$mode" == --manual-http ]]; then
+        sudo rm -f -- "$root/manual-config.php" "$root/fixture/device/backup_a.cfg"
+        if sudo test -d "$root/fixture/device"; then sudo rmdir -- "$root/fixture/device" || status=1; fi
+        if sudo test -d "$root/fixture"; then sudo rmdir -- "$root/fixture" || status=1; fi
+    fi
     sudo rmdir -- "$root/config" "$root/secrets" "$root" || true
     rm -f -- "$RUNNER_TEMP/$project-bootstrap.log" "$RUNNER_TEMP/$project-http.log" "$RUNNER_TEMP/$project-negative.log"
+    exit "$status"
 }
 trap cleanup EXIT
 
@@ -142,6 +148,30 @@ expect_refusal 'staging bootstrap container refused: bootstrap already completed
     "${approval[@]}"
 printf '%s\n' 'STAGING_STRICT_DOCKER_BOOTSTRAP_OK (SYNTHETIC_ONLY)'
 
+# Only after strict default-off bootstrap, mount an isolated static operator
+# configuration. The source/image configuration is never modified.
+if [[ "$mode" == --manual-http ]]; then
+    test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
+    docker run --rm --network none --read-only --user 1000:33 --cap-drop ALL \
+        --entrypoint php "$image" -r '
+        $settings = require "/var/www/html/rconfig/config/local-backup-presence.php";
+        foreach (["runtime_enabled", "queue_enabled", "scheduler_enabled", "dispatch_enabled",
+            "manual_probe_enabled", "manual_dispatch_enabled", "manual_api_enabled"] as $flag) {
+            if ($settings[$flag] !== false) { exit(2); }
+            $settings[$flag] = true;
+        }
+        if ($settings["activation_api_enabled"] !== false || $settings["catchup_enabled"] !== false
+            || $settings["roots"] !== []) { exit(2); }
+        $settings["roots"] = ["synthetic" => "/mnt/f02-synthetic"];
+        echo "<?php\n\nreturn " . var_export($settings, true) . ";\n";
+    ' | sudo tee "$root/manual-config.php" >/dev/null
+    sudo chmod 0644 "$root/manual-config.php"
+    sudo install -d -m 0755 "$root/fixture" "$root/fixture/device"
+    printf '%s\n' 'synthetic HTTP presence fixture' | sudo tee "$root/fixture/device/backup_a.cfg" >/dev/null
+    sudo chmod 0444 "$root/fixture/device/backup_a.cfg"
+    common+=(--mount "type=bind,source=$root/manual-config.php,target=/var/www/html/rconfig/config/local-backup-presence.php,readonly")
+fi
+
 # Start Apache first, without bootstrap secret or host port.
 start_apache() {
     docker run -d --name "$app" --network "$network" \
@@ -157,6 +187,46 @@ start_apache() {
     fi
 }
 start_apache
+if [[ "$mode" == --manual-http ]]; then
+    manual_file="$GITHUB_WORKSPACE/tests/staging/integration/docker-manual-http.php"
+    test -f "$manual_file" && test ! -L "$manual_file"
+    manual_probe() {
+        local phase="$1" marker="$2"
+        docker run --rm -i --name "$probe" --network "container:$app" \
+            "${common[@]}" "${admin[@]}" "${identity[@]}" \
+            --env RUNNER_ENVIRONMENT=github-hosted --env RCONFIG_ROLE_PROBE_PHASE=http \
+            --env "RCONFIG_MANUAL_HTTP_PHASE=$phase" \
+            --mount "type=bind,source=$manual_file,target=/tmp/ci-manual-http.php,readonly" \
+            --entrypoint php "$image" < tests/staging/integration/docker-apache.php | tee "$RUNNER_TEMP/$project-http.log"
+        grep -Fxq "$marker (SYNTHETIC_ONLY)" "$RUNNER_TEMP/$project-http.log"
+    }
+    docker exec --user 1000:33 "$app" test ! -e /mnt/f02-synthetic
+    manual_probe admit F02_HTTP_MANUAL_ADMISSION_OK
+    docker run -d --name "$project-scheduler" --network "$network" "${common[@]}" \
+        --entrypoint /usr/local/bin/staging-role-entrypoint.sh "$image" scheduler >/dev/null
+    docker exec --user 1000:33 "$project-scheduler" test ! -e /mnt/f02-synthetic
+    manual_probe queued F02_HTTP_MANUAL_SCHEDULER_OK
+    docker run -d --name "$project-horizon" --network "$network" "${common[@]}" \
+        --mount "type=bind,source=$root/fixture,target=/mnt/f02-synthetic,readonly" \
+        --entrypoint /usr/local/bin/staging-role-entrypoint.sh "$image" horizon >/dev/null
+    test "$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/mnt/f02-synthetic"}}{{.RW}}{{end}}{{end}}' "$project-horizon")" = false
+    docker exec --user 1000:33 "$project-horizon" sh -ec 'test -r /mnt/f02-synthetic/device/backup_a.cfg && test ! -w /mnt/f02-synthetic/device'
+    for role in app scheduler horizon; do
+        test "$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/www/html/rconfig/config/local-backup-presence.php"}}{{.RW}}{{end}}{{end}}' "$project-$role")" = false
+    done
+    combined_roles_verify_layout
+    manual_probe present F02_HTTP_MANUAL_STABLE_PRESENT_OK
+    combined_roles_verify_processes
+    # Verify unchanged synthetic bytes and remove only the owned file, between observations.
+    test "$(sudo cat "$root/fixture/device/backup_a.cfg")" = 'synthetic HTTP presence fixture'
+    sudo rm -- "$root/fixture/device/backup_a.cfg"
+    manual_probe absent F02_HTTP_MANUAL_INTEGRITY_OK
+    grep -Fxq 'F02_HTTP_MANUAL_RESTART_ABSENT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/$project-http.log"
+    combined_roles_verify_layout
+    docker stop -t 30 "$project-scheduler" "$project-horizon" >/dev/null
+    printf '%s\n' 'F02_HTTP_MANUAL_WORKER_ONLY_MOUNT_OK (SYNTHETIC_ONLY)'
+    exit 0
+fi
 if [[ "$mode" == --theme-browser ]]; then
     test "$THEME_BROWSER_DIR" = "$RUNNER_TEMP/rconfig-theme-browser"
     test "$THEME_BROWSER_OUTPUT" = "$RUNNER_TEMP/rconfig-theme-evidence"

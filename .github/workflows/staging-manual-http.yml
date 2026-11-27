@@ -1,0 +1,74 @@
+name: F02 manual HTTP to worker (synthetic)
+
+on:
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'compose.staging.yaml'
+      - 'compose.bootstrap.yaml'
+      - 'docker/staging/provision-env.sh'
+      - 'app/Services/Staging/**'
+      - 'database/migrations/**'
+      - 'docker/staging/**'
+      - 'tests/staging/integration/docker-apache.sh'
+      - 'tests/staging/integration/docker-apache.php'
+      - 'tests/staging/integration/docker-manual-http.php'
+      - 'tests/staging/integration/docker-combined-roles.sh'
+      - 'app/Services/ExternalBackups/**'
+      - 'app/Http/Controllers/Api/LocalBackupPresence*'
+      - 'app/Jobs/LocalBackupPresence*'
+      - 'app/Models/LocalBackupPresence*'
+      - 'app/Console/Kernel.php'
+      - 'config/**'
+      - 'routes/api_modules/tasks.php'
+      - '.github/workflows/staging-manual-http.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write # Buildx layer cache only; never writes repository content.
+
+concurrency:
+  group: staging-manual-http-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  manual-http:
+    name: Actual Apache to scheduler and Horizon manual diagnostic
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      STAGING_APP_IMAGE: rconfig-custom-ci:apache
+
+    steps:
+      - name: Checkout exact PR test source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build source image pinned to tested GitHub commit
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ env.STAGING_APP_IMAGE }}
+          build-args: |
+            SOURCE_REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=staging-manual-http
+          cache-to: type=gha,mode=max,scope=staging-manual-http
+
+      - name: Verify the isolated HTTP-to-worker contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          grep -Fxq tests .dockerignore
+          bash -n tests/staging/integration/docker-apache.sh
+          docker run --rm --network none --read-only --user 1000:33 --cap-drop ALL \
+            --mount "type=bind,source=$GITHUB_WORKSPACE/tests/staging/integration/docker-manual-http.php,target=/tmp/ci-manual-http.php,readonly" \
+            --entrypoint php "$STAGING_APP_IMAGE" -l /tmp/ci-manual-http.php
+          bash tests/staging/integration/docker-apache.sh --manual-http

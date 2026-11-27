@@ -163,6 +163,10 @@ foreach ([
     $data = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
     apacheCheck(is_array($data[$field] ?? null), 'API shape ' . $field);
 }
+if (getenv('RCONFIG_MANUAL_HTTP_PHASE') !== false) {
+    require '/tmp/ci-manual-http.php';
+    exit(0);
+}
 if ($persistence !== 'none') {
     $fixture = 'synthetic-role-recreation-v1';
     $fixturePath = storage_path('.synthetic-role-recreation');
