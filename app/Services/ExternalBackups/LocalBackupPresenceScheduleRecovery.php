@@ -36,11 +36,7 @@ final class LocalBackupPresenceScheduleRecovery
             $instant = $minute->format('Y-m-d H:i:s');
             $activation = $rule->getRawOriginal('activated_at_utc');
             if (! $rule->enabled || ! is_string($activation) || $activation > $instant
-                || $task->task_command !== LocalBackupPresenceOccurrenceClaim::TASK_COMMAND
-                || (bool) $task->is_paused || (bool) $task->is_system || ! (bool) $task->task_devices
-                || (bool) $task->task_categories || (bool) $task->task_tags
-                || $task->device()->pluck('devices.id')->map(static fn ($id): int => (int) $id)->all() !== [(int) $rule->device_id]
-                || $task->category()->exists() || $task->tag()->exists()) {
+                || ! LocalBackupPresenceTaskLinkage::matches($rule, $task)) {
                 return;
             }
 

@@ -60,11 +60,7 @@ final class LocalBackupPresenceObserver
             }
 
             if (! $rule->enabled || $rule->getRawOriginal('activated_at_utc') !== $criteria['activated_at_utc']
-                || $task->task_command !== LocalBackupPresenceOccurrenceClaim::TASK_COMMAND || (bool) $task->is_paused
-                || (bool) $task->is_system || ! (bool) $task->task_devices
-                || (bool) $task->task_categories || (bool) $task->task_tags
-                || $task->device()->pluck('devices.id')->map(static fn ($id): int => (int) $id)->all() !== [(int) $rule->device_id]
-                || $task->category()->exists() || $task->tag()->exists()) {
+                || ! LocalBackupPresenceTaskLinkage::matches($rule, $task)) {
                 throw new DomainException('Local backup task is not eligible for observation.');
             }
 
