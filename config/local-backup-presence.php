@@ -14,6 +14,8 @@ return [
     // Separate operator approval for internal diagnostic observations.
     'manual_probe_enabled' => false,
     'manual_dispatch_enabled' => false,
+    // Explicit HTTP approval, separate from worker and scheduler gates.
+    'manual_api_enabled' => false,
     'max_rules_per_tick' => 100,
     'roots' => [],
 ];
