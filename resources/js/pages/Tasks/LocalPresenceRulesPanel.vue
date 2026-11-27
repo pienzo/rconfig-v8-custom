@@ -2,6 +2,7 @@
 import axios from "axios";
 import { onMounted, onBeforeUnmount, ref } from "vue";
 import LocalPresenceRuleForm from "./LocalPresenceRuleForm.vue";
+import LocalPresenceManualDiagnostic from "./LocalPresenceManualDiagnostic.vue";
 import { LOCAL_PRESENCE_RULES, canEditLocalPresence } from "./localPresenceRule.js";
 
 const emit = defineEmits(["changed"]);
@@ -18,6 +19,7 @@ const confirmation = ref(null);
 const error = ref("");
 const info = ref("");
 const historyRule = ref(null);
+const diagnosticRule = ref(null);
 const historyRows = ref([]);
 const historyPage = ref(1);
 const historyLastPage = ref(1);
@@ -37,6 +39,7 @@ function message(exception) {
 }
 
 async function load(target = 1) {
+    diagnosticRule.value = null;
     const version = ++listVersion;
     loading.value = true;
     error.value = "";
@@ -71,6 +74,7 @@ function closeHistory() {
 }
 
 async function loadHistory(rule, target = 1) {
+    diagnosticRule.value = null;
     const version = ++historyVersion;
     historyRule.value = rule;
     historyLoading.value = true;
@@ -93,6 +97,7 @@ async function loadHistory(rule, target = 1) {
 
 function edit(rule) {
     if (busy.value || !canEditLocalPresence(rule)) return;
+    diagnosticRule.value = null;
     confirmation.value = null;
     closeHistory();
     error.value = "";
@@ -111,11 +116,13 @@ function ask(rule, action) {
     closeHistory();
     error.value = "";
     info.value = "";
+    diagnosticRule.value = null;
     confirmation.value = { rule, action };
 }
 
 async function mutate(action, rule, payload) {
     if (busy.value || !alive || denied.value) return;
+    diagnosticRule.value = null;
     busy.value = true;
     error.value = "";
     info.value = "";
@@ -138,6 +145,12 @@ async function mutate(action, rule, payload) {
     } finally {
         if (alive) busy.value = false;
     }
+}
+
+function openDiagnostic(rule) {
+    if (!manualAvailable.value || busy.value || loading.value || editing.value || confirmation.value || denied.value) return;
+    closeHistory();
+    diagnosticRule.value = rule.id;
 }
 
 function saveEdit(payload) {
@@ -185,6 +198,8 @@ onBeforeUnmount(() => {
                         <button type="button" class="rounded border px-2 py-1 text-red-700 dark:text-red-400" :disabled="busy || loading || !!editing || !!confirmation || !canEditLocalPresence(row)" @click="ask(row, 'delete')">Delete</button>
                         <button type="button" class="rounded border px-2 py-1" :disabled="busy || loading || !!editing || !!confirmation || (!row.enabled && !activationAvailable)"
                             @click="ask(row, row.enabled ? 'disable' : 'enable')">{{ row.enabled ? "Suspend" : "Activate" }}</button>
+                        <button type="button" class="rounded border px-2 py-1" :disabled="!manualAvailable || busy || loading || !!editing || !!confirmation || diagnosticRule === row.id"
+                            @click="openDiagnostic(row)">Verify Now</button>
                         <button type="button" class="rounded border px-2 py-1" :disabled="busy || loading || !!editing || !!confirmation"
                             @click="historyRule?.id === row.id ? closeHistory() : loadHistory(row)">{{ historyRule?.id === row.id ? "Close history" : "History" }}</button>
                     </div>
@@ -194,6 +209,8 @@ onBeforeUnmount(() => {
                     <button type="button" class="mr-2 rounded border bg-background px-3 py-1" :disabled="busy" @click="confirmation = null">Cancel</button>
                     <button type="button" class="rounded bg-blue-700 px-3 py-1 text-white" :disabled="busy" @click="confirmChange">Confirm {{ confirmation.action === "enable" ? "activation" : confirmation.action === "disable" ? "suspension" : "deletion" }}</button>
                 </div>
+                <LocalPresenceManualDiagnostic v-if="diagnosticRule === row.id" :key="row.id" :rule-id="row.id"
+                    :available="manualAvailable" @close="diagnosticRule = null" />
                 <LocalPresenceRuleForm v-if="editing?.id === row.id" :key="row.id" :rule="editing" :busy="busy" :error="error"
                     class="mt-3 rounded border" @save="saveEdit" @cancel="cancelEdit" />
                 <div v-if="historyRule?.id === row.id" aria-label="Scheduled presence history" class="mt-3 rounded border bg-muted p-3">
