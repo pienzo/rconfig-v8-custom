@@ -43,6 +43,7 @@ final class LocalBackupPresenceRuleController extends Controller
 
         return response()->json($items->toArray() + [
             'activation_available' => $this->activationAvailable(app(LocalBackupPresenceRuleActivation::class)),
+            'manual_available' => LocalBackupPresenceManualController::available(),
         ]);
     }
 
