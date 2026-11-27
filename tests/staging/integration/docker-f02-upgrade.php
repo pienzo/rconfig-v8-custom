@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Schema;
 function upgradeCheck(bool $ok, string $label): void
 {
     if (! $ok) {
-        fwrite(STDERR, 'Synthetic upgrade refused: ' . $label . PHP_EOL);
+        file_put_contents('php://stderr', 'Synthetic upgrade refused: ' . $label . PHP_EOL);
         exit(1);
     }
 }
@@ -39,7 +39,7 @@ Env::disablePutenv();
 $app = require $root . '/bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 set_exception_handler(static function (Throwable $error): never {
-    fwrite(STDERR, 'Synthetic upgrade unexpected exception: ' . get_class($error) . PHP_EOL);
+    file_put_contents('php://stderr', 'Synthetic upgrade unexpected exception: ' . get_class($error) . PHP_EOL);
     exit(1);
 });
 upgradeCheck(! $app->configurationIsCached() && $app->environmentFile() === '.env'
