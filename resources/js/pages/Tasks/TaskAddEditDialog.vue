@@ -2,6 +2,8 @@
 import NavPanel from "@/pages/Tasks/WizardPanels/NavPanel.vue";
 import RcConfirmAlertDialog from "@/pages/Shared/ConfirmAlertDialog/RcConfirmAlertDialog.vue";
 import TaskTypeSelection from "@/pages/Tasks/TaskTypeSelection.vue";
+import LocalPresenceRuleForm from "@/pages/Tasks/LocalPresenceRuleForm.vue";
+import { LOCAL_PRESENCE_RULES, isManagedBackupTask } from "./localPresenceRule.js";
 import Step1 from "@/pages/Tasks/WizardPanels/Step1.vue";
 import Step2 from "@/pages/Tasks/WizardPanels/Step2.vue";
 import Step3 from "@/pages/Tasks/WizardPanels/Step3.vue";
@@ -46,13 +48,21 @@ const model = ref({
 
 const activeStep = ref(0);
 const showTaskTypeSelection = ref(true);
+const showLocalPresence = ref(false);
+const localSaving = ref(false);
+const localSaveError = ref("");
 
 const props = defineProps({
 	editId: Number,
+	localPresenceAllowed: Boolean,
 });
 
 function handleKeyDown(event) {
-	if (event.ctrlKey && event.key === "Enter") {
+	if (event.ctrlKey && event.key === "Enter" && isDialogOpen("DialogNewTask")) {
+		if (showLocalPresence.value) {
+			event.preventDefault();
+			return;
+		}
 		saveDialog();
 	}
 }
@@ -80,6 +90,7 @@ onUnmounted(() => {
 });
 
 function saveDialog() {
+	if (showLocalPresence.value || isManagedBackupTask(model.value)) return;
 	let id = props.editId > 0 ? `/${props.editId}` : "";
 	let method = props.editId > 0 ? "patch" : "post";
 	axios[method]("/api/tasks" + id, model.value)
@@ -97,6 +108,46 @@ function saveDialog() {
 				errorMessage.value = "An error occurred while saving the task";
 			}
 		});
+}
+
+function chooseLocalPresence() {
+    if (!props.localPresenceAllowed || props.editId > 0) return;
+    showLocalPresence.value = true;
+    localSaveError.value = "";
+}
+
+async function saveLocalPresence(payload) {
+    if (!showLocalPresence.value || !props.localPresenceAllowed || props.editId > 0 || localSaving.value) return;
+    localSaving.value = true;
+    localSaveError.value = "";
+    try {
+        const response = await axios.post(LOCAL_PRESENCE_RULES, payload);
+        closeDialog("DialogNewTask");
+        emit("save", response.data);
+        toastSuccess("Rule saved", "Local backup presence rule created inactive.");
+    } catch (error) {
+        const status = error.response?.status;
+        localSaveError.value = status === 422 ? "Rule validation failed. Check the name, schedule, directory, pattern and limits."
+            : status === 403 ? "Administrator access is required."
+            : status === 409 ? "Rule creation is not allowed."
+            : "Unable to confirm creation. Refresh the task list before retrying.";
+    } finally {
+        localSaving.value = false;
+    }
+}
+
+function dismissWizard(event) {
+    if (showLocalPresence.value) {
+        event?.preventDefault?.();
+        if (!localSaving.value) confirmCloseWizardOpen();
+        return;
+    }
+    closeDialog("DialogNewTask");
+}
+
+function outsideWizard(event) {
+    if (showLocalPresence.value) event?.preventDefault?.();
+    if (!localSaving.value) confirmCloseWizardOpen();
 }
 
 function prevPage() {
@@ -164,6 +215,7 @@ function handleContinueFromTaskSelection() {
 }
 
 function confirmCloseWizardOpen() {
+	if (localSaving.value) return;
 	showConfirmCloseAlert.value = true;
 }
 
@@ -172,6 +224,7 @@ function cancelCloseWizard() {
 }
 
 function confirmCloseWizard() {
+	if (localSaving.value) return;
 	showConfirmCloseAlert.value = false;
 	closeDialog("DialogNewTask");
 }
@@ -189,10 +242,10 @@ function Step5CheckSuccess() {
 		</DialogTrigger>
 		<DialogContent
 			class="max-w-4xl gap-0 p-0 m-4 bg-rcgray-900"
-			@interact-outside="confirmCloseWizardOpen()"
-			@pointer-down-outside="confirmCloseWizardOpen()"
-			@escape-key-down="closeDialog('DialogNewTask')"
-			@close-clicked="closeDialog('DialogNewTask')"
+			@interact-outside="outsideWizard"
+			@pointer-down-outside="outsideWizard"
+			@escape-key-down="dismissWizard"
+			@close-clicked="dismissWizard"
 		>
 			<DialogHeader class="rc-dialog-header">
 				<DialogTitle class="text-sm text-rcgray-200">
@@ -207,11 +260,20 @@ function Step5CheckSuccess() {
 				</DialogTitle>
 			</DialogHeader>
 
+			<LocalPresenceRuleForm v-if="showLocalPresence" :busy="localSaving" :error="localSaveError"
+                @save="saveLocalPresence" @back="showLocalPresence = false" @cancel="confirmCloseWizardOpen()" />
+
 			<!-- Task Type Selection -->
 			<div
-				v-if="showTaskTypeSelection"
+				v-else-if="showTaskTypeSelection"
 				class="p-6"
 			>
+				<button v-if="props.localPresenceAllowed && !(props.editId > 0)" type="button"
+                    class="mb-3 block w-full rounded-md border border-input bg-background p-3 text-left hover:bg-muted"
+                    @click="chooseLocalPresence">
+                    <span class="block text-sm font-semibold text-foreground">Local backup presence</span>
+                    <span class="block text-xs text-muted-foreground">Create an inactive file-presence rule for one device (administrator).</span>
+                </button>
 				<TaskTypeSelection
 					:model="model"
 					@task-selected="handleTaskSelected"
@@ -263,7 +325,7 @@ function Step5CheckSuccess() {
 
 			<!-- Navigation Footer -->
 			<div
-				v-if="!showTaskTypeSelection"
+				v-if="!showTaskTypeSelection && !showLocalPresence"
 				class="w-full py-2 border-t border-b"
 			>
 				<div
@@ -313,7 +375,7 @@ function Step5CheckSuccess() {
 				</div>
 			</div>
 
-			<DialogFooter class="rc-dialog-footer bg-rcgray-800">
+			<DialogFooter v-if="!showLocalPresence" class="rc-dialog-footer bg-rcgray-800">
 				<Button
 					type="close"
 					variant="outline"

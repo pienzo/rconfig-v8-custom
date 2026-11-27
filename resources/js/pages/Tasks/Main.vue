@@ -14,12 +14,29 @@ import { Clock } from "lucide-vue-next";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { eventBus } from "@/composables/eventBus";
-import { onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import axios from "axios";
+import { LOCAL_PRESENCE_COMMAND, LOCAL_PRESENCE_RULES, isManagedBackupTask } from "./localPresenceRule.js";
 import { useRowSelection } from "@/composables/useRowSelection";
 import { useTasks } from "@/pages/Tasks/useTasks";
 
 const { reload, createTask, currentPage, deleteTask, editId, historyTaskId, fetchTasks, formatters, handleKeyDown, handleSave, isLoading, lastPage, newTaskModalKey, openDialog, pauseTask, perPage, proceedEditId, runTaskConfirm, runTaskNow, searchTerm, showConfirmDelete, deleteManyTasks, showConfirmConfirmProceedAlertAlert, sortParam, tasks, toggleSort, updateTask, viewEditDialog, viewHistoryDialog, filters } = useTasks();
-const { selectedRows, selectAll, toggleSelectAll, toggleSelectRow } = useRowSelection(tasks);
+const selectableTasks = computed(() => (tasks.value?.data || []).filter(row => !isManagedBackupTask(row)));
+const { selectedRows, selectAll, toggleSelectAll, toggleSelectRow } = useRowSelection(selectableTasks);
+watch(selectableTasks, rows => {
+    const ids = new Set(rows.map(row => row.id));
+    selectedRows.value = selectedRows.value.filter(id => ids.has(id));
+    selectAll.value = rows.length > 0 && selectedRows.value.length === rows.length;
+});
+const localPresenceAllowed = ref(false);
+async function loadLocalPresenceCapability() {
+    try {
+        const response = await axios.get(LOCAL_PRESENCE_RULES, { params: { per_page: 1 }, validateStatus: status => status === 200 || status === 403 });
+        localPresenceAllowed.value = response.status === 200 && Array.isArray(response.data?.data);
+    } catch {
+        localPresenceAllowed.value = false;
+    }
+}
 
 // Task type filter - Core only has 3 download types
 const taskTypeFilter = ref("all");
@@ -30,6 +47,7 @@ const taskTypeOptions = [
 	{ value: "rconfig:download-device", label: "Download by Device" },
 	{ value: "rconfig:download-category", label: "Download by Category" },
 	{ value: "rconfig:download-tag", label: "Download by Tag" },
+    { value: LOCAL_PRESENCE_COMMAND, label: "Local backup presence" },
 ];
 
 // Watch for filter changes and update task_command filter
@@ -44,6 +62,7 @@ watch(taskTypeFilter, (newValue) => {
 
 onMounted(() => {
 	fetchTasks();
+    loadLocalPresenceCapability();
 	window.addEventListener("keydown", handleKeyDown);
 
 	eventBus.on("deleteManyTagsSuccess", () => {
@@ -154,6 +173,7 @@ onUnmounted(() => {
 						<TableHead class="w-[2%]">
 							<Checkbox
 								id="selectAll"
+                                :disabled="selectableTasks.length === 0"
 								v-model="selectAll"
 								@click="toggleSelectAll()"
 							/>
@@ -226,6 +246,7 @@ onUnmounted(() => {
 							<TableCell class="text-start">
 								<Checkbox
 									:id="'select-' + row.id"
+                                    v-if="!isManagedBackupTask(row)"
 									class="cursor-pointer"
 									:checked="selectedRows.includes(row.id) ? true : false"
 									@click="toggleSelectRow(row.id)"
@@ -261,12 +282,14 @@ onUnmounted(() => {
 							<TableCell class="text-start">
 								<div class="flex flex-col">
 									<Button
+                                        v-if="!isManagedBackupTask(row)"
 										class="px-2 py-0 text-sm hover:bg-rcgray-800 rounded-xl justify-start"
 										variant="ghost"
 										@click="viewHistoryDialog(row.id)"
 									>
 										<span class="border-b font-medium">{{ row.task_name }}</span>
 									</Button>
+									<span v-else class="px-2 text-sm font-medium">{{ row.task_name }}</span>
 									<span class="text-xs text-muted-foreground ml-2">ID: {{ row.id }}</span>
 								</div>
 							</TableCell>
@@ -444,7 +467,7 @@ onUnmounted(() => {
 							<!-- ACTIONS MENU -->
 							<TableCell class="text-start">
 								<ActionsMenu
-                                    v-if="row.task_command !== 'rconfig:check-external-backup'"
+                                    v-if="!isManagedBackupTask(row)"
 									:row-data="row"
 									:show-task-pause-btn="true"
 									:show-view-history-btn="true"
@@ -456,7 +479,7 @@ onUnmounted(() => {
 									@on-edit="viewEditDialog(row.id)"
 									@on-delete="deleteTask(row.id)"
 								/>
-                                <span v-else class="text-xs text-muted-foreground">Manage under External backup rules</span>
+                                <span v-else class="text-xs text-muted-foreground">{{ row.task_command === LOCAL_PRESENCE_COMMAND ? "Managed Local Presence rule" : "Manage under External backup rules" }}</span>
 							</TableCell>
 							<!-- ACTIONS MENU -->
 						</TableRow>
@@ -479,6 +502,7 @@ onUnmounted(() => {
 			<TaskAddEditDialog
 				:key="newTaskModalKey"
 				:edit-id="editId"
+                :local-presence-allowed="localPresenceAllowed"
 				@save="handleSave()"
 			/>
 			<DialogViewHistory :task-id="historyTaskId" />

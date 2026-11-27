@@ -372,6 +372,45 @@ async function main() {
                 await page.screenshot({ path: "/evidence/" + id + "-task-details.png", animations: "disabled" });
                 await page.keyboard.press("Escape");
                 await dialog.waitFor({ state: "hidden" });
+
+                stage = id + "-local-presence-wizard";
+                await view.getByRole("button", { name: /^New Task/ }).click();
+                const localDialog = page.getByRole("dialog");
+                const choice = localDialog.getByRole("button", { name: /^Local backup presence/ });
+                await choice.waitFor();
+                await choice.click();
+                const form = localDialog.getByRole("region", { name: "Local backup presence rule" });
+                await form.waitFor();
+                await form.getByLabel("Rule name", { exact: true }).fill("THEME-LOCAL-UNSAVED");
+                await form.getByLabel("Approved root alias", { exact: true }).fill("synthetic");
+                await form.getByLabel("Relative directory (optional)", { exact: true }).fill("device");
+                await requireContrast(id, "local-presence-title", form.getByRole("heading", { name: "Local backup presence", exact: true }), components);
+                await requireContrast(id, "local-presence-warning", form.getByText(/^New rules are saved inactive/), components);
+                let writes = 0;
+                const countWrite = request => {
+                    const path = new URL(request.url()).pathname;
+                    if (request.method() === "POST" && ["/api/tasks", "/api/tasks/local-backup-presence-rules"].includes(path)) writes++;
+                };
+                page.on("request", countWrite);
+                // Block writes at the network boundary during keyboard/invalid-save checks.
+                const blockWrites = async route => route.request().method() === "POST" ? route.abort() : route.fallback();
+                await context.route(/\/api\/tasks(?:\/local-backup-presence-rules)?$/, blockWrites);
+                try {
+                    await page.keyboard.press("Control+Enter");
+                    await form.getByRole("button", { name: "Save inactive rule" }).click();
+                    await form.getByRole("alert").waitFor();
+                    assert.equal(writes, 0);
+                    await page.screenshot({ path: "/evidence/" + id + "-local-presence-wizard.png", animations: "disabled" });
+                    await form.getByRole("button", { name: "Back to task types" }).click();
+                    await localDialog.getByRole("heading", { name: "Select Task Type" }).waitFor();
+                    await page.keyboard.press("Escape");
+                    await localDialog.waitFor({ state: "hidden" });
+                    assert.equal(writes, 0);
+                    console.log("THEME_LOCAL_PRESENCE_WIZARD_OK " + id + " (NO_WRITES)");
+                } finally {
+                    page.off("request", countWrite);
+                    await context.unroute(/\/api\/tasks(?:\/local-backup-presence-rules)?$/, blockWrites);
+                }
             }
         }
         // Fixture pass: actual Vue/Monaco rendering, not real API storage or

@@ -122,7 +122,7 @@ export function useTasks() {
 	function handleKeyDown(event) {
 		if (event.altKey && event.key === "n") {
 			event.preventDefault();
-			openDialog("DialogNewTask");
+			if (!dialogStore.isDialogOpen("DialogNewTask")) createTask();
 		}
 	}
 
