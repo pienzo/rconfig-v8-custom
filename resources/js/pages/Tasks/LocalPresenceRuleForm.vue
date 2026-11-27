@@ -2,14 +2,15 @@
 import { ref } from "vue";
 import DeviceMultiSelect from "@/pages/Shared/FormFields/DeviceMultiSelect.vue";
 import ExternalBackupPatternPreview from "@/pages/Tasks/ExternalBackupPatternPreview.vue";
-import { initialLocalPresenceDraft, localPresencePayload } from "./localPresenceRule.js";
+import { initialLocalPresenceDraft, localPresenceDraftFromRule, localPresencePayload } from "./localPresenceRule.js";
 
 const props = defineProps({
     busy: Boolean,
+    rule: { type: Object, default: null },
     error: { type: String, default: "" },
 });
 const emit = defineEmits(["save", "back", "cancel"]);
-const draft = ref(initialLocalPresenceDraft());
+const draft = ref(props.rule ? localPresenceDraftFromRule(props.rule) : initialLocalPresenceDraft());
 const selectedDevice = ref({});
 const validation = ref("");
 const numericFields = [
@@ -25,7 +26,7 @@ function save() {
     if (props.busy) return;
     validation.value = "";
     try {
-        emit("save", localPresencePayload(draft.value, selectedDevice.value?.id));
+        emit("save", localPresencePayload(draft.value, selectedDevice.value?.id, props.rule !== null));
     } catch (error) {
         validation.value = error.message;
     }
@@ -46,7 +47,8 @@ function save() {
                     </label>
                     <div class="min-w-0 text-sm">
                         <span class="mb-1 block">Device (one per rule)</span>
-                        <DeviceMultiSelect v-model="selectedDevice" single-select />
+                        <p v-if="rule" class="rounded border bg-muted p-2">{{ rule.device?.device_name || "Unavailable device" }} (fixed)</p>
+                        <DeviceMultiSelect v-else v-model="selectedDevice" single-select />
                     </div>
                     <label class="block text-sm">Approved root alias
                         <input v-model="draft.directory_alias" maxlength="64" class="mt-1 block w-full rounded border bg-background p-2 font-mono" autocomplete="off" placeholder="site_backups" />
@@ -63,11 +65,11 @@ function save() {
                     <label class="block text-sm">Filename pattern (basename only)
                         <input v-model="draft.filename_pattern" maxlength="255" class="mt-1 block w-full rounded border bg-background p-2 font-mono" autocomplete="off" />
                     </label>
-                    <label class="block text-sm md:col-span-2">Schedule (five cron fields, UTC)
+                    <label class="block text-sm md:col-span-2">Schedule (five cron fields, server timezone)
                         <input v-model="draft.task_cron_text" maxlength="255" class="mt-1 block w-full rounded border bg-background p-2 font-mono" autocomplete="off" />
                     </label>
                 </div>
-                <p class="text-xs text-muted-foreground">The alias identifies a mapping configured by the operator; it is not an absolute path. Saving does not validate mount availability.</p>
+                <p class="text-xs text-muted-foreground">The alias identifies a mapping configured by the operator; it is not an absolute path. Saving does not validate mount availability. Cron uses the application timezone; recorded observations use UTC.</p>
                 <details class="rounded border p-3">
                     <summary class="cursor-pointer text-sm font-medium">Test example filenames</summary>
                     <ExternalBackupPatternPreview :key="draft.pattern_mode + ':' + draft.filename_pattern"
@@ -84,13 +86,13 @@ function save() {
                 <p class="text-xs text-muted-foreground">Leave maximum age blank to omit freshness filtering; leave quiet period blank to omit stability sampling. A present file is metadata evidence only.</p>
             </fieldset>
             <p class="rounded border bg-muted p-3 text-sm text-foreground">New rules are saved inactive. Scheduled checks and Verify Now require separate operator approval.</p>
-            <p v-if="validation || error" role="alert" class="text-sm text-red-700 dark:text-red-400">{{ validation || error }}</p>
-        </div>
+            </div>
+        <p v-if="validation || error" role="alert" class="border-t px-5 py-2 text-sm text-red-700 dark:text-red-400">{{ validation || error }}</p>
         <div class="flex flex-wrap justify-end gap-2 border-t p-3">
-            <button type="button" class="rounded border px-3 py-2 text-sm" :disabled="busy" @click="emit('back')">Back to task types</button>
+            <button v-if="!rule" type="button" class="rounded border px-3 py-2 text-sm" :disabled="busy" @click="emit('back')">Back to task types</button>
             <button type="button" class="rounded border px-3 py-2 text-sm" :disabled="busy" @click="emit('cancel')">Cancel</button>
             <button type="button" class="rounded bg-blue-700 px-3 py-2 text-sm text-white disabled:opacity-50" :disabled="busy" @click="save">
-                {{ busy ? "Saving..." : "Save inactive rule" }}
+                {{ busy ? "Saving..." : (rule ? "Update inactive rule" : "Save inactive rule") }}
             </button>
         </div>
     </section>

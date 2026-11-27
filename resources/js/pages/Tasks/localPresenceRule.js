@@ -44,7 +44,7 @@ export function localPresencePayload(draft, deviceId, editing = false) {
     const alias = draft.directory_alias;
     const directory = draft.relative_directory;
     if (name.length < 3 || name.length > 255) throw new Error("Enter a rule name (3–255 characters).");
-    if (cron.length !== 5) throw new Error("Enter exactly five cron fields (UTC).");
+    if (cron.length !== 5) throw new Error("Enter exactly five cron fields.");
     if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(alias)) throw new Error("Enter an approved root alias.");
     if (directory !== "" && (directory.length > 4095 || directory.includes("\\") ||
         directory.split("/").length > 32 || directory.split("/").some(part => !part || part === "." || part === ".."))) {
@@ -74,4 +74,19 @@ export function localPresencePayload(draft, deviceId, editing = false) {
     if (payload.max_matches > payload.max_entries) throw new Error("Maximum matches cannot exceed maximum entries.");
     if (!editing) payload.device_id = integer(deviceId, "Device", 1, Number.MAX_SAFE_INTEGER);
     return payload;
+}
+
+export function canEditLocalPresence(rule) {
+    return rule?.enabled === false && rule.activated_at_utc === null;
+}
+
+export function localPresenceDraftFromRule(rule) {
+    const draft = initialLocalPresenceDraft();
+    for (const key of Object.keys(draft)) {
+        if (key === "task_name" || key === "task_cron_text") continue;
+        draft[key] = rule[key];
+    }
+    draft.task_name = rule.task.task_name;
+    draft.task_cron_text = rule.task.task_cron.join(" ");
+    return draft;
 }

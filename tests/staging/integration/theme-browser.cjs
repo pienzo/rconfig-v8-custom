@@ -73,7 +73,17 @@ async function main() {
     const contents = ["hostname THEME-BEFORE\ninterface Loopback0\n description SYNTHETIC\n",
         "hostname THEME-AFTER\ninterface Loopback0\n description SYNTHETIC\n"];
     const paginated = data => ({ data, current_page: 1, last_page: 1, total: data.length, per_page: 10, from: 1, to: data.length });
+    const presenceRule = {
+        id: 990005, task_id: 990006, device_id: device.id, enabled: false, activated_at_utc: null,
+        task: { id: 990006, task_name: "THEME-LOCAL-PRESENCE", task_cron: ["0", "2", "*", "*", "*"], is_paused: 1 },
+        device: { id: device.id, device_name: device.device_name },
+        directory_alias: "synthetic", relative_directory: "device", pattern_mode: "glob",
+        filename_pattern: "backup_*.cfg", minimum_bytes: 1, maximum_age_seconds: null, quiet_seconds: 30,
+        deadline_seconds: 3600, max_entries: 1000, max_matches: 100, max_scan_millis: 2000,
+    };
     const fixtures = new Map([
+        ["/api/tasks/local-backup-presence-rules", { ...paginated([presenceRule]), activation_available: false, manual_available: false }],
+        ["/api/tasks/local-backup-presence-rules/" + presenceRule.id + "/runs", { ...paginated([]), evidence_type: "metadata_presence" }],
         ["/api/devices", paginated([device])],
         ["/api/tasks", paginated([task])],
         ["/api/configs", paginated(configs)],
@@ -431,6 +441,27 @@ async function main() {
                 await row.waitFor();
                 await requireContrast(id, "fixture-" + name, row.getByText(value, { exact: true }), components);
                 await page.screenshot({ path: "/evidence/" + id + "-fixture-" + name + ".png", animations: "disabled" });
+                if (name === "tasks") {
+                    checkpoint = "local-presence-management";
+                    await view.getByRole("button", { name: "Local Presence rules", exact: true }).click();
+                    const panel = view.getByRole("region", { name: "Local presence rules" });
+                    const rule = panel.getByRole("listitem").filter({ hasText: "THEME-LOCAL-PRESENCE" });
+                    await rule.waitFor();
+                    await requireContrast(id, "local-presence-management-status", rule.getByText("INACTIVE DRAFT", { exact: true }), components);
+                    assert(await rule.getByRole("button", { name: "Activate", exact: true }).isDisabled());
+                    await rule.getByRole("button", { name: "History", exact: true }).click();
+                    await rule.getByText("No scheduled observations recorded.", { exact: true }).waitFor();
+                    await page.screenshot({ path: "/evidence/" + id + "-local-presence-management.png", animations: "disabled" });
+                    await rule.getByRole("button", { name: "Close history", exact: true }).click();
+                    await rule.getByRole("button", { name: "Edit", exact: true }).click();
+                    const form = rule.getByRole("region", { name: "Local backup presence rule" });
+                    await form.getByText(device.device_name + " (fixed)", { exact: true }).waitFor();
+                    assert.equal(await form.getByLabel("Rule name", { exact: true }).inputValue(), "THEME-LOCAL-PRESENCE");
+                    await form.getByRole("button", { name: "Cancel", exact: true }).click();
+                    await view.getByRole("button", { name: "Hide Local Presence rules", exact: true }).click();
+                    assert(fixtureHits.has("/api/tasks/local-backup-presence-rules/" + presenceRule.id + "/runs"));
+                    console.log("THEME_LOCAL_PRESENCE_MANAGEMENT_OK " + id + " (MOCKED_READ_API_ONLY)");
+                }
             }
             stage = id + "-fixture-diff-filter";
             checkpoint = "compare-route";
