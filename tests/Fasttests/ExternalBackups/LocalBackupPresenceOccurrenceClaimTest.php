@@ -27,6 +27,9 @@ beforeEach(function () {
         'task_devices' => 1,
         'task_categories' => 0,
         'task_tags' => 0,
+        'task_email_notify' => false,
+        'download_report_notify' => false,
+        'verbose_download_report_notify' => false,
         'is_system' => 0,
         'is_paused' => 0,
         'task_cron' => '0 6 * * *',
@@ -213,6 +216,9 @@ test('scheduler refuses overcapacity without partial reservation and isolates an
         'task_devices' => 1,
         'task_categories' => 0,
         'task_tags' => 0,
+        'task_email_notify' => false,
+        'download_report_notify' => false,
+        'verbose_download_report_notify' => false,
         'is_system' => 0,
         'is_paused' => 0,
         'task_cron' => '0 6 * * *',
@@ -348,3 +354,19 @@ test('failed catchup reservation does not advance the checkpoint or commit parti
     expect($this->rule->runs()->where('scheduled_at_utc', '2026-11-25 06:01:00')->exists())->toBeFalse();
     expect($this->rule->fresh()->getRawOriginal('scheduler_checked_minute_utc'))->toBe('2026-11-25 06:00:00');
 });
+
+test('native notification flags refuse scheduled claim and catchup without advancing checkpoint', function (string $field) {
+    $this->task->update([$field => true]);
+    expect(fn () => $this->service->claim($this->rule->id, $this->instant))->toThrow(DomainException::class);
+    config([
+        'local-backup-presence.queue_enabled' => true,
+        'local-backup-presence.scheduler_enabled' => true,
+        'local-backup-presence.catchup_enabled' => true,
+    ]);
+    CarbonImmutable::setTestNow($this->instant);
+    Bus::fake();
+    app(LocalBackupPresenceSchedulePlanner::class)->reserveDue();
+    expect($this->rule->runs()->count())->toBe(0)
+        ->and($this->rule->fresh()->getRawOriginal('scheduler_checked_minute_utc'))->toBeNull();
+    Bus::assertNothingDispatched();
+})->with(['task_email_notify', 'download_report_notify', 'verbose_download_report_notify']);

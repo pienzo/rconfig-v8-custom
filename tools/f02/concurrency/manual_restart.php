@@ -89,6 +89,58 @@ try {
     admissionCheck(count($baseline) === 10, 'ten existing manual sessions');
     $unaffected = array_diff_key($baseline, [$old->id => true]);
 
+    // Establish a stale consistent-read snapshot, then commit a pivot
+    // mutation via a second connection before taking the rule/task locks.
+    // The authoritative linkage check must see the current missing pivot.
+    $writerName = 'f02_linkage_writer';
+    admissionCheck(config('database.connections.' . $writerName) === null, 'unused writer connection name');
+    config(['database.connections.' . $writerName => config('database.connections.mysql')]);
+    $writer = DB::connection($writerName);
+    $pivot = $writer->table('device_task')->where('task_id', $tasks[10])->where('device_id', $device->id);
+    $originalPivot = $pivot->first();
+    $removed = false;
+    try {
+        admissionCheck($writer->getDatabaseName() === 'v8core_test'
+            && (int) $writer->selectOne('SELECT CONNECTION_ID() AS connection_id')->connection_id !== admissionConnectionId()
+            && $originalPivot !== null && $pivot->count() === 1, 'independent writer and owned pivot');
+        DB::statement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+        DB::beginTransaction();
+        $readerPivot = DB::table('device_task')->where('task_id', $tasks[10])->where('device_id', $device->id);
+        admissionCheck($readerPivot->count() === 1, 'consistent-read snapshot established');
+        $deleted = $pivot->delete();
+        $removed = $deleted === 1;
+        admissionCheck($removed && $pivot->count() === 0 && $readerPivot->count() === 1,
+            'committed missing pivot is invisible to old snapshot');
+        foreach (['start', 'restart'] as $operation) {
+            try {
+                if ($operation === 'start') {
+                    $service->start($a);
+                } else {
+                    $service->restart($a, $old->id);
+                }
+                admissionCheck(false, 'stale snapshot admitted corrupt linkage');
+            } catch (DomainException $e) {
+                admissionCheck($e->getMessage() === 'Linked local backup task is inconsistent.',
+                    'current pivot read refuses stale snapshot');
+            }
+        }
+        admissionCheck(DB::transactionLevel() === 1 && manualAdmissionRows() === $baseline,
+            'refusals preserve outer transaction and session snapshot');
+    } finally {
+        if (DB::transactionLevel() > 0) {
+            DB::rollBack();
+        }
+        if ($removed) {
+            admissionCheck($writer->table('device_task')->insert((array) $originalPivot), 'restore exact owned pivot');
+        }
+        DB::purge($writerName);
+        config(['database.connections.' . $writerName => null]);
+    }
+    admissionCheck(manualAdmissionRows() === $baseline
+        && DB::table('device_task')->where('task_id', $tasks[10])->where('device_id', $device->id)->count() === 1,
+        'committed session snapshot unchanged and owned pivot restored');
+    echo "F02_MANUAL_LINKAGE_CURRENT_READ_OK (SYNTHETIC_ONLY)\n";
+
     $race = static function (int $ruleId, string $expected, string $first, string $second, int $offset, bool $kill, bool $stale) use ($folder, $root): array {
         $baseline = manualAdmissionRows();
         $holderMarker = $folder . '/holder';

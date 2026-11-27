@@ -1,8 +1,11 @@
 <?php
 
+use App\Models\Category;
 use App\Models\Device;
 use App\Models\LocalBackupPresenceManualSession;
 use App\Models\LocalBackupPresenceRun;
+use App\Models\Tag;
+use App\Services\ExternalBackups\LocalBackupPresenceManualObservation;
 use App\Services\ExternalBackups\LocalBackupPresenceManualSessions;
 use App\Services\ExternalBackups\LocalBackupPresenceManualWorker;
 use App\Services\ExternalBackups\LocalBackupPresenceRuleActivation;
@@ -241,3 +244,51 @@ test('manual restart refuses expired or unapproved terminal diagnostic', functio
         ->and($old->fresh())->toBeNull();
     Bus::assertNothingDispatched();
 });
+
+test('corrupt Core linkage refuses admission restart and observation without changing existing diagnostic', function (string $mutation) {
+    $old = $this->service->start($this->rule->id);
+    $old->status = 'present';
+    $old->result = ['status' => 'present'];
+    $old->next_observation_at = null;
+    $old->save();
+    $snapshot = $old->refresh()->getRawOriginal();
+    $task = $this->rule->task()->firstOrFail();
+    match ($mutation) {
+        'missing-device' => $task->device()->detach(),
+        'extra-device' => $task->device()->attach(Device::factory()->create()->id),
+        'category-pivot' => $task->category()->attach(Category::factory()->create()->id),
+        'tag-pivot' => $task->tag()->attach(Tag::factory()->create()->id),
+        'wrong-device' => $task->device()->sync([Device::factory()->create()->id]),
+        'native-command' => $task->update(['task_command' => 'rconfig:download-device']),
+        'unpaused' => $task->update(['is_paused' => 0]),
+        'system-task' => $task->update(['is_system' => 1]),
+        'missing-device-scope' => $task->update(['task_devices' => 0]),
+        'category-scope' => $task->update(['task_categories' => 1]),
+        'tag-scope' => $task->update(['task_tags' => 1]),
+        default => $task->update([$mutation => true]),
+    };
+    expect(fn () => $this->service->start($this->rule->id))->toThrow(DomainException::class, 'Linked local backup task is inconsistent.');
+    expect(fn () => $this->service->restart($this->rule->id, $old->id))->toThrow(DomainException::class, 'Linked local backup task is inconsistent.');
+    expect(fn () => app(LocalBackupPresenceManualObservation::class)->probe($this->rule->id))->toThrow(DomainException::class, 'Linked local backup task is inconsistent.');
+    expect($old->fresh()->getRawOriginal())->toBe($snapshot)
+        ->and(LocalBackupPresenceManualSession::where('rule_id', $this->rule->id)->count())->toBe(1)
+        ->and($this->rule->runs()->count())->toBe(0);
+    $old->status = 'queued';
+    $old->result = null;
+    $old->next_observation_at = $old->requested_at;
+    $old->save();
+    config(['local-backup-presence.queue_enabled' => true]);
+    app(LocalBackupPresenceManualWorker::class)->process($this->rule->id, $old->id);
+    $final = $old->fresh();
+    expect($final->status)->toBe('error')
+        ->and($final->result['reason'])->toBe('invalid_configuration')
+        ->and($final->result['filename'])->toBeNull()
+        ->and($final->result['verified_success'])->toBeFalse()
+        ->and($final->continuation)->toBeNull()
+        ->and($this->rule->runs()->count())->toBe(0);
+    Bus::assertNothingDispatched();
+})->with([
+    'missing-device', 'extra-device', 'category-pivot', 'tag-pivot', 'wrong-device',
+    'native-command', 'unpaused', 'system-task', 'missing-device-scope', 'category-scope', 'tag-scope',
+    'task_email_notify', 'download_report_notify', 'verbose_download_report_notify',
+]);

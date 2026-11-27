@@ -39,11 +39,7 @@ final class LocalBackupPresenceOccurrenceClaim
             $activation = $rule->getRawOriginal('activated_at_utc');
 
             if (! $rule->enabled || ! is_string($activation) || $instant < $activation
-                || $task->task_command !== self::TASK_COMMAND || (bool) $task->is_paused
-                || (bool) $task->is_system || ! (bool) $task->task_devices
-                || (bool) $task->task_categories || (bool) $task->task_tags
-                || $task->device()->pluck('devices.id')->map(static fn ($id): int => (int) $id)->all() !== [(int) $rule->device_id]
-                || $task->category()->exists() || $task->tag()->exists()) {
+                || ! LocalBackupPresenceTaskLinkage::matches($rule, $task)) {
                 throw new DomainException('Local backup rule or linked task is not eligible.');
             }
 

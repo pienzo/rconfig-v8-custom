@@ -35,6 +35,9 @@ beforeEach(function () {
         'task_devices' => 1,
         'task_categories' => 0,
         'task_tags' => 0,
+        'task_email_notify' => false,
+        'download_report_notify' => false,
+        'verbose_download_report_notify' => false,
         'is_system' => 0,
         'is_paused' => 0,
         'task_cron' => '* * * * *',
@@ -367,3 +370,12 @@ test('pending reconciliation respects queue pressure and does not leak transport
     expect($this->run->fresh()->getRawOriginal('last_observed_at_utc'))->toBeNull();
     Log::shouldHaveReceived('warning')->with('Local backup presence dispatch unavailable.', ['run_id' => $this->run->id])->once();
 });
+
+test('scheduled observer refuses corrupted notification flags before scanning and preserves pending row', function (string $field) {
+    File::put($this->folder . '/backup_a.cfg', 'synthetic');
+    $this->task->update([$field => true]);
+    $before = $this->run->fresh()->getRawOriginal();
+    expect(fn () => $this->observer->observe($this->rule->id, $this->run->id, $this->mapping))->toThrow(DomainException::class);
+    expect($this->run->fresh()->getRawOriginal())->toBe($before)
+        ->and(File::get($this->folder . '/backup_a.cfg'))->toBe('synthetic');
+})->with(['task_email_notify', 'download_report_notify', 'verbose_download_report_notify']);

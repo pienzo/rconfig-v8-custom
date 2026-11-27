@@ -356,6 +356,7 @@ try {
             'task_tags' => false,
             'task_email_notify' => false,
             'download_report_notify' => false,
+            'verbose_download_report_notify' => false,
             'is_system' => false,
             'is_paused' => 0,
         ]);

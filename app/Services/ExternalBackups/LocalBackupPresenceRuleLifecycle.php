@@ -96,13 +96,8 @@ final class LocalBackupPresenceRuleLifecycle
     private function lockedDormantTask(LocalBackupPresenceRule $rule): Task
     {
         $task = $rule->task()->lockForUpdate()->firstOrFail();
-        if ($rule->enabled || $rule->activated_at_utc !== null || $rule->runs()->exists()
-            || $task->task_command !== LocalBackupPresenceOccurrenceClaim::TASK_COMMAND
-            || ! (bool) $task->is_paused || (bool) $task->is_system
-            || ! (bool) $task->task_devices || (bool) $task->task_categories || (bool) $task->task_tags
-            || $task->device()->pluck('devices.id')->map(static fn ($id): int => (int) $id)->all() !== [(int) $rule->device_id]
-            || $task->category()->exists() || $task->tag()->exists()
-            || $task->task_email_notify || $task->download_report_notify || $task->verbose_download_report_notify) {
+        if ($rule->enabled || $rule->activated_at_utc !== null || $rule->runs()->lockForUpdate()->first(['id']) !== null
+            || ! LocalBackupPresenceTaskLinkage::matches($rule, $task)) {
             throw new DomainException('Only consistent, never-activated local backup rules without history can be changed.');
         }
 
