@@ -9,6 +9,7 @@ import Pagination from "@/pages/Shared/Table/Pagination.vue";
 import RcConfirmAlertDialog from "@/pages/Shared/ConfirmAlertDialog/RcConfirmAlertDialog.vue";
 import TaskAddEditDialog from "@/pages/Tasks/TaskAddEditDialog.vue";
 import ExternalBackupRulesPanel from "@/pages/Tasks/ExternalBackupRulesPanel.vue";
+import LocalPresenceRulesPanel from "@/pages/Tasks/LocalPresenceRulesPanel.vue";
 import ExternalBackupPatternPreview from "@/pages/Tasks/ExternalBackupPatternPreview.vue";
 import { Clock } from "lucide-vue-next";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -41,6 +42,12 @@ async function loadLocalPresenceCapability() {
 // Task type filter - Core only has 3 download types
 const taskTypeFilter = ref("all");
 const showExternalRules = ref(false);
+const showLocalRules = ref(false);
+const localRulesRevision = ref(0);
+function taskSaved() {
+    handleSave();
+    localRulesRevision.value++;
+}
 const showExternalPatternPreview = ref(false);
 const taskTypeOptions = [
 	{ value: "all", label: "All Tasks" },
@@ -113,7 +120,7 @@ onUnmounted(() => {
 					"
 				/>
 			</div>
-			<div class="flex items-center justify-end">
+			<div class="flex flex-wrap items-center justify-end">
 				<Button
 					type="button"
 					class="px-2 py-1 ml-2 text-sm"
@@ -143,6 +150,10 @@ onUnmounted(() => {
                 >
                     {{ showExternalRules ? "Hide external backup rules" : "External backup rules" }}
                 </Button>
+                <Button v-if="localPresenceAllowed" type="button" size="sm" variant="outline" class="px-2 py-1 ml-2 text-sm"
+                    :aria-expanded="showLocalRules" @click="showLocalRules = !showLocalRules">
+                    {{ showLocalRules ? "Hide Local Presence rules" : "Local Presence rules" }}
+                </Button>
 				<Button
 					type="submit"
 					class="px-2 py-1 ml-2 text-sm bg-blue-700 text-white hover:bg-blue-800 hover:animate-pulse"
@@ -165,6 +176,7 @@ onUnmounted(() => {
 
         <ExternalBackupPatternPreview v-if="showExternalPatternPreview" class="mx-6 mb-3" />
         <ExternalBackupRulesPanel v-if="showExternalRules" class="mx-6 mb-3" />
+        <LocalPresenceRulesPanel v-if="localPresenceAllowed && showLocalRules" :key="localRulesRevision" class="mx-6 mb-3" @changed="fetchTasks()" />
 
 		<div class="px-6">
 			<Table>
@@ -479,6 +491,7 @@ onUnmounted(() => {
 									@on-edit="viewEditDialog(row.id)"
 									@on-delete="deleteTask(row.id)"
 								/>
+                                <button v-else-if="row.task_command === LOCAL_PRESENCE_COMMAND && localPresenceAllowed" type="button" class="rounded border px-2 py-1 text-xs" @click="showLocalRules = true">Manage Local Presence</button>
                                 <span v-else class="text-xs text-muted-foreground">{{ row.task_command === LOCAL_PRESENCE_COMMAND ? "Managed Local Presence rule" : "Manage under External backup rules" }}</span>
 							</TableCell>
 							<!-- ACTIONS MENU -->
@@ -503,7 +516,7 @@ onUnmounted(() => {
 				:key="newTaskModalKey"
 				:edit-id="editId"
                 :local-presence-allowed="localPresenceAllowed"
-				@save="handleSave()"
+				@save="taskSaved()"
 			/>
 			<DialogViewHistory :task-id="historyTaskId" />
 			<RcConfirmAlertDialog
