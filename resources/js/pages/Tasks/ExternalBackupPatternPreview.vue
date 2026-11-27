@@ -2,8 +2,13 @@
 import axios from "axios";
 import { ref } from "vue";
 
-const mode = ref("glob");
-const pattern = ref("backup_*.cfg");
+const props = defineProps({
+    initialMode: { type: String, default: "glob" },
+    initialPattern: { type: String, default: "backup_*.cfg" },
+    localPresence: Boolean,
+});
+const mode = ref(props.initialMode);
+const pattern = ref(props.initialPattern);
 const sampleNames = ref("backup_20261123.cfg\nbackup_old.txt");
 const results = ref([]);
 const errorMessage = ref("");
@@ -21,7 +26,8 @@ async function preview() {
 
     isLoading.value = true;
     try {
-        const response = await axios.post("/api/tasks/external-backup-pattern-preview", {
+        const endpoint = props.localPresence ? "/api/tasks/local-backup-presence-pattern-preview" : "/api/tasks/external-backup-pattern-preview";
+        const response = await axios.post(endpoint, {
             pattern_mode: mode.value,
             filename_pattern: pattern.value,
             filenames,
