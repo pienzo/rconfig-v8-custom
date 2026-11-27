@@ -95,9 +95,53 @@ async function main() {
             ["/api/configs/view-config/" + cfg.id, { data: { content: contents[i] } }],
         ]),
     ]);
+    // Only the exact synthetic rule/UUID endpoints below are intercepted.
+    // No real manual admission or restart is forwarded to Apache.
+    const manualBase = "/api/tasks/local-backup-presence-rules/" + presenceRule.id + "/verify-now";
+    const manualOld = "11111111-1111-4111-8111-111111111111";
+    const manualNew = "22222222-2222-4222-8222-222222222222";
+    let manualFixture = null;
+    const manualResponse = (id, status) => ({
+        data: {
+            id, rule_id: presenceRule.id, status,
+            requested_at_utc: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+            expires_at_utc: new Date(Date.now() + 180000).toISOString().replace(/\.\d{3}Z$/, "Z"),
+            next_observation_at_utc: status === "queued" || status === "pending" ? new Date().toISOString() : null,
+            result: status === "queued" ? null : {
+                reason: status === "pending" ? "stability_wait" : status === "present" ? "stable_matching_file_observed" : "no_matching_file",
+                filename: status === "present" ? "backup_router.cfg" : null,
+                observed_at_utc: new Date().toISOString(),
+            },
+            evidence_type: "metadata_presence", persistent_check_run: false, verified_success: false,
+        },
+    });
     await context.route("**/*", route => {
         const url = new URL(route.request().url());
         if (url.origin !== origin) return route.abort();
+        if (fixtureMode && url.pathname.startsWith(manualBase)) {
+            const method = route.request().method();
+            const body = route.request().postData();
+            if (!manualFixture || url.search) return route.abort();
+            if (method === "POST" && url.pathname === manualBase && manualFixture.starts === 0 && body === "{}") {
+                manualFixture.starts++;
+                return route.fulfill({ status: 202, json: manualResponse(manualOld, "queued") });
+            }
+            if (method === "GET" && url.pathname === manualBase + "/" + manualOld && manualFixture.starts === 1 && manualFixture.restarts === 0) {
+                manualFixture.oldPolls++;
+                return route.fulfill({ json: manualResponse(manualOld, manualFixture.oldPolls === 1 ? "pending" : "present") });
+            }
+            if (method === "POST" && url.pathname === manualBase + "/" + manualOld + "/restart"
+                && manualFixture.oldPolls === 2 && manualFixture.restarts === 0 && body === "{}") {
+                manualFixture.restarts++;
+                return route.fulfill({ status: 202, json: manualResponse(manualNew, "queued") });
+            }
+            if (method === "GET" && url.pathname === manualBase + "/" + manualNew && manualFixture.restarts === 1) {
+                manualFixture.newPolls++;
+                return route.fulfill({ json: manualResponse(manualNew, "absent") });
+            }
+            manualFixture.unexpected++;
+            return route.abort();
+        }
         if (fixtureMode && route.request().method() === "GET" && fixtures.has(url.pathname)) {
             fixtureHits.add(url.pathname);
             return route.fulfill({ json: fixtures.get(url.pathname) });
@@ -458,6 +502,34 @@ async function main() {
                     await form.getByText(device.device_name + " (fixed)", { exact: true }).waitFor();
                     assert.equal(await form.getByLabel("Rule name", { exact: true }).inputValue(), "THEME-LOCAL-PRESENCE");
                     await form.getByRole("button", { name: "Cancel", exact: true }).click();
+                    checkpoint = "local-presence-manual";
+                    const verify = rule.getByRole("button", { name: "Verify Now", exact: true });
+                    assert(await verify.isDisabled());
+                    const listPath = "/api/tasks/local-backup-presence-rules";
+                    const previousList = fixtures.get(listPath);
+                    fixtures.set(listPath, { ...previousList, manual_available: true });
+                    manualFixture = { starts: 0, oldPolls: 0, restarts: 0, newPolls: 0, unexpected: 0 };
+                    try {
+                        await panel.getByRole("button", { name: "Refresh rules", exact: true }).click();
+                        await verify.click();
+                        const diagnostic = rule.getByRole("region", { name: "Manual presence diagnostic" });
+                        await diagnostic.getByText("QUEUED", { exact: true }).waitFor();
+                        await diagnostic.getByText(/^PENDING — waiting for stability$/).waitFor();
+                        await diagnostic.getByText("FILE PRESENT", { exact: true }).waitFor();
+                        await diagnostic.getByText("File: backup_router.cfg", { exact: true }).waitFor();
+                        await requireContrast(id, "local-presence-manual-present", diagnostic.getByText("FILE PRESENT", { exact: true }), components);
+                        await page.screenshot({ path: "/evidence/" + id + "-local-presence-manual-present.png", animations: "disabled" });
+                        await diagnostic.getByRole("button", { name: "Restart diagnostic", exact: true }).click();
+                        await diagnostic.getByText("FILE ABSENT", { exact: true }).waitFor();
+                        await page.screenshot({ path: "/evidence/" + id + "-local-presence-manual-absent.png", animations: "disabled" });
+                        await diagnostic.getByRole("button", { name: "Close diagnostic", exact: true }).click();
+                        await diagnostic.waitFor({ state: "hidden" });
+                        assert.deepEqual(manualFixture, { starts: 1, oldPolls: 2, restarts: 1, newPolls: 1, unexpected: 0 });
+                        console.log("THEME_LOCAL_PRESENCE_MANUAL_OK " + id + " (MOCKED_API_ONLY)");
+                    } finally {
+                        fixtures.set(listPath, previousList);
+                        manualFixture = null;
+                    }
                     await view.getByRole("button", { name: "Hide Local Presence rules", exact: true }).click();
                     assert(fixtureHits.has("/api/tasks/local-backup-presence-rules/" + presenceRule.id + "/runs"));
                     console.log("THEME_LOCAL_PRESENCE_MANAGEMENT_OK " + id + " (MOCKED_READ_API_ONLY)");
