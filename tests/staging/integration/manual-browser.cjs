@@ -94,7 +94,7 @@ async function main() {
     const exactPayload = (data, creating) => {
         const expected = {
             task_name: creating ? "Synthetic browser draft" : name,
-            task_cron: ["0", "2", "*", "*"], directory_alias: "synthetic", relative_directory: "device",
+            task_cron: ["0", "2", "*", "*", "*"], directory_alias: "synthetic", relative_directory: "device",
             pattern_mode: "glob", filename_pattern: "backup_*.cfg", minimum_bytes: creating ? 1 : 2,
             maximum_age_seconds: null, quiet_seconds: 30, deadline_seconds: 420,
             max_entries: 1000, max_matches: 100, max_scan_millis: 2000,
