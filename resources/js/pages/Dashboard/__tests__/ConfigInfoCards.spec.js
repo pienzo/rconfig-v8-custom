@@ -32,7 +32,7 @@ describe("Dashboard device count cards", () => {
 
 		for (const card of [total, down]) {
 			expect(card.element.style.color).toBe("rgb(255, 255, 255)");
-			expect(card.element.style.backgroundImage).toBe("");
+			expect(card.element.style.backgroundImage).toBe("none");
 			expect(card.find(".absolute.inset-0").exists()).toBe(false);
 			expect(card.classes()).not.toContain("hover:bg-muted/20");
 		}

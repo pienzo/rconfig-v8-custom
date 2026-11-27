@@ -384,6 +384,36 @@ async function main() {
             await expectPalette(id, mode);
             assert.equal(new URL(page.url()).pathname, route);
             await waitForRoute(name);
+            if (name === "dashboard") {
+                checkpoint = "solid-device-cards";
+                for (const [testId, label, description, expectedColor] of [
+                    ["device-count-card", "Device Count", "Total device count", "rgb(22, 101, 52)"],
+                    ["down-devices-card", "Down Devices", "Devices currently down", "rgb(185, 28, 28)"],
+                ]) {
+                    const card = view.getByTestId(testId);
+                    await card.waitFor();
+                    await card.locator(".text-2xl").waitFor();
+                    assert.match((await card.locator(".text-2xl").innerText()).trim(), /^\d+$/);
+                    const paint = await card.evaluate(el => {
+                        const style = getComputedStyle(el);
+                        return { color: style.backgroundColor, image: style.backgroundImage, opacity: style.opacity };
+                    });
+                    assert.deepEqual(paint, { color: expectedColor, image: "none", opacity: "1" });
+                    assert.equal(await card.locator(".absolute.inset-0").count(), 0);
+                    for (const [suffix, element] of [
+                        ["title", card.getByText(label, { exact: true })],
+                        ["count", card.locator(".text-2xl")],
+                        ["description", card.getByText(description, { exact: true })],
+                    ]) {
+                        assert.equal(await element.evaluate(el => getComputedStyle(el).color), "rgb(255, 255, 255)");
+                        await requireContrast(id, testId + "-" + suffix, element, components);
+                    }
+                    await card.hover();
+                    assert.equal(await card.evaluate(el => getComputedStyle(el).backgroundColor), expectedColor);
+                    await trigger.hover();
+                }
+                console.log("THEME_SOLID_DEVICE_CARDS_OK " + id);
+            }
             await page.screenshot({ path: "/evidence/" + id + "-" + name + ".png", animations: "disabled" });
             if (name === "notifications") {
                 const panel = view.getByRole("region", { name: "Notification template editor" });
