@@ -44,7 +44,11 @@ async function main() {
         if (allowedWrite && method === allowedWrite.method && url.pathname === allowedWrite.path && !url.search) {
             let body;
             try { body = request.postData() ? request.postDataJSON() : null; } catch { unexpected++; return route.abort(); }
-            if (!allowedWrite.validate(body)) { unexpected++; return route.abort(); }
+            if (!allowedWrite.validate(body)) {
+                console.error("F02_BROWSER_REAL_PAYLOAD_REFUSED checkpoint=" + checkpoint);
+                unexpected++;
+                return route.abort();
+            }
             allowedWrite = null;
             writes++;
             return route.continue();
@@ -84,6 +88,10 @@ async function main() {
         const pending = page.waitForResponse(r => r.request().method() === method && new URL(r.url()).pathname === path);
         await click();
         const result = await pending;
+        // Only numeric status and fixed checkpoint; no response body, headers,
+        // URL, UUID, credentials or arbitrary exception messages in logs.
+        console.log("F02_BROWSER_REAL_HTTP checkpoint=" + checkpoint + " method=" + method
+            + " expected=" + status + " actual=" + result.status());
         assert.equal(result.status(), status);
         assert.equal(writes, before + 1);
         assert.equal(allowedWrite, null);
@@ -139,7 +147,11 @@ async function main() {
             body => body?.pattern_mode === "glob" && body.filename_pattern === "backup_*.cfg"
                 && JSON.stringify(body.filenames) === JSON.stringify(["backup_a.cfg", "other.txt"]),
             () => tester.getByRole("button", { name: "Preview matches", exact: true }).click());
-        assert.equal(preview.results.filter(item => item.matches).length, 1);
+        assert.deepEqual(preview.results, [
+            { filename: "backup_a.cfg", matches: true },
+            { filename: "other.txt", matches: false },
+        ]);
+        console.log("F02_BROWSER_REAL_PATTERN_PREVIEW_OK (SYNTHETIC_ONLY)");
         await tester.getByText("MATCH", { exact: true }).waitFor();
         await tester.getByText("NO MATCH", { exact: true }).waitFor();
         checkpoint = "real-create";
@@ -152,7 +164,10 @@ async function main() {
     }
 
     checkpoint = "management";
-    const listResponse = page.waitForResponse(r => r.request().method() === "GET" && new URL(r.url()).pathname === base);
+    const listResponse = page.waitForResponse(r => {
+        const url = new URL(r.url());
+        return r.request().method() === "GET" && url.pathname === base && url.searchParams.get("per_page") === "20";
+    });
     await view.getByRole("button", { name: "Local Presence rules", exact: true }).click();
     const list = await (await listResponse).json();
     assert.equal(list.manual_available, true);
