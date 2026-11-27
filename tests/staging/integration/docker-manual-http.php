@@ -14,7 +14,7 @@ use Illuminate\Support\Str;
 
 $manualPhase = getenv('RCONFIG_MANUAL_HTTP_PHASE');
 apacheCheck(getenv('RUNNER_ENVIRONMENT') === 'github-hosted'
-    && in_array($manualPhase, ['admit', 'queued', 'present', 'absent'], true)
+    && in_array($manualPhase, ['admit', 'queued', 'present', 'absent', 'browser-seed', 'browser-admitted', 'browser-present', 'browser-absent', 'browser-cleanup'], true)
     && $persistence === 'none' && $phase === 'http', 'manual HTTP disposable phase');
 foreach (['runtime_enabled', 'queue_enabled', 'scheduler_enabled', 'dispatch_enabled',
     'manual_probe_enabled', 'manual_dispatch_enabled', 'manual_api_enabled'] as $flag) {
@@ -73,7 +73,7 @@ $diagnostic = static function (array $body, int $ruleId): array {
     return $data;
 };
 
-if ($manualPhase === 'admit') {
+if (in_array($manualPhase, ['admit', 'browser-seed'], true)) {
     apacheCheck(Device::count() === 0 && LocalBackupPresenceRule::count() === 0
         && LocalBackupPresenceManualSession::count() === 0 && $manualQueue->size('LocalBackupPresence') === 0,
         'fresh isolated fixture');
@@ -99,6 +99,13 @@ if ($manualPhase === 'admit') {
     $list = $call('GET', $base, 200);
     apacheCheck(($list['manual_available'] ?? null) === true && ($list['activation_available'] ?? null) === false,
         'manual approval only');
+    if ($manualPhase === 'browser-seed') {
+        apacheCheck(Task::query()->where('task_command', 'rconfig:check-local-backup-presence')->count() === 0,
+            'no managed task before browser creation');
+        echo "F02_BROWSER_REAL_DEVICE_SEEDED_OK (SYNTHETIC_ONLY)\n";
+
+        return;
+    }
     $created = $call('POST', $base, 201, [
         'device_id' => $device->id,
         'task_name' => 'Synthetic HTTP manual diagnostic',
@@ -132,6 +139,25 @@ if ($manualPhase === 'admit') {
     return;
 }
 
+$browserStatePath = storage_path('.synthetic-manual-browser-state');
+if ($manualPhase === 'browser-cleanup') {
+    $saved = json_decode((string) file_get_contents($browserStatePath), true, 512, JSON_THROW_ON_ERROR);
+    $device = Device::query()->sole();
+    apacheCheck($device->device_name === 'F02-HTTP-SYNTHETIC'
+        && LocalBackupPresenceRule::count() === 0 && LocalBackupPresenceManualSession::count() === 0
+        && Task::query()->find($saved['task_id']) === null
+        && Task::query()->where('task_command', 'rconfig:check-local-backup-presence')->count() === 0
+        && $manualQueue->size('LocalBackupPresence') === 0, 'real browser deletion removed rule/task/session');
+    DB::transaction(static function () use ($device): void {
+        $device->delete();
+    });
+    apacheCheck(Device::count() === 0 && unlink($browserStatePath), 'owned browser fixture cleanup');
+    $ledgerEmpty();
+    echo "F02_BROWSER_REAL_INTEGRITY_OK (SYNTHETIC_ONLY)\n";
+
+    return;
+}
+
 $rule = LocalBackupPresenceRule::query()->sole();
 $device = Device::query()->sole();
 $task = $rule->task()->firstOrFail();
@@ -142,6 +168,53 @@ $url = $base . '/' . $rule->id . '/verify-now';
 $session = LocalBackupPresenceManualSession::query()->where('rule_id', $rule->id)->sole();
 $taskBefore = $task->getRawOriginal();
 $ruleBefore = $rule->getRawOriginal();
+
+if (in_array($manualPhase, ['browser-admitted', 'browser-present', 'browser-absent'], true)) {
+    apacheCheck($rule->directory_alias === 'synthetic' && $rule->relative_directory === 'device'
+        && $rule->pattern_mode === 'glob' && $rule->filename_pattern === 'backup_*.cfg'
+        && $rule->minimum_bytes === 2 && $rule->maximum_age_seconds === null && $rule->quiet_seconds === 30
+        && $rule->deadline_seconds === 420 && $rule->max_entries === 1000 && $rule->max_matches === 100
+        && $rule->max_scan_millis === 2000 && $task->task_cron === ['0', '2', '*', '*', '*']
+        && $task->task_command === 'rconfig:check-local-backup-presence'
+        && ! $task->task_email_notify && ! $task->download_report_notify && ! $task->verbose_download_report_notify
+        && $task->device()->pluck('devices.id')->map(static fn ($id): int => (int) $id)->all() === [(int) $device->id],
+        'actual browser persisted exact edited criteria and dormant Core linkage');
+    $digest = hash('sha256', serialize([$ruleBefore, $taskBefore]));
+    if ($manualPhase === 'browser-admitted') {
+        apacheCheck($session->status === 'queued' && $session->result === null && $session->continuation === null
+            && $session->dispatch_not_before === null && $manualQueue->size('LocalBackupPresence') === 0
+            && LocalBackupPresenceManualSession::count() === 1 && ! file_exists($browserStatePath), 'browser admission has no dispatch');
+        $handle = fopen($browserStatePath, 'x');
+        apacheCheck(is_resource($handle), 'owned exclusive browser snapshot');
+        $value = json_encode(['task_id' => $task->id, 'session_id' => $session->id, 'digest' => $digest], JSON_THROW_ON_ERROR);
+        apacheCheck(fwrite($handle, $value) === strlen($value) && fclose($handle), 'record exact synthetic state');
+        echo "F02_BROWSER_REAL_PERSISTED_ADMISSION_OK (SYNTHETIC_ONLY)\n";
+
+        return;
+    }
+    $saved = json_decode((string) file_get_contents($browserStatePath), true, 512, JSON_THROW_ON_ERROR);
+    apacheCheck($saved['task_id'] === $task->id && hash_equals($saved['digest'], $digest), 'rule/task unchanged by diagnostic');
+    apacheCheck($manualQueue->size('LocalBackupPresence') === 0
+        && LocalBackupPresenceManualSession::count() === 1 && $session->continuation === null
+        && $session->next_observation_at === null, 'terminal observation and drained queue');
+    if ($manualPhase === 'browser-present') {
+        apacheCheck($session->id === $saved['session_id'] && $session->status === 'present'
+            && $session->result['reason'] === 'stable_matching_file_observed'
+            && $session->result['filename'] === 'backup_a.cfg', 'original persisted stable result');
+        echo "F02_BROWSER_REAL_PERSISTED_PRESENT_OK (SYNTHETIC_ONLY)\n";
+    } else {
+        apacheCheck($session->id !== $saved['session_id'] && $session->status === 'absent'
+            && $session->result['reason'] === 'no_matching_file' && $session->result['filename'] === null
+            && LocalBackupPresenceManualSession::query()->find($saved['session_id']) === null, 'replacement persisted absence');
+        $call('GET', $url . '/' . $saved['session_id'], 404);
+        echo "F02_BROWSER_REAL_PERSISTED_ABSENT_OK (SYNTHETIC_ONLY)\n";
+    }
+    apacheCheck($session->result['verified_success'] === false && $session->result['persistent_check_run'] === false,
+        'metadata only');
+    $ledgerEmpty();
+
+    return;
+}
 
 if ($manualPhase === 'queued') {
     // No worker launched yet. Wait for actual schedule:work to enqueue.

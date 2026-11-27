@@ -68,5 +68,21 @@ test('presence preview rejects invalid patterns and out of bounds inputs', funct
 
 test('presence preview route has an explicit twelve per minute throttle', function () {
     $route = app('router')->getRoutes()->match(Request::create($this->url, 'POST'));
-    expect($route->gatherMiddleware())->toContain('throttle:12,1');
+    expect($route->gatherMiddleware())->toContain('throttle:12,1,f02-presence-preview:');
+});
+
+test('presence preview quota is independent of ordinary API reads and remains twelve per minute', function () {
+    $this->actingAs(User::factory()->create(['role' => 'Admin']));
+    $list = '/api/tasks/local-backup-presence-rules';
+    for ($i = 0; $i < 15; $i++) {
+        $this->getJson($list)->assertOk();
+    }
+    for ($i = 0; $i < 12; $i++) {
+        $this->postJson($this->url, $this->payload)->assertOk()
+            ->assertJsonPath('results.0.matches', true)
+            ->assertJsonPath('results.1.matches', false);
+    }
+    $this->postJson($this->url, $this->payload)->assertStatus(429);
+    $this->getJson($list)->assertOk();
+    Bus::assertNothingDispatched();
 });
