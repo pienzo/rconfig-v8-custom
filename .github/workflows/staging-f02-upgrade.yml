@@ -1,0 +1,82 @@
+name: Staging additive F02 upgrade (synthetic)
+
+on:
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'composer.*'
+      - 'package*.json'
+      - 'app/Services/Staging/**'
+      - 'docker/staging/**'
+      - 'compose.staging.yaml'
+      - 'database/migrations/**'
+      - 'config/**'
+      - 'tests/staging/integration/docker-apache*'
+      - 'tests/staging/integration/docker-combined-roles*'
+      - 'tests/staging/integration/docker-f02-upgrade.php'
+      - '.github/workflows/staging-f02-upgrade.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write # Buildx layer cache only.
+
+jobs:
+  upgrade:
+    name: Actual baseline to additive F02 schema and live roles
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Build candidate from exact tested source
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: rconfig-custom-ci:apache
+          build-args: |
+            SOURCE_REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=staging-upgrade-candidate
+          cache-to: type=gha,mode=max,scope=staging-upgrade-candidate
+      - name: Checkout previously installed source revision
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: 302a37c9419425befad23294786cda35c36ae3fd
+          path: upgrade-baseline
+          persist-credentials: false
+      - name: Verify pinned baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$(git -C upgrade-baseline rev-parse HEAD)" = 302a37c9419425befad23294786cda35c36ae3fd
+          bash -n tests/staging/integration/docker-apache.sh
+      - name: Build historical baseline from source
+        uses: docker/build-push-action@v7
+        with:
+          context: upgrade-baseline
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: rconfig-custom-ci:upgrade-baseline
+          build-args: |
+            SOURCE_REVISION=302a37c9419425befad23294786cda35c36ae3fd
+          cache-from: type=gha,scope=staging-upgrade-baseline
+          cache-to: type=gha,mode=max,scope=staging-upgrade-baseline
+      - name: Migrate existing synthetic installation and verify actual roles
+        shell: bash
+        run: |
+          set -euo pipefail
+          for image in rconfig-custom-ci:upgrade-baseline rconfig-custom-ci:apache; do
+            docker run --rm -i --network none --read-only --user 1000:33 --cap-drop ALL \
+              --entrypoint php "$image" -l < tests/staging/integration/docker-f02-upgrade.php
+          done
+          bash tests/staging/integration/docker-apache.sh --upgrade-f02

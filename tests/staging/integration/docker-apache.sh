@@ -7,7 +7,7 @@ test "$RUNNER_ENVIRONMENT" = github-hosted
 mode="${1:---apache-only}"
 test "$#" -le 1
 case "$mode" in
-    --apache-only|--combined|--recreate|--infra-restart|--bootstrap-crash|--theme-browser|--manual-http|--manual-browser|--activation-browser) ;;
+    --apache-only|--combined|--recreate|--infra-restart|--bootstrap-crash|--theme-browser|--manual-http|--manual-browser|--activation-browser|--upgrade-f02) ;;
     *) exit 2 ;;
 esac
 if [[ "$mode" != --apache-only && "$mode" != --bootstrap-crash && "$mode" != --theme-browser ]]; then
@@ -21,6 +21,11 @@ bootstrap="$project"-bootstrap
 preflight="$project"-preflight
 probe="$project"-probe
 image=rconfig-custom-ci:apache
+if [[ "$mode" == --upgrade-f02 ]]; then
+    test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
+    image=rconfig-custom-ci:upgrade-baseline
+    test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = 302a37c9419425befad23294786cda35c36ae3fd
+fi
 root="$(sudo mktemp -d /etc/rconfig-apache-ci.XXXXXXXX)"
 
 compose() {
@@ -147,6 +152,32 @@ rm -f "$RUNNER_TEMP/$project-bootstrap.log"
 expect_refusal 'staging bootstrap container refused: bootstrap already completed or unexpected marker exists' \
     "${approval[@]}"
 printf '%s\n' 'STAGING_STRICT_DOCKER_BOOTSTRAP_OK (SYNTHETIC_ONLY)'
+
+# The upgrade rehearsal starts from the actual old source-built bootstrap.
+# No app, Horizon or scheduler may run while the schema is changing.
+if [[ "$mode" == --upgrade-f02 ]]; then
+    upgrade_probe() {
+        local phase="$1" marker="$2"
+        test "$(docker network inspect --format '{{.Internal}}' "$network")" = true
+        test "$(docker network inspect --format '{{len .Containers}}' "$network")" -eq 2
+        for role in app horizon scheduler; do
+            if docker container inspect "$project-$role" >/dev/null 2>&1; then
+                return 1
+            fi
+        done
+        docker run --rm -i --name "$probe" --network "$network" \
+            "${common[@]}" "${identity[@]}" --env RUNNER_ENVIRONMENT=github-hosted \
+            --env "RCONFIG_F02_UPGRADE_PHASE=$phase" \
+            --entrypoint php "$image" < tests/staging/integration/docker-f02-upgrade.php \
+            | tee "$RUNNER_TEMP/$project-http.log"
+        grep -Fxq "$marker (SYNTHETIC_ONLY)" "$RUNNER_TEMP/$project-http.log"
+    }
+    upgrade_probe seed STAGING_F02_UPGRADE_BASELINE_OK
+    image=rconfig-custom-ci:apache
+    upgrade_probe apply STAGING_F02_UPGRADE_MIGRATED_OK
+    upgrade_probe verify STAGING_F02_UPGRADE_PRESERVED_OK
+    upgrade_probe noop STAGING_F02_UPGRADE_NOOP_OK
+fi
 
 # Only after strict default-off bootstrap, mount an isolated static operator
 # configuration. The source/image configuration is never modified.
@@ -424,4 +455,8 @@ if [[ "$mode" == --recreate || "$mode" == --infra-restart ]]; then
     if [[ "$mode" == --infra-restart ]]; then
         printf '%s\n' 'STAGING_FULL_INFRA_RESTART_PERSISTENCE_OK (SYNTHETIC_ONLY)'
     fi
+fi
+
+if [[ "$mode" == --upgrade-f02 ]]; then
+    printf '%s\n' 'STAGING_F02_UPGRADE_ROLES_OK (SYNTHETIC_ONLY)'
 fi
