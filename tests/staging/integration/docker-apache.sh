@@ -7,7 +7,7 @@ test "$RUNNER_ENVIRONMENT" = github-hosted
 mode="${1:---apache-only}"
 test "$#" -le 1
 case "$mode" in
-    --apache-only|--combined|--recreate|--infra-restart|--bootstrap-crash|--theme-browser|--manual-http|--manual-browser) ;;
+    --apache-only|--combined|--recreate|--infra-restart|--bootstrap-crash|--theme-browser|--manual-http|--manual-browser|--activation-browser) ;;
     *) exit 2 ;;
 esac
 if [[ "$mode" != --apache-only && "$mode" != --bootstrap-crash && "$mode" != --theme-browser ]]; then
@@ -39,7 +39,7 @@ cleanup() {
     compose down --volumes --remove-orphans >/dev/null 2>&1 || true
     sudo rm -f -- "$root/config/.env" "$root/secrets/mariadb_root_password" \
         "$root/secrets/mariadb_app_password" "$root/secrets/redis.conf" "$root/admin"
-    if [[ "$mode" == --manual-http || "$mode" == --manual-browser ]]; then
+    if [[ "$mode" == --manual-http || "$mode" == --manual-browser || "$mode" == --activation-browser ]]; then
         sudo rm -f -- "$root/manual-config.php" "$root/fixture/device/backup_a.cfg"
         if sudo test -d "$root/fixture/device"; then sudo rmdir -- "$root/fixture/device" || status=1; fi
         if sudo test -d "$root/fixture"; then sudo rmdir -- "$root/fixture" || status=1; fi
@@ -150,7 +150,7 @@ printf '%s\n' 'STAGING_STRICT_DOCKER_BOOTSTRAP_OK (SYNTHETIC_ONLY)'
 
 # Only after strict default-off bootstrap, mount an isolated static operator
 # configuration. The source/image configuration is never modified.
-if [[ "$mode" == --manual-http || "$mode" == --manual-browser ]]; then
+if [[ "$mode" == --manual-http || "$mode" == --manual-browser || "$mode" == --activation-browser ]]; then
     test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
     docker run --rm --network none --read-only --user 1000:33 --cap-drop ALL \
         --entrypoint php "$image" -r '
@@ -158,13 +158,14 @@ if [[ "$mode" == --manual-http || "$mode" == --manual-browser ]]; then
         foreach (["runtime_enabled", "queue_enabled", "scheduler_enabled", "dispatch_enabled",
             "manual_probe_enabled", "manual_dispatch_enabled", "manual_api_enabled"] as $flag) {
             if ($settings[$flag] !== false) { exit(2); }
-            $settings[$flag] = true;
+            $settings[$flag] = $argv[1] !== "--activation-browser" || ! str_starts_with($flag, "manual_");
         }
         if ($settings["activation_api_enabled"] !== false || $settings["catchup_enabled"] !== false
             || $settings["roots"] !== []) { exit(2); }
+        $settings["activation_api_enabled"] = $argv[1] === "--activation-browser";
         $settings["roots"] = ["synthetic" => "/mnt/f02-synthetic"];
         echo "<?php\n\nreturn " . var_export($settings, true) . ";\n";
-    ' | sudo tee "$root/manual-config.php" >/dev/null
+    ' -- "$mode" | sudo tee "$root/manual-config.php" >/dev/null
     sudo chmod 0644 "$root/manual-config.php"
     sudo install -d -m 0755 "$root/fixture" "$root/fixture/device"
     printf '%s\n' 'synthetic HTTP presence fixture' | sudo tee "$root/fixture/device/backup_a.cfg" >/dev/null
@@ -187,8 +188,15 @@ start_apache() {
     fi
 }
 start_apache
-if [[ "$mode" == --manual-http || "$mode" == --manual-browser ]]; then
+if [[ "$mode" == --manual-http || "$mode" == --manual-browser || "$mode" == --activation-browser ]]; then
     manual_file="$GITHUB_WORKSPACE/tests/staging/integration/docker-manual-http.php"
+    browser_script=manual-browser.cjs
+    browser_prefix=F02_BROWSER_REAL
+    if [[ "$mode" == --activation-browser ]]; then
+        manual_file="$GITHUB_WORKSPACE/tests/staging/integration/docker-activation-browser.php"
+        browser_script=activation-browser.cjs
+        browser_prefix=F02_BROWSER_ACTIVATION
+    fi
     test -f "$manual_file" && test ! -L "$manual_file"
     manual_probe() {
         local phase="$1" marker="$2"
@@ -201,10 +209,10 @@ if [[ "$mode" == --manual-http || "$mode" == --manual-browser ]]; then
         grep -Fxq "$marker (SYNTHETIC_ONLY)" "$RUNNER_TEMP/$project-http.log"
     }
     docker exec --user 1000:33 "$app" test ! -e /mnt/f02-synthetic
-    if [[ "$mode" == --manual-browser ]]; then
+    if [[ "$mode" == --manual-browser || "$mode" == --activation-browser ]]; then
         test "$MANUAL_BROWSER_DIR" = "$RUNNER_TEMP/rconfig-manual-browser"
         test "$MANUAL_BROWSER_OUTPUT" = "$RUNNER_TEMP/rconfig-manual-browser-evidence"
-        test -d "$MANUAL_BROWSER_DIR/node_modules/playwright" && test -f "$MANUAL_BROWSER_DIR/manual-browser.cjs"
+        test -d "$MANUAL_BROWSER_DIR/node_modules/playwright" && test -f "$MANUAL_BROWSER_DIR/$browser_script"
         test -d "$MANUAL_BROWSER_OUTPUT" && test ! -L "$MANUAL_BROWSER_OUTPUT"
         manual_browser() {
             local phase="$1" marker="$2"
@@ -216,23 +224,31 @@ if [[ "$mode" == --manual-http || "$mode" == --manual-browser ]]; then
                 "${admin[@]}" \
                 --mount "type=bind,source=$MANUAL_BROWSER_DIR,target=/probe,readonly" \
                 --mount "type=bind,source=$MANUAL_BROWSER_OUTPUT,target=/evidence" \
-                --entrypoint node mcr.microsoft.com/playwright:v1.64.1-noble /probe/manual-browser.cjs \
+                --entrypoint node mcr.microsoft.com/playwright:v1.64.1-noble /probe/"$browser_script" \
                 | tee "$RUNNER_TEMP/$project-http.log"
-            grep -Fxq "F02_BROWSER_REAL_PHASE_OK $phase (SYNTHETIC_ONLY)" "$RUNNER_TEMP/$project-http.log"
+            grep -Fxq "${browser_prefix}_PHASE_OK $phase (SYNTHETIC_ONLY)" "$RUNNER_TEMP/$project-http.log"
             grep -Fxq "$marker (SYNTHETIC_ONLY)" "$RUNNER_TEMP/$project-http.log"
         }
-        manual_probe browser-seed F02_BROWSER_REAL_DEVICE_SEEDED_OK
-        manual_browser create F02_BROWSER_REAL_ADMISSION_REPLAY_OK
-        grep -Fxq 'F02_BROWSER_REAL_WIZARD_CREATE_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/$project-http.log"
-        grep -Fxq 'F02_BROWSER_REAL_RULE_EDIT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/$project-http.log"
-        manual_probe browser-admitted F02_BROWSER_REAL_PERSISTED_ADMISSION_OK
+        if [[ "$mode" == --activation-browser ]]; then
+            manual_probe seed F02_BROWSER_ACTIVATION_SEEDED_OK
+            manual_browser create F02_BROWSER_ACTIVATION_DRAFT_OK
+            manual_probe draft F02_BROWSER_ACTIVATION_PERSISTED_DRAFT_OK
+        else
+            manual_probe browser-seed F02_BROWSER_REAL_DEVICE_SEEDED_OK
+            manual_browser create F02_BROWSER_REAL_ADMISSION_REPLAY_OK
+            grep -Fxq 'F02_BROWSER_REAL_WIZARD_CREATE_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/$project-http.log"
+            grep -Fxq 'F02_BROWSER_REAL_RULE_EDIT_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/$project-http.log"
+            manual_probe browser-admitted F02_BROWSER_REAL_PERSISTED_ADMISSION_OK
+        fi
     else
         manual_probe admit F02_HTTP_MANUAL_ADMISSION_OK
     fi
     docker run -d --name "$project-scheduler" --network "$network" "${common[@]}" \
         --entrypoint /usr/local/bin/staging-role-entrypoint.sh "$image" scheduler >/dev/null
     docker exec --user 1000:33 "$project-scheduler" test ! -e /mnt/f02-synthetic
-    manual_probe queued F02_HTTP_MANUAL_SCHEDULER_OK
+    if [[ "$mode" != --activation-browser ]]; then
+        manual_probe queued F02_HTTP_MANUAL_SCHEDULER_OK
+    fi
     docker run -d --name "$project-horizon" --network "$network" "${common[@]}" \
         --mount "type=bind,source=$root/fixture,target=/mnt/f02-synthetic,readonly" \
         --entrypoint /usr/local/bin/staging-role-entrypoint.sh "$image" horizon >/dev/null
@@ -242,6 +258,19 @@ if [[ "$mode" == --manual-http || "$mode" == --manual-browser ]]; then
         test "$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/www/html/rconfig/config/local-backup-presence.php"}}{{.RW}}{{end}}{{end}}' "$project-$role")" = false
     done
     combined_roles_verify_layout
+    if [[ "$mode" == --activation-browser ]]; then
+        manual_browser enable F02_BROWSER_ACTIVATION_ENABLE_OK
+        manual_probe terminal F02_BROWSER_ACTIVATION_SCHEDULED_PRESENT_OK
+        manual_browser suspend F02_BROWSER_ACTIVATION_SUSPEND_OK
+        grep -Fxq 'F02_BROWSER_ACTIVATION_HISTORY_OK (SYNTHETIC_ONLY)' "$RUNNER_TEMP/$project-http.log"
+        manual_probe suspended F02_BROWSER_ACTIVATION_NEXT_TICK_OK
+        test "$(sudo cat "$root/fixture/device/backup_a.cfg")" = 'synthetic HTTP presence fixture'
+        combined_roles_verify_layout
+        combined_roles_verify_processes
+        docker stop -t 30 "$project-scheduler" "$project-horizon" >/dev/null
+        printf '%s\n' 'F02_BROWSER_ACTIVATION_WORKER_ONLY_MOUNT_OK (SYNTHETIC_ONLY)'
+        exit 0
+    fi
     if [[ "$mode" == --manual-browser ]]; then
         manual_browser present F02_BROWSER_REAL_STABLE_PRESENT_OK
         manual_probe browser-present F02_BROWSER_REAL_PERSISTED_PRESENT_OK
